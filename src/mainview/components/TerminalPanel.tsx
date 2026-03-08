@@ -12,6 +12,8 @@ import { terminalRpc } from "../rpc";
 export interface TerminalPanelParams {
 	/** Unique terminal session id (set after spawn) */
 	sessionId?: string;
+	/** Working directory for the terminal */
+	cwd?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -27,6 +29,7 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 	const termRef = useRef<Terminal | null>(null);
 	const fitRef = useRef<FitAddon | null>(null);
 	const sessionIdRef = useRef<string | null>(null);
+	const cwdRef = useRef<string | undefined>((props.params as TerminalPanelParams).cwd);
 
 	/** Fit the terminal to its container and notify the PTY */
 	const fit = useCallback(() => {
@@ -123,7 +126,7 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 			});
 
 			// Spawn terminal
-			terminalRpc.spawn(term.cols, term.rows).then((sessionId) => {
+			terminalRpc.spawn(term.cols, term.rows, cwdRef.current).then((sessionId) => {
 				sessionIdRef.current = sessionId;
 
 				// Forward user input to PTY

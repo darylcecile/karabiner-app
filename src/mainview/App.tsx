@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useMemo } from "react";
+import { useCallback, useRef, useState, useMemo, useEffect } from "react";
 import {
 	DockviewReact,
 	type DockviewApi,
@@ -11,22 +11,45 @@ import { Sidebar, type FileNode } from "./components/Sidebar";
 import { StatusBar, type StatusBarItem } from "./components/StatusBar";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { readDirectory, openFolder, onWorkspaceOpened } from "./rpc";
 
 /* ------------------------------------------------------------------ */
 /*  Dockview panel components                                         */
 /* ------------------------------------------------------------------ */
 
-/** Welcome / empty-state panel shown when no files are open */
-const WelcomePanel = (_props: IDockviewPanelProps) => {
+/** Welcome / empty-state panel shown when no folder is open */
+const WelcomePanel = (props: IDockviewPanelProps) => {
+	const onOpenFolder = props.params.onOpenFolder as (() => void) | undefined;
+
 	return (
 		<div className="flex items-center justify-center h-full text-fg-muted select-none">
-			<div className="text-center space-y-3">
+			<div className="text-center space-y-4">
 				<div className="text-6xl opacity-15 font-bold tracking-tighter">K</div>
 				<p className="text-[var(--font-size-base)] text-fg-secondary">
-					Open a file or start a terminal session
+					Open a folder to get started
+				</p>
+				<button
+					type="button"
+					onClick={onOpenFolder}
+					className="inline-flex items-center gap-2 px-4 py-2 text-[var(--font-size-sm)]
+					           bg-button text-button-fg border border-border rounded
+					           hover:bg-button-hover transition-colors cursor-pointer"
+				>
+					Open Folder...
+				</button>
+				<p className="text-[var(--font-size-xs)] text-fg-muted">
+					or press{" "}
+					<kbd className="px-1.5 py-0.5 bg-bg-surface border border-border rounded text-[var(--font-size-xs)]">
+						Cmd+O
+					</kbd>{" "}
+					to open a folder
 				</p>
 				<p className="text-[var(--font-size-xs)] text-fg-muted">
-					Press <kbd className="px-1.5 py-0.5 bg-bg-surface border border-border rounded text-[var(--font-size-xs)]">Cmd+K</kbd> for commands
+					Press{" "}
+					<kbd className="px-1.5 py-0.5 bg-bg-surface border border-border rounded text-[var(--font-size-xs)]">
+						Cmd+K
+					</kbd>{" "}
+					for commands
 				</p>
 			</div>
 		</div>
@@ -74,138 +97,6 @@ const karabinerTheme = {
 };
 
 /* ------------------------------------------------------------------ */
-/*  Demo file tree data (headless-tree format)                        */
-/* ------------------------------------------------------------------ */
-
-const DEMO_ITEMS: Record<string, FileNode> = {
-	root: {
-		name: "karabiner-app",
-		path: "/",
-		isDirectory: true,
-		children: ["src", "package.json", "tsconfig.json", "electrobun.config.ts"],
-	},
-	src: {
-		name: "src",
-		path: "/src",
-		isDirectory: true,
-		children: ["mainview", "bun", "shared"],
-	},
-	mainview: {
-		name: "mainview",
-		path: "/src/mainview",
-		isDirectory: true,
-		children: ["app-tsx", "main-tsx", "index-css", "index-html", "components"],
-	},
-	"app-tsx": {
-		name: "App.tsx",
-		path: "/src/mainview/App.tsx",
-		isDirectory: false,
-		status: "modified",
-	},
-	"main-tsx": {
-		name: "main.tsx",
-		path: "/src/mainview/main.tsx",
-		isDirectory: false,
-	},
-	"index-css": {
-		name: "index.css",
-		path: "/src/mainview/index.css",
-		isDirectory: false,
-		status: "modified",
-	},
-	"index-html": {
-		name: "index.html",
-		path: "/src/mainview/index.html",
-		isDirectory: false,
-	},
-	components: {
-		name: "components",
-		path: "/src/mainview/components",
-		isDirectory: true,
-		children: [
-			"sidebar-tsx",
-			"statusbar-tsx",
-			"terminal-tsx",
-			"cmdpalette-tsx",
-			"editorpanel-tsx",
-			"contextpanel-tsx",
-		],
-	},
-	"sidebar-tsx": {
-		name: "Sidebar.tsx",
-		path: "/src/mainview/components/Sidebar.tsx",
-		isDirectory: false,
-		status: "modified",
-	},
-	"statusbar-tsx": {
-		name: "StatusBar.tsx",
-		path: "/src/mainview/components/StatusBar.tsx",
-		isDirectory: false,
-	},
-	"terminal-tsx": {
-		name: "TerminalPanel.tsx",
-		path: "/src/mainview/components/TerminalPanel.tsx",
-		isDirectory: false,
-		status: "added",
-	},
-	"cmdpalette-tsx": {
-		name: "CommandPalette.tsx",
-		path: "/src/mainview/components/CommandPalette.tsx",
-		isDirectory: false,
-		status: "added",
-	},
-	"editorpanel-tsx": {
-		name: "EditorPanel.tsx",
-		path: "/src/mainview/components/EditorPanel.tsx",
-		isDirectory: false,
-	},
-	"contextpanel-tsx": {
-		name: "ContextPanel.tsx",
-		path: "/src/mainview/components/ContextPanel.tsx",
-		isDirectory: false,
-	},
-	bun: {
-		name: "bun",
-		path: "/src/bun",
-		isDirectory: true,
-		children: ["bun-index-ts"],
-	},
-	"bun-index-ts": {
-		name: "index.ts",
-		path: "/src/bun/index.ts",
-		isDirectory: false,
-		status: "modified",
-	},
-	shared: {
-		name: "shared",
-		path: "/src/shared",
-		isDirectory: true,
-		children: ["shared-rpc-ts"],
-	},
-	"shared-rpc-ts": {
-		name: "rpc.ts",
-		path: "/src/shared/rpc.ts",
-		isDirectory: false,
-		status: "added",
-	},
-	"package.json": {
-		name: "package.json",
-		path: "/package.json",
-		isDirectory: false,
-	},
-	"tsconfig.json": {
-		name: "tsconfig.json",
-		path: "/tsconfig.json",
-		isDirectory: false,
-	},
-	"electrobun.config.ts": {
-		name: "electrobun.config.ts",
-		path: "/electrobun.config.ts",
-		isDirectory: false,
-	},
-};
-
-/* ------------------------------------------------------------------ */
 /*  Status bar data                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -229,6 +120,64 @@ const dockviewComponents = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  File tree helpers                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Recursively load a directory and its children into a flat
+ * Record<string, FileNode> map compatible with headless-tree.
+ */
+async function loadFileTree(
+	rootPath: string,
+): Promise<{ items: Record<string, FileNode>; rootId: string }> {
+	const items: Record<string, FileNode> = {};
+
+	// Sanitise a filesystem path into a stable key for headless-tree
+	const toKey = (p: string) => p.replace(/[^a-zA-Z0-9_\-/]/g, "_");
+
+	async function walk(dirPath: string): Promise<string[]> {
+		const { entries } = await readDirectory(dirPath);
+		const childKeys: string[] = [];
+
+		for (const entry of entries) {
+			const key = toKey(entry.path);
+			childKeys.push(key);
+
+			if (entry.isDirectory) {
+				const grandchildren = await walk(entry.path);
+				items[key] = {
+					name: entry.name,
+					path: entry.path,
+					isDirectory: true,
+					children: grandchildren,
+				};
+			} else {
+				items[key] = {
+					name: entry.name,
+					path: entry.path,
+					isDirectory: false,
+				};
+			}
+		}
+
+		return childKeys;
+	}
+
+	const rootKey = toKey(rootPath);
+	const children = await walk(rootPath);
+	const rootName = rootPath.split("/").pop() ?? rootPath;
+
+	items[rootKey] = {
+		name: rootName,
+		path: rootPath,
+		isDirectory: true,
+		children,
+	};
+
+	return { items, rootId: rootKey };
+}
+
+/* ------------------------------------------------------------------ */
 /*  App                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -238,17 +187,94 @@ function App() {
 	const apiRef = useRef<DockviewApi | null>(null);
 	const [sidebarVisible, setSidebarVisible] = useState(true);
 
-	/** Initialise the default Dockview layout */
-	const onReady = useCallback((event: DockviewReadyEvent) => {
-		apiRef.current = event.api;
+	// Workspace state
+	const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+	const [fileTreeItems, setFileTreeItems] = useState<Record<string, FileNode>>({});
+	const [fileTreeRootId, setFileTreeRootId] = useState<string>("root");
 
-		// Main editor area -- welcome panel
-		event.api.addPanel({
-			id: "welcome",
-			component: "welcome",
-			title: "Welcome",
+	const workspaceOpen = workspacePath !== null;
+
+	/** Open a folder in the workspace: load file tree, show sidebar, open terminal tab */
+	const handleOpenWorkspace = useCallback(async (folderPath: string) => {
+		setWorkspacePath(folderPath);
+		setSidebarVisible(true);
+
+		// Load the file tree from the filesystem
+		try {
+			const { items, rootId } = await loadFileTree(folderPath);
+			setFileTreeItems(items);
+			setFileTreeRootId(rootId);
+		} catch {
+			// If loading fails, show an empty tree
+			setFileTreeItems({});
+			setFileTreeRootId("root");
+		}
+
+		// Transition Dockview: remove welcome panel, open a terminal tab in its place
+		const api = apiRef.current;
+		if (!api) return;
+
+		const termId = `terminal-${++terminalCounter}`;
+
+		// Add terminal in the same group as welcome (replaces it visually)
+		api.addPanel({
+			id: termId,
+			component: "terminal",
+			title: `Terminal ${terminalCounter}`,
+			params: { cwd: folderPath },
+			position: { referencePanel: "welcome", direction: "within" },
 		});
+
+		// Remove the welcome panel now that a real tab is in its place
+		const welcomePanel = api.getPanel("welcome");
+		if (welcomePanel) {
+			api.removePanel(welcomePanel);
+		}
 	}, []);
+
+	/** Trigger the native folder picker, then open the selected folder */
+	const handleOpenFolderDialog = useCallback(async () => {
+		const path = await openFolder();
+		if (path) {
+			handleOpenWorkspace(path);
+		}
+	}, [handleOpenWorkspace]);
+
+	/** Initialise the default Dockview layout */
+	const onReady = useCallback(
+		(event: DockviewReadyEvent) => {
+			apiRef.current = event.api;
+
+			// Start with the welcome panel
+			event.api.addPanel({
+				id: "welcome",
+				component: "welcome",
+				title: "Welcome",
+				params: { onOpenFolder: handleOpenFolderDialog },
+			});
+		},
+		[handleOpenFolderDialog],
+	);
+
+	// Listen for workspace-opened events from the app menu (File > Open Folder)
+	useEffect(() => {
+		const unsub = onWorkspaceOpened((path) => {
+			handleOpenWorkspace(path);
+		});
+		return unsub;
+	}, [handleOpenWorkspace]);
+
+	// Listen for Cmd+O keyboard shortcut to open a folder
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "o" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+				e.preventDefault();
+				handleOpenFolderDialog();
+			}
+		};
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, [handleOpenFolderDialog]);
 
 	/** Open a file in the editor area */
 	const handleSelectFile = useCallback((path: string) => {
@@ -262,48 +288,59 @@ function App() {
 			return;
 		}
 
-		// Add a new editor panel in the same group as welcome
+		// Find an anchor panel to open "within" (first non-welcome panel, or any)
+		const anchor = api.panels[0];
+		if (!anchor) return;
+
 		const fileName = path.split("/").pop() ?? path;
 		api.addPanel({
 			id: path,
 			component: "editor",
 			title: fileName,
 			params: { filePath: path },
-			position: { referencePanel: "welcome", direction: "within" },
+			position: { referencePanel: anchor.id, direction: "within" },
 		});
 	}, []);
 
-	/** Open a new terminal panel */
+	/** Open a new terminal panel as a tab in the main group */
 	const openTerminal = useCallback(() => {
 		const api = apiRef.current;
 		if (!api) return;
 
 		const termId = `terminal-${++terminalCounter}`;
 
-		// Find if there's already a terminal group at the bottom
+		// Find an existing terminal to group with, or use the first panel
 		const existingTerminal = api.panels.find(
 			(p) => p.id.startsWith("terminal-"),
 		);
+		const anchor = existingTerminal ?? api.panels[0];
+		if (!anchor) return;
 
 		api.addPanel({
 			id: termId,
 			component: "terminal",
 			title: `Terminal ${terminalCounter}`,
-			position: existingTerminal
-				? { referencePanel: existingTerminal.id, direction: "within" }
-				: { referencePanel: "welcome", direction: "below" },
-			initialHeight: 250,
+			params: { cwd: workspacePath ?? undefined },
+			position: { referencePanel: anchor.id, direction: "within" },
 		});
-	}, []);
+	}, [workspacePath]);
 
-	/** Toggle sidebar visibility */
+	/** Toggle sidebar visibility (only meaningful when a folder is open) */
 	const toggleSidebar = useCallback(() => {
+		if (!workspaceOpen) return;
 		setSidebarVisible((v) => !v);
-	}, []);
+	}, [workspaceOpen]);
 
 	/** Command palette commands */
 	const commands: CommandItem[] = useMemo(
 		() => [
+			{
+				id: "open-folder",
+				label: "Open Folder...",
+				group: "File",
+				shortcut: "Cmd+O",
+				onSelect: handleOpenFolderDialog,
+			},
 			{
 				id: "new-terminal",
 				label: "New Terminal",
@@ -311,13 +348,17 @@ function App() {
 				shortcut: "Ctrl+`",
 				onSelect: openTerminal,
 			},
-			{
-				id: "toggle-sidebar",
-				label: sidebarVisible ? "Hide Sidebar" : "Show Sidebar",
-				group: "View",
-				shortcut: "Cmd+B",
-				onSelect: toggleSidebar,
-			},
+			...(workspaceOpen
+				? [
+						{
+							id: "toggle-sidebar",
+							label: sidebarVisible ? "Hide Sidebar" : "Show Sidebar",
+							group: "View",
+							shortcut: "Cmd+B",
+							onSelect: toggleSidebar,
+						},
+					]
+				: []),
 			{
 				id: "close-panel",
 				label: "Close Active Panel",
@@ -351,22 +392,19 @@ function App() {
 				},
 			},
 		],
-		[sidebarVisible, openTerminal, toggleSidebar],
+		[workspaceOpen, sidebarVisible, openTerminal, toggleSidebar, handleOpenFolderDialog],
 	);
-
-	// Keyboard shortcuts for actions that bypass the command palette
-	// (The palette itself handles Cmd+K / Cmd+Shift+P)
 
 	return (
 		<div className="flex flex-col h-full w-full overflow-hidden bg-bg">
 			{/* Main content: sidebar + dockview */}
 			<div className="flex flex-1 min-h-0">
-				{/* Sidebar */}
-				{sidebarVisible && (
+				{/* Sidebar -- only visible when a folder is open */}
+				{workspaceOpen && sidebarVisible && (
 					<Sidebar
 						title="Explorer"
-						items={DEMO_ITEMS}
-						rootId="root"
+						items={fileTreeItems}
+						rootId={fileTreeRootId}
 						onSelectFile={handleSelectFile}
 					/>
 				)}

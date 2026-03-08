@@ -7,9 +7,11 @@ import type { KarabinerRPC } from "../shared/rpc";
 
 type OutputCallback = (sessionId: string, data: string) => void;
 type ExitCallback = (sessionId: string, code: number) => void;
+type WorkspaceOpenedCallback = (path: string) => void;
 
 const outputListeners = new Set<OutputCallback>();
 const exitListeners = new Set<ExitCallback>();
+const workspaceOpenedListeners = new Set<WorkspaceOpenedCallback>();
 
 /* ------------------------------------------------------------------ */
 /*  Electroview RPC setup                                              */
@@ -29,6 +31,11 @@ const rpcHandlers = Electroview.defineRPC<KarabinerRPC>({
 					cb(sessionId, code);
 				}
 			},
+			workspaceOpened: ({ path }) => {
+				for (const cb of workspaceOpenedListeners) {
+					cb(path);
+				}
+			},
 		},
 	},
 });
@@ -41,10 +48,11 @@ const electroview = new Electroview({ rpc: rpcHandlers });
 
 export const terminalRpc = {
 	/** Spawn a new PTY session. Returns the session id. */
-	spawn: async (cols: number, rows: number): Promise<string> => {
+	spawn: async (cols: number, rows: number, cwd?: string): Promise<string> => {
 		const result = await electroview.rpc!.request.terminalSpawn({
 			cols,
 			rows,
+			cwd,
 		});
 		return result.sessionId;
 	},
@@ -85,6 +93,18 @@ export const terminalRpc = {
 /** Read a directory listing (used by the file tree sidebar). */
 export const readDirectory = async (path: string) => {
 	return electroview.rpc!.request.readDirectory({ path });
+};
+
+/** Open a native folder picker dialog. Returns the selected path, or null if cancelled. */
+export const openFolder = async (): Promise<string | null> => {
+	const result = await electroview.rpc!.request.openFolder({});
+	return result.path;
+};
+
+/** Subscribe to workspace-opened events (triggered from the app menu). Returns an unsubscribe function. */
+export const onWorkspaceOpened = (cb: WorkspaceOpenedCallback): (() => void) => {
+	workspaceOpenedListeners.add(cb);
+	return () => workspaceOpenedListeners.delete(cb);
 };
 
 export { electroview };

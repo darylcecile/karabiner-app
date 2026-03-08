@@ -1,8 +1,10 @@
+import Electrobun from "electrobun/bun";
 import {
 	BrowserWindow,
 	BrowserView,
 	ApplicationMenu,
 	Updater,
+	Utils,
 } from "electrobun/bun";
 import type { KarabinerRPC } from "../shared/rpc";
 
@@ -128,6 +130,21 @@ const rpc = BrowserView.defineRPC<KarabinerRPC>({
 					return { entries: [] };
 				}
 			},
+
+			openFolder: async () => {
+				const chosenPaths = await Utils.openFileDialog({
+					startingFolder: Utils.paths.home,
+					allowedFileTypes: "*",
+					canChooseFiles: false,
+					canChooseDirectory: true,
+					allowsMultipleSelection: false,
+				});
+
+				if (chosenPaths && chosenPaths.length > 0) {
+					return { path: chosenPaths[0] };
+				}
+				return { path: null };
+			},
 		},
 		messages: {
 			terminalWrite: ({ sessionId, data }) => {
@@ -179,6 +196,8 @@ ApplicationMenu.setApplicationMenu([
 	{
 		label: "File",
 		submenu: [
+			{ label: "Open Folder...", action: "open-folder", accelerator: "o" },
+			{ type: "separator" },
 			{ label: "New Terminal", action: "new-terminal", accelerator: "t" },
 			{ type: "separator" },
 			{ label: "Close Window", role: "close" },
@@ -222,6 +241,28 @@ const mainWindow = new BrowserWindow({
 		x: 200,
 		y: 200,
 	},
+});
+
+/* ------------------------------------------------------------------ */
+/*  Handle application menu actions                                   */
+/* ------------------------------------------------------------------ */
+
+Electrobun.events.on("application-menu-clicked", async (e) => {
+	if (e.data.action === "open-folder") {
+		const chosenPaths = await Utils.openFileDialog({
+			startingFolder: Utils.paths.home,
+			allowedFileTypes: "*",
+			canChooseFiles: false,
+			canChooseDirectory: true,
+			allowsMultipleSelection: false,
+		});
+
+		if (chosenPaths && chosenPaths.length > 0) {
+			mainWindow.webview.rpc?.send.workspaceOpened({
+				path: chosenPaths[0],
+			});
+		}
+	}
 });
 
 console.log("Karabiner app started!");

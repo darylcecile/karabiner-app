@@ -34,6 +34,11 @@ type BunSchema = RPCSchema<{
 				}>;
 			};
 		};
+		/** Open a native folder picker dialog, returns selected path or null */
+		openFolder: {
+			params: Record<string, never>;
+			response: { path: string | null };
+		};
 	};
 	messages: {
 		/** Write user input to a terminal session */
@@ -49,6 +54,8 @@ type WebviewSchema = RPCSchema<{
 		terminalOutput: { sessionId: string; data: string };
 		/** Terminal session exited */
 		terminalExit: { sessionId: string; code: number };
+		/** A folder was opened in the workspace (triggered from app menu) */
+		workspaceOpened: { path: string };
 	};
 }>;
 
