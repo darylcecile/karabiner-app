@@ -95,10 +95,9 @@ export const readDirectory = async (path: string) => {
 	return electroview.rpc!.request.readDirectory({ path });
 };
 
-/** Open a native folder picker dialog. Returns the selected path, or null if cancelled. */
-export const openFolder = async (): Promise<string | null> => {
-	const result = await electroview.rpc!.request.openFolder({});
-	return result.path;
+/** Ask bun to open a native folder picker dialog. Result arrives via onWorkspaceOpened callback. */
+export const openFolderDialog = (): void => {
+	electroview.rpc!.send.openFolderDialog({});
 };
 
 /** Subscribe to workspace-opened events (triggered from the app menu). Returns an unsubscribe function. */

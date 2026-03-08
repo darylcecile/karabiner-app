@@ -34,15 +34,12 @@ type BunSchema = RPCSchema<{
 				}>;
 			};
 		};
-		/** Open a native folder picker dialog, returns selected path or null */
-		openFolder: {
-			params: Record<string, never>;
-			response: { path: string | null };
-		};
 	};
 	messages: {
 		/** Write user input to a terminal session */
 		terminalWrite: { sessionId: string; data: string };
+		/** Request to open a native folder picker dialog (fire-and-forget; result comes back via workspaceOpened message) */
+		openFolderDialog: Record<string, never>;
 	};
 }>;
 

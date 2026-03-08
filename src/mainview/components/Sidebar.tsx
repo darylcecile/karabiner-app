@@ -1,4 +1,4 @@
-import { type FC, useState, useCallback } from "react";
+import { type FC, useState, useCallback, useEffect } from "react";
 import {
 	syncDataLoaderFeature,
 	selectionFeature,
@@ -82,6 +82,12 @@ export const Sidebar: FC<Props> = ({ title, items, rootId, onSelectFile }) => {
 		features: [syncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
 	});
 
+	// Force tree rebuild when items or rootId change (syncDataLoaderFeature
+	// doesn't auto-rebuild when the underlying data changes)
+	useEffect(() => {
+		tree.rebuildTree();
+	}, [items, rootId, tree]);
+
 	return (
 		<div
 			className="flex flex-col bg-sidebar border-r border-sidebar-border overflow-hidden shrink-0 select-none"
@@ -110,13 +116,19 @@ export const Sidebar: FC<Props> = ({ title, items, rootId, onSelectFile }) => {
 					const level = item.getItemMeta().level;
 					const statusClass = data.status ? GIT_STATUS_CLASSES[data.status] : "";
 					const statusLabel = data.status ? GIT_STATUS_LABELS[data.status] : "";
+					const treeProps = item.getProps();
 
 					return (
 						<button
-							{...item.getProps()}
+							{...treeProps}
 							type="button"
 							key={item.getId()}
-							onClick={() => handleSelect(data.path, isFolder)}
+							onClick={(e) => {
+								// Let headless-tree handle focus & expand/collapse
+								treeProps.onClick?.(e as unknown as MouseEvent);
+								// Also handle file selection
+								handleSelect(data.path, isFolder);
+							}}
 							className={`
 								flex items-center w-full text-left cursor-pointer
 								text-[var(--font-size-sm)] leading-[22px] h-[22px]

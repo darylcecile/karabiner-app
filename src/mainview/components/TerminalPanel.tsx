@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, type FC } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
+import "@xterm/xterm/css/xterm.css";
 import type { IDockviewPanelProps } from "dockview";
 import { terminalRpc } from "../rpc";
 
@@ -53,13 +53,13 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 
 		// Create xterm instance
 		const term = new Terminal({
-			fontFamily: "var(--font-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace)",
+			fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace",
 			fontSize: 13,
-			lineHeight: 1.4,
+			lineHeight: 1.0,
 			cursorBlink: true,
 			cursorStyle: "bar",
 			theme: {
-				background: "transparent",
+				background: "#1e1e1e",
 				foreground: "#cccccc",
 				cursor: "#aeafad",
 				selectionBackground: "#264f78",
@@ -87,14 +87,6 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 		term.loadAddon(fitAddon);
 		term.open(container);
 
-		// Try to load WebGL addon for performance
-		try {
-			const webglAddon = new WebglAddon();
-			term.loadAddon(webglAddon);
-		} catch {
-			// WebGL not available, software renderer is fine
-		}
-
 		termRef.current = term;
 		fitRef.current = fitAddon;
 
@@ -112,10 +104,29 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 		let unsubExit: (() => void) | undefined;
 
 		if (terminalRpc.available) {
+			// Streaming TextDecoder handles multi-byte UTF-8 chars that may be
+			// split across consecutive base64 batches (the {stream: true} option
+			// keeps partial sequences buffered between decode() calls).
+			const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
+
 			// Subscribe to output before spawning so we don't miss early output
 			unsubOutput = terminalRpc.onOutput((sid, data) => {
 				if (sid === sessionIdRef.current) {
-					term.write(data);
+					// Data arrives as base64-encoded raw PTY bytes.
+					// Decode base64 → Uint8Array → UTF-8 string for xterm.js.
+					try {
+						const binaryString = atob(data);
+						const bytes = new Uint8Array(binaryString.length);
+						for (let i = 0; i < binaryString.length; i++) {
+							bytes[i] = binaryString.charCodeAt(i);
+						}
+						const decoded = utf8Decoder.decode(bytes, { stream: true });
+						if (decoded.length > 0) {
+							term.write(decoded);
+						}
+					} catch (err) {
+						console.error("[Terminal] decode error:", err);
+					}
 				}
 			});
 
@@ -131,6 +142,11 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 
 				// Forward user input to PTY
 				term.onData((data) => {
+					terminalRpc.write(sessionId, data);
+				});
+
+				// Forward binary input (e.g. mouse events in TUI apps)
+				term.onBinary((data) => {
 					terminalRpc.write(sessionId, data);
 				});
 			});

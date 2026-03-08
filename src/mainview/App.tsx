@@ -11,7 +11,7 @@ import { Sidebar, type FileNode } from "./components/Sidebar";
 import { StatusBar, type StatusBarItem } from "./components/StatusBar";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { TerminalPanel } from "./components/TerminalPanel";
-import { readDirectory, openFolder, onWorkspaceOpened } from "./rpc";
+import { readDirectory, openFolderDialog, onWorkspaceOpened } from "./rpc";
 
 /* ------------------------------------------------------------------ */
 /*  Dockview panel components                                         */
@@ -123,9 +123,32 @@ const dockviewComponents = {
 /*  File tree helpers                                                  */
 /* ------------------------------------------------------------------ */
 
+/** Directories to skip during recursive file tree walk */
+const IGNORED_DIRS = new Set([
+	"node_modules",
+	".git",
+	".next",
+	".turbo",
+	"dist",
+	"build",
+	"out",
+	".cache",
+	"coverage",
+	".vscode",
+	".idea",
+	"__pycache__",
+	".svn",
+	".hg",
+]);
+
+/** Max directory depth to walk (prevents runaway recursion on symlinks etc.) */
+const MAX_DEPTH = 12;
+
 /**
  * Recursively load a directory and its children into a flat
  * Record<string, FileNode> map compatible with headless-tree.
+ *
+ * Skips heavy / non-essential directories and caps recursion depth.
  */
 async function loadFileTree(
 	rootPath: string,
@@ -135,16 +158,27 @@ async function loadFileTree(
 	// Sanitise a filesystem path into a stable key for headless-tree
 	const toKey = (p: string) => p.replace(/[^a-zA-Z0-9_\-/]/g, "_");
 
-	async function walk(dirPath: string): Promise<string[]> {
-		const { entries } = await readDirectory(dirPath);
+	async function walk(dirPath: string, depth: number): Promise<string[]> {
+		if (depth > MAX_DEPTH) return [];
+
+		let entries: Array<{ name: string; path: string; isDirectory: boolean }>;
+		try {
+			const result = await readDirectory(dirPath);
+			entries = result.entries;
+		} catch {
+			return [];
+		}
 		const childKeys: string[] = [];
 
 		for (const entry of entries) {
+			// Skip known heavy directories
+			if (entry.isDirectory && IGNORED_DIRS.has(entry.name)) continue;
+
 			const key = toKey(entry.path);
 			childKeys.push(key);
 
 			if (entry.isDirectory) {
-				const grandchildren = await walk(entry.path);
+				const grandchildren = await walk(entry.path, depth + 1);
 				items[key] = {
 					name: entry.name,
 					path: entry.path,
@@ -164,7 +198,7 @@ async function loadFileTree(
 	}
 
 	const rootKey = toKey(rootPath);
-	const children = await walk(rootPath);
+	const children = await walk(rootPath, 0);
 	const rootName = rootPath.split("/").pop() ?? rootPath;
 
 	items[rootKey] = {
@@ -194,51 +228,59 @@ function App() {
 
 	const workspaceOpen = workspacePath !== null;
 
-	/** Open a folder in the workspace: load file tree, show sidebar, open terminal tab */
-	const handleOpenWorkspace = useCallback(async (folderPath: string) => {
+	/** Open a folder in the workspace: swap welcome→terminal immediately, then load file tree in background */
+	const handleOpenWorkspace = useCallback((folderPath: string) => {
 		setWorkspacePath(folderPath);
 		setSidebarVisible(true);
 
-		// Load the file tree from the filesystem
-		try {
-			const { items, rootId } = await loadFileTree(folderPath);
-			setFileTreeItems(items);
-			setFileTreeRootId(rootId);
-		} catch {
-			// If loading fails, show an empty tree
-			setFileTreeItems({});
-			setFileTreeRootId("root");
-		}
-
-		// Transition Dockview: remove welcome panel, open a terminal tab in its place
+		// Transition Dockview immediately: remove welcome panel, open a terminal tab
 		const api = apiRef.current;
-		if (!api) return;
+		if (api) {
+			const termId = `terminal-${++terminalCounter}`;
 
-		const termId = `terminal-${++terminalCounter}`;
-
-		// Add terminal in the same group as welcome (replaces it visually)
-		api.addPanel({
-			id: termId,
-			component: "terminal",
-			title: `Terminal ${terminalCounter}`,
-			params: { cwd: folderPath },
-			position: { referencePanel: "welcome", direction: "within" },
-		});
-
-		// Remove the welcome panel now that a real tab is in its place
-		const welcomePanel = api.getPanel("welcome");
-		if (welcomePanel) {
-			api.removePanel(welcomePanel);
+			// Add terminal in the same group as welcome (replaces it visually)
+			const welcomePanel = api.getPanel("welcome");
+			if (welcomePanel) {
+				api.addPanel({
+					id: termId,
+					component: "terminal",
+					title: `Terminal ${terminalCounter}`,
+					params: { cwd: folderPath },
+					position: { referencePanel: "welcome", direction: "within" },
+				});
+				api.removePanel(welcomePanel);
+			} else {
+				// No welcome panel (maybe already removed) — just add terminal
+				const anchor = api.panels[0];
+				api.addPanel({
+					id: termId,
+					component: "terminal",
+					title: `Terminal ${terminalCounter}`,
+					params: { cwd: folderPath },
+					position: anchor
+						? { referencePanel: anchor.id, direction: "within" }
+						: undefined,
+				});
+			}
 		}
+
+		// Load the file tree in the background (don't block the UI)
+		loadFileTree(folderPath)
+			.then(({ items, rootId }) => {
+				setFileTreeItems(items);
+				setFileTreeRootId(rootId);
+			})
+			.catch(() => {
+				// If loading fails, show an empty tree — sidebar is still visible
+				setFileTreeItems({});
+				setFileTreeRootId("root");
+			});
 	}, []);
 
-	/** Trigger the native folder picker, then open the selected folder */
-	const handleOpenFolderDialog = useCallback(async () => {
-		const path = await openFolder();
-		if (path) {
-			handleOpenWorkspace(path);
-		}
-	}, [handleOpenWorkspace]);
+	/** Trigger the native folder picker. Result arrives async via onWorkspaceOpened. */
+	const handleOpenFolderDialog = useCallback(() => {
+		openFolderDialog();
+	}, []);
 
 	/** Initialise the default Dockview layout */
 	const onReady = useCallback(

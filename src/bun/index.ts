@@ -39,6 +39,29 @@ const rpc = BrowserView.defineRPC<KarabinerRPC>({
 			terminalSpawn: ({ cols, rows, cwd }) => {
 				const sessionId = `term-${++sessionCounter}`;
 
+				// Buffer PTY output and flush on a timer to avoid
+				// overwhelming the RPC channel with per-chunk messages.
+				// TUI apps (opencode, vim, htop…) emit many small writes
+				// in rapid succession — batching keeps the bridge healthy.
+				// We collect raw Uint8Array chunks and base64-encode on flush
+				// to preserve binary escape sequences through JSON serialization.
+				let outputChunks: Uint8Array[] = [];
+				let flushTimer: ReturnType<typeof setTimeout> | null = null;
+				const FLUSH_INTERVAL_MS = 8; // ~120 fps
+
+				const flushOutput = () => {
+					flushTimer = null;
+					if (outputChunks.length > 0) {
+						const combined = Buffer.concat(outputChunks);
+						outputChunks = [];
+						const data = combined.toString("base64");
+						mainWindow.webview.rpc?.send.terminalOutput({
+							sessionId,
+							data,
+						});
+					}
+				};
+
 				const proc = Bun.spawn(["bash", "-l"], {
 					cwd: cwd ?? process.cwd(),
 					env: {
@@ -50,17 +73,27 @@ const rpc = BrowserView.defineRPC<KarabinerRPC>({
 						cols,
 						rows,
 						data(_terminal, data) {
-							// Send PTY output to the webview
-							mainWindow.webview.rpc?.send.terminalOutput({
-								sessionId,
-								data: Buffer.from(data).toString("utf-8"),
-							});
+							// Copy the chunk — data may be a Buffer slice with
+							// a shared underlying ArrayBuffer that gets reused.
+							const chunk = new Uint8Array(data.length);
+							chunk.set(data instanceof Uint8Array ? data : new Uint8Array(data));
+							outputChunks.push(chunk);
+							if (!flushTimer) {
+								flushTimer = setTimeout(flushOutput, FLUSH_INTERVAL_MS);
+							}
 						},
 					},
 				});
 
 				// Handle process exit
 				proc.exited.then((code) => {
+					// Flush any remaining buffered output
+					if (flushTimer) {
+						clearTimeout(flushTimer);
+						flushTimer = null;
+					}
+					flushOutput();
+
 					mainWindow.webview.rpc?.send.terminalExit({
 						sessionId,
 						code: code ?? 0,
@@ -130,8 +163,15 @@ const rpc = BrowserView.defineRPC<KarabinerRPC>({
 					return { entries: [] };
 				}
 			},
-
-			openFolder: async () => {
+		},
+		messages: {
+			terminalWrite: ({ sessionId, data }) => {
+				const session = sessions.get(sessionId);
+				if (session) {
+					session.proc.terminal?.write(data);
+				}
+			},
+			openFolderDialog: async () => {
 				const chosenPaths = await Utils.openFileDialog({
 					startingFolder: Utils.paths.home,
 					allowedFileTypes: "*",
@@ -141,16 +181,9 @@ const rpc = BrowserView.defineRPC<KarabinerRPC>({
 				});
 
 				if (chosenPaths && chosenPaths.length > 0) {
-					return { path: chosenPaths[0] };
-				}
-				return { path: null };
-			},
-		},
-		messages: {
-			terminalWrite: ({ sessionId, data }) => {
-				const session = sessions.get(sessionId);
-				if (session) {
-					session.proc.terminal?.write(data);
+					mainWindow.webview.rpc?.send.workspaceOpened({
+						path: chosenPaths[0],
+					});
 				}
 			},
 		},
