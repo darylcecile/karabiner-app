@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { IDockviewPanelProps } from "dockview";
+import { terminalRpc } from "../rpc";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -13,31 +14,19 @@ export interface TerminalPanelParams {
 	sessionId?: string;
 }
 
-type TerminalRPC = {
-	spawn: (cols: number, rows: number) => Promise<string>;
-	write: (sessionId: string, data: string) => void;
-	resize: (sessionId: string, cols: number, rows: number) => void;
-	/** Subscribe to output from the PTY. Returns unsubscribe function. */
-	onOutput: (cb: (sessionId: string, data: string) => void) => () => void;
-	/** Subscribe to terminal exit. Returns unsubscribe function. */
-	onExit: (cb: (sessionId: string, code: number) => void) => () => void;
-};
-
 /* ------------------------------------------------------------------ */
 /*  Component                                                         */
 /* ------------------------------------------------------------------ */
 
 /**
  * Terminal panel that renders xterm.js inside a Dockview panel.
- * Connects to the Bun PTY via the RPC bridge passed in params.
+ * Connects to the Bun PTY via the Electrobun RPC bridge.
  */
 export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (props) => {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<Terminal | null>(null);
 	const fitRef = useRef<FitAddon | null>(null);
 	const sessionIdRef = useRef<string | null>(null);
-
-	const rpc = (props.params as TerminalPanelParams & { rpc?: TerminalRPC }).rpc;
 
 	/** Fit the terminal to its container and notify the PTY */
 	const fit = useCallback(() => {
@@ -47,13 +36,13 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 			fitAddon.fit();
 			const term = termRef.current;
 			const sid = sessionIdRef.current;
-			if (term && sid && rpc) {
-				rpc.resize(sid, term.cols, term.rows);
+			if (term && sid) {
+				terminalRpc.resize(sid, term.cols, term.rows);
 			}
 		} catch {
 			// Container may not be visible yet
 		}
-	}, [rpc]);
+	}, []);
 
 	useEffect(() => {
 		const container = containerRef.current;
@@ -115,31 +104,31 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 			}
 		});
 
-		// Connect to PTY via RPC
+		// Connect to PTY via Electrobun RPC
 		let unsubOutput: (() => void) | undefined;
 		let unsubExit: (() => void) | undefined;
 
-		if (rpc) {
+		if (terminalRpc.available) {
 			// Subscribe to output before spawning so we don't miss early output
-			unsubOutput = rpc.onOutput((sid, data) => {
+			unsubOutput = terminalRpc.onOutput((sid, data) => {
 				if (sid === sessionIdRef.current) {
 					term.write(data);
 				}
 			});
 
-			unsubExit = rpc.onExit((sid, code) => {
+			unsubExit = terminalRpc.onExit((sid, code) => {
 				if (sid === sessionIdRef.current) {
 					term.writeln(`\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m`);
 				}
 			});
 
 			// Spawn terminal
-			rpc.spawn(term.cols, term.rows).then((sessionId) => {
+			terminalRpc.spawn(term.cols, term.rows).then((sessionId) => {
 				sessionIdRef.current = sessionId;
 
 				// Forward user input to PTY
 				term.onData((data) => {
-					rpc.write(sessionId, data);
+					terminalRpc.write(sessionId, data);
 				});
 			});
 		} else {
@@ -151,11 +140,19 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 		return () => {
 			unsubOutput?.();
 			unsubExit?.();
+
+			// Clean up the PTY session on the Bun side
+			const sid = sessionIdRef.current;
+			if (sid && terminalRpc.available) {
+				terminalRpc.close(sid);
+			}
+
 			term.dispose();
 			termRef.current = null;
 			fitRef.current = null;
+			sessionIdRef.current = null;
 		};
-	}, [rpc]);
+	}, []);
 
 	// Resize when the Dockview panel resizes
 	useEffect(() => {
