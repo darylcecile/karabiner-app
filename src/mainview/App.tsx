@@ -11,7 +11,9 @@ import { Sidebar, type FileNode } from "./components/Sidebar";
 import { StatusBar, type StatusBarItem } from "./components/StatusBar";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { TerminalPanel } from "./components/TerminalPanel";
-import { readDirectory, openFolderDialog, onWorkspaceOpened } from "./rpc";
+import { EditorPanel } from "./components/EditorPanel";
+import { DiffPanel } from "./components/DiffPanel";
+import { readDirectory, openFolderDialog, onWorkspaceOpened, onFileChanged, gitStatus, gitBranchInfo, watchDirectory, unwatchDirectory } from "./rpc";
 
 /* ------------------------------------------------------------------ */
 /*  Dockview panel components                                         */
@@ -56,20 +58,6 @@ const WelcomePanel = (props: IDockviewPanelProps) => {
 	);
 };
 
-/** Generic editor panel -- placeholder for file content */
-const EditorPanel = (props: IDockviewPanelProps) => {
-	const filePath = props.params.filePath as string | undefined;
-	return (
-		<div className="h-full overflow-auto p-4 font-mono text-[var(--font-size-editor)] leading-[var(--line-height-editor)] text-editor-fg bg-editor">
-			{filePath ? (
-				<pre className="whitespace-pre-wrap">{`// ${filePath}\n// File content will be rendered here`}</pre>
-			) : (
-				<p className="text-fg-muted">Empty editor</p>
-			)}
-		</div>
-	);
-};
-
 /** Context / info panel -- shows MCPs, modified files, etc. */
 const ContextPanel = (_props: IDockviewPanelProps) => {
 	return (
@@ -100,13 +88,8 @@ const karabinerTheme = {
 /*  Status bar data                                                   */
 /* ------------------------------------------------------------------ */
 
-const STATUS_ITEMS: StatusBarItem[] = [
-	{ id: "branch", content: "main", align: "left" },
-	{ id: "errors", content: "0 errors, 0 warnings", align: "left" },
-	{ id: "line", content: "Ln 1, Col 1", align: "right" },
-	{ id: "encoding", content: "UTF-8", align: "right" },
-	{ id: "lang", content: "TypeScript", align: "right" },
-];
+// Status bar items are now dynamically generated in the component
+// based on git branch info and workspace state.
 
 /* ------------------------------------------------------------------ */
 /*  Dockview components map                                           */
@@ -115,9 +98,107 @@ const STATUS_ITEMS: StatusBarItem[] = [
 const dockviewComponents = {
 	welcome: WelcomePanel,
 	editor: EditorPanel,
+	diff: DiffPanel,
 	context: ContextPanel,
 	terminal: TerminalPanel,
 };
+
+/* ------------------------------------------------------------------ */
+/*  Git status helpers                                                */
+/* ------------------------------------------------------------------ */
+
+/** Map git porcelain status codes to FileNode.status values */
+function gitCodeToStatus(code: string): NonNullable<FileNode["status"]> {
+	switch (code) {
+		case "M":
+		case "MM":
+		case "AM":
+			return "modified";
+		case "A":
+			return "added";
+		case "D":
+			return "deleted";
+		case "R":
+		case "RM":
+			return "renamed";
+		case "??":
+			return "untracked";
+		case "!!":
+			return "ignored";
+		case "UU":
+		case "AA":
+		case "DD":
+			return "conflict";
+		default:
+			// Any other status with M in it
+			if (code.includes("M")) return "modified";
+			if (code.includes("A")) return "added";
+			if (code.includes("D")) return "deleted";
+			if (code.includes("R")) return "renamed";
+			return "modified";
+	}
+}
+
+/**
+ * Apply git status to file tree items and propagate status to parent
+ * directories. A directory inherits the "most important" status of
+ * any of its descendant files.
+ */
+function applyGitStatusToTree(
+	items: Record<string, FileNode>,
+	statusFiles: Record<string, string>,
+	workspacePath: string,
+): Record<string, FileNode> {
+	if (Object.keys(statusFiles).length === 0) return items;
+
+	const updated = { ...items };
+
+	// Track which directories contain changed files
+	const dirStatuses = new Map<string, Set<NonNullable<FileNode["status"]>>>();
+
+	// Apply status to individual files
+	for (const [relativePath, statusCode] of Object.entries(statusFiles)) {
+		const absolutePath = `${workspacePath}/${relativePath}`;
+		const toKey = (p: string) => p.replace(/[^a-zA-Z0-9_\-/]/g, "_");
+		const key = toKey(absolutePath);
+		const status = gitCodeToStatus(statusCode);
+
+		if (updated[key]) {
+			updated[key] = { ...updated[key], status };
+		}
+
+		// Propagate to parent directories
+		if (status) {
+			const parts = absolutePath.split("/");
+			// Walk up from the file to the workspace root
+			for (let i = parts.length - 1; i >= 1; i--) {
+				const dirPath = parts.slice(0, i).join("/");
+				if (dirPath.length < workspacePath.length) break;
+				const dirKey = toKey(dirPath);
+				if (!updated[dirKey] || !updated[dirKey].isDirectory) continue;
+
+				if (!dirStatuses.has(dirKey)) {
+					dirStatuses.set(dirKey, new Set());
+				}
+				dirStatuses.get(dirKey)!.add(status);
+			}
+		}
+	}
+
+	// Apply the most important status to directories
+	// Priority: conflict > deleted > modified > renamed > added > untracked > ignored
+	const STATUS_PRIORITY: NonNullable<FileNode["status"]>[] = [
+		"conflict", "deleted", "modified", "renamed", "added", "untracked", "ignored",
+	];
+
+	for (const [dirKey, statuses] of dirStatuses) {
+		if (!updated[dirKey]) continue;
+		const bestStatus = STATUS_PRIORITY.find((s) => statuses.has(s)) ?? "modified";
+		updated[dirKey] = { ...updated[dirKey], status: bestStatus };
+	}
+
+	return updated;
+}
 
 /* ------------------------------------------------------------------ */
 /*  File tree helpers                                                  */
@@ -225,11 +306,87 @@ function App() {
 	const [workspacePath, setWorkspacePath] = useState<string | null>(null);
 	const [fileTreeItems, setFileTreeItems] = useState<Record<string, FileNode>>({});
 	const [fileTreeRootId, setFileTreeRootId] = useState<string>("root");
+	const [gitStatusMap, setGitStatusMap] = useState<Record<string, string>>({});
+
+	// Git branch state
+	const [branchName, setBranchName] = useState<string | null>(null);
+	const [branchAhead, setBranchAhead] = useState(0);
+	const [branchBehind, setBranchBehind] = useState(0);
 
 	const workspaceOpen = workspacePath !== null;
 
+	/** Refresh git status and branch info for the current workspace */
+	const refreshGitStatus = useCallback(async (wsPath: string, currentItems?: Record<string, FileNode>) => {
+		try {
+			const [statusResult, branchResult] = await Promise.all([
+				gitStatus(wsPath),
+				gitBranchInfo(wsPath),
+			]);
+
+			// Update branch info
+			setBranchName(branchResult.branch);
+			setBranchAhead(branchResult.ahead);
+			setBranchBehind(branchResult.behind);
+
+			if (statusResult.isGitRepo && Object.keys(statusResult.files).length > 0) {
+				setGitStatusMap(statusResult.files);
+
+				if (currentItems) {
+					// Apply git status to the provided items directly
+					const decorated = applyGitStatusToTree(currentItems, statusResult.files, wsPath);
+					setFileTreeItems(decorated);
+				} else {
+					// Use functional updater to avoid stale closure over fileTreeItems
+					setFileTreeItems(prev => {
+						if (Object.keys(prev).length === 0) return prev;
+						// Clear existing statuses, then apply new ones
+						const cleaned: Record<string, FileNode> = {};
+						for (const [key, node] of Object.entries(prev)) {
+							if (node.status) {
+								const { status: _, ...rest } = node;
+								cleaned[key] = rest as FileNode;
+							} else {
+								cleaned[key] = node;
+							}
+						}
+						return applyGitStatusToTree(cleaned, statusResult.files, wsPath);
+					});
+				}
+			} else {
+				setGitStatusMap(statusResult.isGitRepo ? {} : {});
+				// Clear git statuses from tree items
+				if (currentItems) {
+					setFileTreeItems(currentItems);
+				} else {
+					setFileTreeItems(prev => {
+						const cleaned: Record<string, FileNode> = {};
+						for (const [key, node] of Object.entries(prev)) {
+							if (node.status) {
+								const { status: _, ...rest } = node;
+								cleaned[key] = rest as FileNode;
+							} else {
+								cleaned[key] = node;
+							}
+						}
+						return cleaned;
+					});
+				}
+			}
+		} catch {
+			// Git operations failed — not a git repo or git not available
+			setBranchName(null);
+			setBranchAhead(0);
+			setBranchBehind(0);
+		}
+	}, []); // No dependencies — uses functional updaters
+
 	/** Open a folder in the workspace: swap welcome→terminal immediately, then load file tree in background */
 	const handleOpenWorkspace = useCallback((folderPath: string) => {
+		// Stop watching previous workspace
+		if (workspacePath) {
+			unwatchDirectory(workspacePath).catch(() => {});
+		}
+
 		setWorkspacePath(folderPath);
 		setSidebarVisible(true);
 
@@ -266,16 +423,20 @@ function App() {
 
 		// Load the file tree in the background (don't block the UI)
 		loadFileTree(folderPath)
-			.then(({ items, rootId }) => {
-				setFileTreeItems(items);
+			.then(async ({ items, rootId }) => {
 				setFileTreeRootId(rootId);
+				// Refresh git status (applies decorations to the loaded items)
+				await refreshGitStatus(folderPath, items);
 			})
 			.catch(() => {
 				// If loading fails, show an empty tree — sidebar is still visible
 				setFileTreeItems({});
 				setFileTreeRootId("root");
 			});
-	}, []);
+
+		// Start watching for file changes
+		watchDirectory(folderPath).catch(() => {});
+	}, [workspacePath, refreshGitStatus]);
 
 	/** Trigger the native folder picker. Result arrives async via onWorkspaceOpened. */
 	const handleOpenFolderDialog = useCallback(() => {
@@ -313,36 +474,84 @@ function App() {
 				e.preventDefault();
 				handleOpenFolderDialog();
 			}
+			// Prevent default browser save behavior (Monaco handles Cmd+S internally)
+			if (e.key === "s" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+				e.preventDefault();
+			}
 		};
 		document.addEventListener("keydown", handleKeyDown);
 		return () => document.removeEventListener("keydown", handleKeyDown);
 	}, [handleOpenFolderDialog]);
 
-	/** Open a file in the editor area */
+	// Listen for file change events from the file watcher — debounce and refresh git status
+	useEffect(() => {
+		if (!workspacePath) return;
+
+		let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const unsub = onFileChanged((_path, _event) => {
+			// Debounce: wait 500ms after the last change before refreshing
+			if (debounceTimer) clearTimeout(debounceTimer);
+			debounceTimer = setTimeout(() => {
+				refreshGitStatus(workspacePath);
+			}, 500);
+		});
+
+		return () => {
+			unsub();
+			if (debounceTimer) clearTimeout(debounceTimer);
+		};
+	}, [workspacePath, refreshGitStatus]);
+
+	/** Open a file in the editor area — diff view for changed files, editor for clean files */
 	const handleSelectFile = useCallback((path: string) => {
 		const api = apiRef.current;
 		if (!api) return;
 
 		// Check if a panel for this file already exists
-		const existing = api.getPanel(path);
+		const panelId = `file:${path}`;
+		const existing = api.getPanel(panelId);
 		if (existing) {
 			existing.api.setActive();
 			return;
 		}
 
-		// Find an anchor panel to open "within" (first non-welcome panel, or any)
+		// Find an anchor panel to open "within"
 		const anchor = api.panels[0];
 		if (!anchor) return;
 
 		const fileName = path.split("/").pop() ?? path;
-		api.addPanel({
-			id: path,
-			component: "editor",
-			title: fileName,
-			params: { filePath: path },
-			position: { referencePanel: anchor.id, direction: "within" },
-		});
-	}, []);
+
+		// Determine git status for this file
+		const relativePath = workspacePath && path.startsWith(workspacePath)
+			? path.substring(workspacePath.length + 1)
+			: null;
+		const fileGitStatus = relativePath ? gitStatusMap[relativePath] : undefined;
+
+		if (fileGitStatus && workspacePath) {
+			// File has changes — open diff view
+			api.addPanel({
+				id: panelId,
+				component: "diff",
+				title: `${fileName} (diff)`,
+				params: {
+					filePath: path,
+					workspacePath,
+					gitStatus: fileGitStatus,
+				},
+				position: { referencePanel: anchor.id, direction: "within" },
+			});
+		} else {
+			// Clean file or no git — open editor
+			api.addPanel({
+				id: panelId,
+				component: "editor",
+				title: fileName,
+				params: { filePath: path },
+				position: { referencePanel: anchor.id, direction: "within" },
+			});
+		}
+	}, [workspacePath, gitStatusMap]);
 
 	/** Open a new terminal panel as a tab in the main group */
 	const openTerminal = useCallback(() => {
@@ -437,6 +646,36 @@ function App() {
 		[workspaceOpen, sidebarVisible, openTerminal, toggleSidebar, handleOpenFolderDialog],
 	);
 
+	/** Dynamic status bar items based on workspace + git state */
+	const statusItems: StatusBarItem[] = useMemo(() => {
+		const items: StatusBarItem[] = [];
+
+		if (branchName) {
+			let branchContent = branchName;
+			if (branchAhead > 0 || branchBehind > 0) {
+				const parts: string[] = [];
+				if (branchAhead > 0) parts.push(`\u2191${branchAhead}`);
+				if (branchBehind > 0) parts.push(`\u2193${branchBehind}`);
+				branchContent = `${branchName} ${parts.join(" ")}`;
+			}
+			items.push({ id: "branch", content: branchContent, align: "left" });
+		}
+
+		// Count changed files from git status
+		const changeCount = Object.keys(gitStatusMap).length;
+		if (changeCount > 0) {
+			items.push({
+				id: "changes",
+				content: `${changeCount} change${changeCount !== 1 ? "s" : ""}`,
+				align: "left",
+			});
+		}
+
+		items.push({ id: "encoding", content: "UTF-8", align: "right" });
+
+		return items;
+	}, [branchName, branchAhead, branchBehind, gitStatusMap]);
+
 	return (
 		<div className="flex flex-col h-full w-full overflow-hidden bg-bg">
 			{/* Main content: sidebar + dockview */}
@@ -462,7 +701,7 @@ function App() {
 			</div>
 
 			{/* Status Bar */}
-			<StatusBar items={STATUS_ITEMS} />
+			<StatusBar items={statusItems} />
 
 			{/* Command Palette (overlay) */}
 			<CommandPalette commands={commands} />
