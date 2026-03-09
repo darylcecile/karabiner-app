@@ -89,6 +89,16 @@ type BunSchema = RPCSchema<{
 			params: { path: string };
 			response: { ok: boolean };
 		};
+		/** Fetch context sidebar data from the OpenCode server */
+		getOpenCodeContext: {
+			params: Record<string, never>;
+			response: OpenCodeContextData;
+		};
+		/** Get the current OpenCode server URL */
+		getOpenCodeUrl: {
+			params: Record<string, never>;
+			response: { url: string };
+		};
 	};
 	messages: {
 		/** Write user input to a terminal session */
@@ -97,6 +107,8 @@ type BunSchema = RPCSchema<{
 		openFolderDialog: Record<string, never>;
 		/** Open a URL in the system default browser */
 		openExternal: { url: string };
+		/** Set the OpenCode server URL */
+		setOpenCodeUrl: { url: string };
 	};
 }>;
 
@@ -112,8 +124,66 @@ type WebviewSchema = RPCSchema<{
 		workspaceOpened: { path: string };
 		/** A file or directory changed on disk (from file watcher) */
 		fileChanged: { path: string; event: "create" | "update" | "delete" };
+		/** Updated OpenCode context data pushed from bun side (SSE events) */
+		openCodeContextUpdated: OpenCodeContextData;
+		/** Request to open an OpenCode terminal (triggered from app menu) */
+		openOpenCodeTerminal: Record<string, never>;
 	};
 }>;
+
+/* ------------------------------------------------------------------ */
+/*  OpenCode integration types                                        */
+/* ------------------------------------------------------------------ */
+
+/** Token usage breakdown for an OpenCode session */
+export type OpenCodeTokens = {
+	input: number;
+	output: number;
+	reasoning: number;
+	cacheRead: number;
+	cacheWrite: number;
+	total: number;
+};
+
+/** MCP server status from OpenCode */
+export type OpenCodeMcpServer = {
+	name: string;
+	status: "connected" | "disabled" | "failed" | "needs_auth" | "needs_client_registration";
+	error?: string;
+};
+
+/** Model info from OpenCode */
+export type OpenCodeModelInfo = {
+	id: string;
+	providerID: string;
+	name: string;
+	contextLimit: number;
+	outputLimit: number;
+};
+
+/** Combined context sidebar data from OpenCode */
+export type OpenCodeContextData = {
+	/** Whether we successfully connected to the OpenCode server */
+	connected: boolean;
+	/** Currently tracked session ID */
+	sessionId: string | null;
+	/** Session title */
+	sessionTitle: string | null;
+	/** Session status: idle, busy, retry */
+	sessionStatus: "idle" | "busy" | "retry" | null;
+	/** Token usage for the session */
+	tokens: OpenCodeTokens;
+	/** Total cost for the session */
+	sessionCost: number;
+	/** Total cost across all sessions created/updated today */
+	todayCost: number;
+	/** MCP server statuses */
+	mcpServers: OpenCodeMcpServer[];
+	/** Active model info */
+	model: OpenCodeModelInfo | null;
+	/** The OpenCode server URL currently being used */
+	serverUrl: string;
+};
 
 export type KarabinerRPC = {
 	bun: BunSchema;

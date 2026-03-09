@@ -7,13 +7,15 @@ import {
 } from "dockview";
 import "dockview/dist/styles/dockview.css";
 
-import { Sidebar, type FileNode } from "./components/Sidebar";
+import { SidebarPanel, type FileNode } from "./components/Sidebar";
 import { StatusBar, type StatusBarItem } from "./components/StatusBar";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { EditorPanel } from "./components/EditorPanel";
 import { DiffPanel } from "./components/DiffPanel";
-import { readDirectory, openFolderDialog, onWorkspaceOpened, onFileChanged, gitStatus, gitBranchInfo, watchDirectory, unwatchDirectory } from "./rpc";
+import { ContextSidebarPanel } from "./components/ContextSidebar";
+import { readDirectory, openFolderDialog, onWorkspaceOpened, onFileChanged, gitStatus, gitBranchInfo, watchDirectory, unwatchDirectory, getOpenCodeContext, onOpenCodeContextUpdated, onOpenOpenCodeTerminal } from "./rpc";
+import type { OpenCodeContextData } from "../shared/rpc";
 
 /* ------------------------------------------------------------------ */
 /*  Dockview panel components                                         */
@@ -58,22 +60,7 @@ const WelcomePanel = (props: IDockviewPanelProps) => {
 	);
 };
 
-/** Context / info panel -- shows MCPs, modified files, etc. */
-const ContextPanel = (_props: IDockviewPanelProps) => {
-	return (
-		<div className="h-full overflow-auto text-[var(--font-size-sm)] text-context-panel-fg bg-context-panel">
-			<div className="px-3 py-2 bg-context-panel-header text-[11px] font-semibold uppercase tracking-wider">
-				Modified Files
-			</div>
-			<div className="px-3 py-2 text-fg-muted">No changes detected</div>
 
-			<div className="px-3 py-2 bg-context-panel-header text-[11px] font-semibold uppercase tracking-wider">
-				MCP Servers
-			</div>
-			<div className="px-3 py-2 text-fg-muted">No servers connected</div>
-		</div>
-	);
-};
 
 /* ------------------------------------------------------------------ */
 /*  Dockview theme                                                    */
@@ -99,8 +86,9 @@ const dockviewComponents = {
 	welcome: WelcomePanel,
 	editor: EditorPanel,
 	diff: DiffPanel,
-	context: ContextPanel,
 	terminal: TerminalPanel,
+	sidebar: SidebarPanel,
+	"context-sidebar": ContextSidebarPanel,
 };
 
 /* ------------------------------------------------------------------ */
@@ -298,9 +286,37 @@ async function loadFileTree(
 
 let terminalCounter = 0;
 
+/** The port OpenCode terminals will listen on */
+const OPENCODE_PORT = 4096;
+
+/** Panel IDs that are sidebars — excluded from anchor searches */
+const SIDEBAR_PANEL_IDS = new Set(["sidebar", "context-sidebar"]);
+
+/**
+ * Hide the tab header for groups that contain only a single terminal panel.
+ * Show the tab header again once a second tab is added or the sole tab isn't a terminal.
+ * Sidebar groups are skipped (they manage their own header visibility).
+ */
+function updateMainGroupHeaders(api: DockviewApi) {
+	for (const group of api.groups) {
+		// Skip sidebar groups — they always hide headers via their own logic
+		const hasSidebar = group.panels.some((p) =>
+			SIDEBAR_PANEL_IDS.has(p.id),
+		);
+		if (hasSidebar) continue;
+
+		const panels = group.panels;
+		const shouldHide =
+			panels.length === 1 && panels[0].id.startsWith("terminal-");
+
+		group.header.hidden = shouldHide;
+	}
+}
+
 function App() {
 	const apiRef = useRef<DockviewApi | null>(null);
 	const [sidebarVisible, setSidebarVisible] = useState(true);
+	const [contextSidebarVisible, setContextSidebarVisible] = useState(true);
 
 	// Workspace state
 	const [workspacePath, setWorkspacePath] = useState<string | null>(null);
@@ -313,7 +329,13 @@ function App() {
 	const [branchAhead, setBranchAhead] = useState(0);
 	const [branchBehind, setBranchBehind] = useState(0);
 
+	// OpenCode context state
+	const [openCodeContext, setOpenCodeContext] = useState<OpenCodeContextData | null>(null);
+
 	const workspaceOpen = workspacePath !== null;
+
+	// Stable ref for handleSelectFile to avoid stale closures in panel params
+	const handleSelectFileRef = useRef<(path: string) => void>(() => {});
 
 	/** Refresh git status and branch info for the current workspace */
 	const refreshGitStatus = useCallback(async (wsPath: string, currentItems?: Record<string, FileNode>) => {
@@ -389,11 +411,24 @@ function App() {
 
 		setWorkspacePath(folderPath);
 		setSidebarVisible(true);
+		setContextSidebarVisible(true);
 
-		// Transition Dockview immediately: remove welcome panel, open a terminal tab
+		// Transition Dockview immediately: remove welcome panel, add sidebar + terminal
 		const api = apiRef.current;
 		if (api) {
 			const termId = `terminal-${++terminalCounter}`;
+
+			// Remove existing sidebar if re-opening a different folder
+			const existingSidebar = api.getPanel("sidebar");
+			if (existingSidebar) {
+				api.removePanel(existingSidebar);
+			}
+
+			// Remove existing context sidebar if re-opening
+			const existingContextSidebar = api.getPanel("context-sidebar");
+			if (existingContextSidebar) {
+				api.removePanel(existingContextSidebar);
+			}
 
 			// Add terminal in the same group as welcome (replaces it visually)
 			const welcomePanel = api.getPanel("welcome");
@@ -408,7 +443,7 @@ function App() {
 				api.removePanel(welcomePanel);
 			} else {
 				// No welcome panel (maybe already removed) — just add terminal
-				const anchor = api.panels[0];
+				const anchor = api.panels.find((p) => !SIDEBAR_PANEL_IDS.has(p.id));
 				api.addPanel({
 					id: termId,
 					component: "terminal",
@@ -418,6 +453,53 @@ function App() {
 						? { referencePanel: anchor.id, direction: "within" }
 						: undefined,
 				});
+			}
+
+			// Add sidebar panel to the left of the terminal/editor area
+			const mainPanel = api.getPanel(termId);
+			if (mainPanel) {
+				api.addPanel({
+					id: "sidebar",
+					component: "sidebar",
+					title: "Explorer",
+					params: {
+						title: "Explorer",
+						items: {},
+						rootId: "root",
+						onSelectFile: handleSelectFileRef.current,
+					},
+					position: { referencePanel: mainPanel.id, direction: "left" },
+					initialWidth: 240,
+					minimumWidth: 140,
+					maximumWidth: 600,
+				});
+
+				// Lock the sidebar group to prevent drops and hide the close button
+				const sidebarPanel = api.getPanel("sidebar");
+				if (sidebarPanel?.group) {
+					sidebarPanel.group.locked = "no-drop-target";
+					// Mark the sidebar group for CSS targeting (hide tab bar)
+					sidebarPanel.group.header.hidden = true;
+				}
+
+				// Add context sidebar to the right of the main area
+				api.addPanel({
+					id: "context-sidebar",
+					component: "context-sidebar",
+					title: "Context",
+					params: { openCodeContext: openCodeContext ?? undefined },
+					position: { referencePanel: mainPanel.id, direction: "right" },
+					initialWidth: 280,
+					minimumWidth: 140,
+					maximumWidth: 500,
+				});
+
+				// Lock the context sidebar group
+				const contextPanel = api.getPanel("context-sidebar");
+				if (contextPanel?.group) {
+					contextPanel.group.locked = "no-drop-target";
+					contextPanel.group.header.hidden = true;
+				}
 			}
 		}
 
@@ -455,6 +537,11 @@ function App() {
 				title: "Welcome",
 				params: { onOpenFolder: handleOpenFolderDialog },
 			});
+
+			// Hide tab headers for groups that contain only a single terminal
+			event.api.onDidAddPanel(() => updateMainGroupHeaders(event.api));
+			event.api.onDidRemovePanel(() => updateMainGroupHeaders(event.api));
+			event.api.onDidMovePanel(() => updateMainGroupHeaders(event.api));
 		},
 		[handleOpenFolderDialog],
 	);
@@ -467,7 +554,7 @@ function App() {
 		return unsub;
 	}, [handleOpenWorkspace]);
 
-	// Listen for Cmd+O keyboard shortcut to open a folder
+	// Listen for keyboard shortcuts (Cmd+O, Cmd+S)
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (e.key === "o" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
@@ -503,6 +590,71 @@ function App() {
 		};
 	}, [workspacePath, refreshGitStatus]);
 
+	// Poll OpenCode server for context data and push updates to the context sidebar
+	useEffect(() => {
+		if (!workspaceOpen) return;
+
+		let cancelled = false;
+
+		const fetchAndUpdate = async () => {
+			try {
+				const data = await getOpenCodeContext();
+				if (!cancelled) {
+					setOpenCodeContext(data);
+				}
+			} catch {
+				// Server unreachable — set disconnected state
+				if (!cancelled) {
+					setOpenCodeContext((prev) =>
+						prev?.connected === false ? prev : {
+							connected: false,
+							sessionId: null,
+							sessionTitle: null,
+							sessionStatus: null,
+							tokens: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+							sessionCost: 0,
+							todayCost: 0,
+							mcpServers: [],
+							model: null,
+							serverUrl: prev?.serverUrl ?? "http://127.0.0.1:4096",
+						},
+					);
+				}
+			}
+		};
+
+		// Initial fetch
+		fetchAndUpdate();
+
+		// Poll every 30 seconds as a fallback (SSE provides real-time updates from bun side)
+		const interval = setInterval(fetchAndUpdate, 30_000);
+
+		// Also listen for SSE push updates
+		const unsubSSE = onOpenCodeContextUpdated((data) => {
+			if (!cancelled) {
+				setOpenCodeContext(data);
+			}
+		});
+
+		return () => {
+			cancelled = true;
+			clearInterval(interval);
+			unsubSSE();
+		};
+	}, [workspaceOpen]);
+
+	// Push OpenCode context data to the context sidebar panel when it changes
+	useEffect(() => {
+		const api = apiRef.current;
+		if (!api || !openCodeContext) return;
+		const contextPanel = api.getPanel("context-sidebar");
+		if (!contextPanel) return;
+
+		contextPanel.api.updateParameters({
+			openCodeContext,
+		});
+	}, [openCodeContext]);
+
 	/** Open a file in the editor area — diff view for changed files, editor for clean files */
 	const handleSelectFile = useCallback((path: string) => {
 		const api = apiRef.current;
@@ -516,8 +668,8 @@ function App() {
 			return;
 		}
 
-		// Find an anchor panel to open "within"
-		const anchor = api.panels[0];
+		// Find an anchor panel to open "within" (skip sidebar panels)
+		const anchor = api.panels.find((p) => !SIDEBAR_PANEL_IDS.has(p.id));
 		if (!anchor) return;
 
 		const fileName = path.split("/").pop() ?? path;
@@ -553,6 +705,24 @@ function App() {
 		}
 	}, [workspacePath, gitStatusMap]);
 
+	// Keep the ref in sync so the sidebar always calls the latest version
+	handleSelectFileRef.current = handleSelectFile;
+
+	// Push updated file tree data to the sidebar panel whenever state changes
+	useEffect(() => {
+		const api = apiRef.current;
+		if (!api) return;
+		const sidebarPanel = api.getPanel("sidebar");
+		if (!sidebarPanel) return;
+
+		sidebarPanel.api.updateParameters({
+			title: "Explorer",
+			items: fileTreeItems,
+			rootId: fileTreeRootId,
+			onSelectFile: handleSelectFileRef.current,
+		});
+	}, [fileTreeItems, fileTreeRootId]);
+
 	/** Open a new terminal panel as a tab in the main group */
 	const openTerminal = useCallback(() => {
 		const api = apiRef.current;
@@ -560,11 +730,11 @@ function App() {
 
 		const termId = `terminal-${++terminalCounter}`;
 
-		// Find an existing terminal to group with, or use the first panel
+		// Find an existing terminal to group with, or use the first non-sidebar panel
 		const existingTerminal = api.panels.find(
 			(p) => p.id.startsWith("terminal-"),
 		);
-		const anchor = existingTerminal ?? api.panels[0];
+		const anchor = existingTerminal ?? api.panels.find((p) => !SIDEBAR_PANEL_IDS.has(p.id));
 		if (!anchor) return;
 
 		api.addPanel({
@@ -576,11 +746,145 @@ function App() {
 		});
 	}, [workspacePath]);
 
-	/** Toggle sidebar visibility (only meaningful when a folder is open) */
+	/** Open a new terminal that auto-runs `opencode --port 4096` */
+	const openOpenCodeTerminal = useCallback(() => {
+		const api = apiRef.current;
+		if (!api) return;
+
+		const termId = `terminal-${++terminalCounter}`;
+
+		const existingTerminal = api.panels.find(
+			(p) => p.id.startsWith("terminal-"),
+		);
+		const anchor = existingTerminal ?? api.panels.find((p) => !SIDEBAR_PANEL_IDS.has(p.id));
+		if (!anchor) return;
+
+		api.addPanel({
+			id: termId,
+			component: "terminal",
+			title: "OpenCode",
+			params: {
+				cwd: workspacePath ?? undefined,
+				initialCommand: `opencode --port ${OPENCODE_PORT}`,
+			},
+			position: { referencePanel: anchor.id, direction: "within" },
+		});
+	}, [workspacePath]);
+
+	// Listen for "Open OpenCode" events from the app menu
+	useEffect(() => {
+		const unsub = onOpenOpenCodeTerminal(() => {
+			openOpenCodeTerminal();
+		});
+		return unsub;
+	}, [openOpenCodeTerminal]);
+
+	/** Toggle sidebar visibility by adding/removing the sidebar panel */
 	const toggleSidebar = useCallback(() => {
 		if (!workspaceOpen) return;
-		setSidebarVisible((v) => !v);
-	}, [workspaceOpen]);
+		const api = apiRef.current;
+		if (!api) return;
+
+		const sidebarPanel = api.getPanel("sidebar");
+		if (sidebarPanel) {
+			// Sidebar is visible — remove it
+			api.removePanel(sidebarPanel);
+			setSidebarVisible(false);
+		} else {
+			// Sidebar is hidden — re-add it to the left
+			const anchor = api.panels.find((p) => !SIDEBAR_PANEL_IDS.has(p.id));
+			if (!anchor) return;
+
+			api.addPanel({
+				id: "sidebar",
+				component: "sidebar",
+				title: "Explorer",
+				params: {
+					title: "Explorer",
+					items: fileTreeItems,
+					rootId: fileTreeRootId,
+					onSelectFile: handleSelectFileRef.current,
+				},
+				position: { referencePanel: anchor.id, direction: "left" },
+				initialWidth: 240,
+				minimumWidth: 140,
+				maximumWidth: 600,
+			});
+
+			// Lock and hide header on the re-added sidebar
+			const newSidebar = api.getPanel("sidebar");
+			if (newSidebar?.group) {
+				newSidebar.group.locked = "no-drop-target";
+				newSidebar.group.header.hidden = true;
+			}
+
+			setSidebarVisible(true);
+		}
+	}, [workspaceOpen, fileTreeItems, fileTreeRootId]);
+
+	/** Toggle context sidebar visibility by adding/removing the panel */
+	const toggleContextSidebar = useCallback(() => {
+		if (!workspaceOpen) return;
+		const api = apiRef.current;
+		if (!api) return;
+
+		const contextPanel = api.getPanel("context-sidebar");
+		if (contextPanel) {
+			// Context sidebar is visible — remove it
+			api.removePanel(contextPanel);
+			setContextSidebarVisible(false);
+		} else {
+			// Context sidebar is hidden — re-add it to the right
+			const anchor = api.panels.find(
+				(p) => !SIDEBAR_PANEL_IDS.has(p.id),
+			);
+			if (!anchor) return;
+
+			api.addPanel({
+				id: "context-sidebar",
+				component: "context-sidebar",
+				title: "Context",
+				params: { openCodeContext: openCodeContext ?? undefined },
+				position: { referencePanel: anchor.id, direction: "right" },
+				initialWidth: 280,
+				minimumWidth: 140,
+				maximumWidth: 500,
+			});
+
+			// Lock and hide header on the re-added context sidebar
+			const newContextPanel = api.getPanel("context-sidebar");
+			if (newContextPanel?.group) {
+				newContextPanel.group.locked = "no-drop-target";
+				newContextPanel.group.header.hidden = true;
+			}
+
+			setContextSidebarVisible(true);
+		}
+	}, [workspaceOpen, openCodeContext]);
+
+	// Listen for Cmd+B keyboard shortcut to toggle sidebar
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "b" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+				e.preventDefault();
+				toggleSidebar();
+			}
+		};
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, [toggleSidebar]);
+
+	// Listen for Cmd+Shift+B keyboard shortcut to toggle context sidebar
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "b" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+				e.preventDefault();
+				toggleContextSidebar();
+			}
+		};
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, [toggleContextSidebar]);
 
 	/** Command palette commands */
 	const commands: CommandItem[] = useMemo(
@@ -599,6 +903,12 @@ function App() {
 				shortcut: "Ctrl+`",
 				onSelect: openTerminal,
 			},
+			{
+				id: "open-opencode",
+				label: "Open OpenCode",
+				group: "Terminal",
+				onSelect: openOpenCodeTerminal,
+			},
 			...(workspaceOpen
 				? [
 						{
@@ -607,6 +917,13 @@ function App() {
 							group: "View",
 							shortcut: "Cmd+B",
 							onSelect: toggleSidebar,
+						},
+						{
+							id: "toggle-context-sidebar",
+							label: contextSidebarVisible ? "Hide Context Panel" : "Show Context Panel",
+							group: "View",
+							shortcut: "Cmd+Shift+B",
+							onSelect: toggleContextSidebar,
 						},
 					]
 				: []),
@@ -619,7 +936,7 @@ function App() {
 					const api = apiRef.current;
 					if (!api) return;
 					const active = api.activePanel;
-					if (active && active.id !== "welcome") {
+					if (active && active.id !== "welcome" && !SIDEBAR_PANEL_IDS.has(active.id)) {
 						api.removePanel(active);
 					}
 				},
@@ -643,7 +960,7 @@ function App() {
 				},
 			},
 		],
-		[workspaceOpen, sidebarVisible, openTerminal, toggleSidebar, handleOpenFolderDialog],
+		[workspaceOpen, sidebarVisible, contextSidebarVisible, openTerminal, openOpenCodeTerminal, toggleSidebar, toggleContextSidebar, handleOpenFolderDialog],
 	);
 
 	/** Dynamic status bar items based on workspace + git state */
@@ -678,26 +995,13 @@ function App() {
 
 	return (
 		<div className="flex flex-col h-full w-full overflow-hidden bg-bg">
-			{/* Main content: sidebar + dockview */}
-			<div className="flex flex-1 min-h-0">
-				{/* Sidebar -- only visible when a folder is open */}
-				{workspaceOpen && sidebarVisible && (
-					<Sidebar
-						title="Explorer"
-						items={fileTreeItems}
-						rootId={fileTreeRootId}
-						onSelectFile={handleSelectFile}
-					/>
-				)}
-
-				{/* Dockview -- fills remaining space */}
-				<div className="flex-1 min-w-0">
-					<DockviewReact
-						theme={karabinerTheme}
-						components={dockviewComponents}
-						onReady={onReady}
-					/>
-				</div>
+			{/* Main content: dockview handles sidebar + editor layout */}
+			<div className="flex-1 min-h-0">
+				<DockviewReact
+					theme={karabinerTheme}
+					components={dockviewComponents}
+					onReady={onReady}
+				/>
 			</div>
 
 			{/* Status Bar */}

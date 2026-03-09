@@ -5,6 +5,7 @@ import {
 	hotkeysCoreFeature,
 } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
+import type { IDockviewPanelProps } from "dockview";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -18,16 +19,6 @@ export interface FileNode {
 	/** Git status for decorations */
 	status?: "modified" | "added" | "deleted" | "untracked" | "renamed" | "ignored" | "conflict";
 }
-
-type Props = {
-	title: string;
-	/** Map of item id → FileNode data */
-	items: Record<string, FileNode>;
-	/** The root item id (e.g. the project root path) */
-	rootId: string;
-	/** Called when a file is selected (not a directory) */
-	onSelectFile: (path: string) => void;
-};
 
 /* ------------------------------------------------------------------ */
 /*  Git status helpers                                                */
@@ -54,10 +45,17 @@ const GIT_STATUS_LABELS: Record<string, string> = {
 };
 
 /* ------------------------------------------------------------------ */
-/*  Sidebar component                                                 */
+/*  Inner sidebar content (pure presentational)                       */
 /* ------------------------------------------------------------------ */
 
-export const Sidebar: FC<Props> = ({ title, items, rootId, onSelectFile }) => {
+type SidebarContentProps = {
+	title: string;
+	items: Record<string, FileNode>;
+	rootId: string;
+	onSelectFile: (path: string) => void;
+};
+
+const SidebarContent: FC<SidebarContentProps> = ({ title, items, rootId, onSelectFile }) => {
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
 	const handleSelect = useCallback(
@@ -89,10 +87,7 @@ export const Sidebar: FC<Props> = ({ title, items, rootId, onSelectFile }) => {
 	}, [items, rootId, tree]);
 
 	return (
-		<div
-			className="flex flex-col bg-sidebar border-r border-sidebar-border overflow-hidden shrink-0 select-none"
-			style={{ width: "var(--spacing-sidebar-width)" }}
-		>
+		<div className="flex flex-col h-full bg-sidebar overflow-hidden select-none">
 			{/* Section header */}
 			<div
 				className="flex items-center px-4 uppercase tracking-wider font-semibold
@@ -173,3 +168,34 @@ export const Sidebar: FC<Props> = ({ title, items, rootId, onSelectFile }) => {
 		</div>
 	);
 };
+
+/* ------------------------------------------------------------------ */
+/*  Dockview panel wrapper                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * SidebarPanel — a Dockview panel component that wraps SidebarContent.
+ * Receives file tree data via panel params.
+ */
+export const SidebarPanel = (props: IDockviewPanelProps) => {
+	const { title, items, rootId, onSelectFile } = props.params as {
+		title: string;
+		items: Record<string, FileNode>;
+		rootId: string;
+		onSelectFile: (path: string) => void;
+	};
+
+	return (
+		<SidebarContent
+			title={title ?? "Explorer"}
+			items={items ?? {}}
+			rootId={rootId ?? "root"}
+			onSelectFile={onSelectFile ?? (() => {})}
+		/>
+	);
+};
+
+/* ------------------------------------------------------------------ */
+/*  Legacy export for backwards compat (re-export type)               */
+/* ------------------------------------------------------------------ */
+export { SidebarContent as Sidebar };

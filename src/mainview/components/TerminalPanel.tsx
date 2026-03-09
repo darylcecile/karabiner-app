@@ -20,6 +20,8 @@ export interface TerminalPanelParams {
 	sessionId?: string;
 	/** Working directory for the terminal */
 	cwd?: string;
+	/** Command to run automatically after the shell initializes */
+	initialCommand?: string;
 }
 
 /** Shared search decoration colors */
@@ -47,6 +49,7 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const sessionIdRef = useRef<string | null>(null);
 	const cwdRef = useRef<string | undefined>((props.params as TerminalPanelParams).cwd);
+	const initialCommandRef = useRef<string | undefined>((props.params as TerminalPanelParams).initialCommand);
 
 	// Search overlay state
 	const [searchOpen, setSearchOpen] = useState(false);
@@ -223,6 +226,15 @@ export const TerminalPanel: FC<IDockviewPanelProps<TerminalPanelParams>> = (prop
 				term.onBinary((data) => {
 					terminalRpc.write(sessionId, data);
 				});
+
+				// If an initial command was provided, send it after the shell
+				// has had a moment to initialize (prompt rendered, rc files loaded).
+				if (initialCommandRef.current) {
+					const cmd = initialCommandRef.current;
+					setTimeout(() => {
+						terminalRpc.write(sessionId, `${cmd}\n`);
+					}, 300);
+				}
 			});
 		} else {
 			// No RPC available — show a message

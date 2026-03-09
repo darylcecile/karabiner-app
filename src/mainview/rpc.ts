@@ -1,5 +1,5 @@
 import { Electroview } from "electrobun/view";
-import type { KarabinerRPC } from "../shared/rpc";
+import type { KarabinerRPC, OpenCodeContextData } from "../shared/rpc";
 
 /* ------------------------------------------------------------------ */
 /*  Terminal output / exit event listeners                             */
@@ -9,11 +9,15 @@ type OutputCallback = (sessionId: string, data: string) => void;
 type ExitCallback = (sessionId: string, code: number) => void;
 type WorkspaceOpenedCallback = (path: string) => void;
 type FileChangedCallback = (path: string, event: "create" | "update" | "delete") => void;
+type OpenCodeContextCallback = (data: OpenCodeContextData) => void;
+type OpenOpenCodeTerminalCallback = () => void;
 
 const outputListeners = new Set<OutputCallback>();
 const exitListeners = new Set<ExitCallback>();
 const workspaceOpenedListeners = new Set<WorkspaceOpenedCallback>();
 const fileChangedListeners = new Set<FileChangedCallback>();
+const openCodeContextListeners = new Set<OpenCodeContextCallback>();
+const openOpenCodeTerminalListeners = new Set<OpenOpenCodeTerminalCallback>();
 
 /* ------------------------------------------------------------------ */
 /*  Electroview RPC setup                                              */
@@ -41,6 +45,16 @@ const rpcHandlers = Electroview.defineRPC<KarabinerRPC>({
 			fileChanged: ({ path, event }) => {
 				for (const cb of fileChangedListeners) {
 					cb(path, event);
+				}
+			},
+			openCodeContextUpdated: (data) => {
+				for (const cb of openCodeContextListeners) {
+					cb(data);
+				}
+			},
+			openOpenCodeTerminal: () => {
+				for (const cb of openOpenCodeTerminalListeners) {
+					cb();
 				}
 			},
 		},
@@ -157,6 +171,33 @@ export const onWorkspaceOpened = (cb: WorkspaceOpenedCallback): (() => void) => 
 export const onFileChanged = (cb: FileChangedCallback): (() => void) => {
 	fileChangedListeners.add(cb);
 	return () => fileChangedListeners.delete(cb);
+};
+
+/** Fetch context sidebar data from the OpenCode server (via bun-side proxy). */
+export const getOpenCodeContext = async () => {
+	return electroview.rpc!.request.getOpenCodeContext({});
+};
+
+/** Get the current OpenCode server URL. */
+export const getOpenCodeUrl = async () => {
+	return electroview.rpc!.request.getOpenCodeUrl({});
+};
+
+/** Set the OpenCode server URL (fire-and-forget). */
+export const setOpenCodeUrl = (url: string): void => {
+	electroview.rpc!.send.setOpenCodeUrl({ url });
+};
+
+/** Subscribe to OpenCode context updates pushed from the bun side. Returns an unsubscribe function. */
+export const onOpenCodeContextUpdated = (cb: OpenCodeContextCallback): (() => void) => {
+	openCodeContextListeners.add(cb);
+	return () => openCodeContextListeners.delete(cb);
+};
+
+/** Subscribe to "open OpenCode terminal" events (triggered from app menu). Returns an unsubscribe function. */
+export const onOpenOpenCodeTerminal = (cb: OpenOpenCodeTerminalCallback): (() => void) => {
+	openOpenCodeTerminalListeners.add(cb);
+	return () => openOpenCodeTerminalListeners.delete(cb);
 };
 
 export { electroview };
