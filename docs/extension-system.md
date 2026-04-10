@@ -118,7 +118,7 @@ Core fields:
 ## Sample entrypoint (TypeScript)
 
 ```ts
-import { registerExtension } from "@karabiner/extensions-runtime";
+import { registerExtension } from "@karabiner/sdk";
 
 export default registerExtension((runtime) => {
   runtime.registerCommand({

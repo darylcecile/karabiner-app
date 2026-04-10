@@ -18,7 +18,7 @@ This document describes the extension runtime SDK, what functionality it provide
 ## Quick start
 
 ```ts
-import { registerExtension } from "@karabiner/extensions-runtime";
+import { registerExtension } from "@karabiner/sdk";
 
 export default registerExtension((runtime) => {
   runtime.onActivate(async (ctx) => {
@@ -166,7 +166,7 @@ runtime.registerBlockNotePlugin({
 Extensions can use WASM for performance-sensitive logic, while still using SDK registration and permission gates.
 
 ```ts
-import { registerExtension } from "@karabiner/extensions-runtime";
+import { registerExtension } from "@karabiner/sdk";
 import initParser, { parseMarkdown } from "./pkg/markdown_parser";
 
 export default registerExtension((runtime) => {
@@ -207,4 +207,3 @@ Extensions should keep handlers fast and split heavy work into smaller operation
 - Manifest `manifestVersion` defines compatibility with core schema.
 - `engines.karabiner` and `engines.sdk` can constrain compatible app/SDK ranges.
 - Breaking SDK changes should increment SDK major version and include migration notes.
-
