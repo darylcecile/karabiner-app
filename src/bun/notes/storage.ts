@@ -5,22 +5,20 @@ import type {
   ImageAsset,
   NoteDocument,
   NoteSummary,
+  WorkspaceTextFile,
   WorkspaceItem,
 } from "../../shared/contracts/notes";
 import { getDatabase, initializeDataLayer } from "../data/client";
+import {
+  assertReadableTextFile,
+  deriveWorkspaceItemTitle,
+  getWorkspaceItemKind,
+  MARKDOWN_EXTENSION,
+} from "./storage-utils";
 
-const MARKDOWN_EXTENSION = ".md";
-const IMAGE_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".svg",
-]);
 const WORKSPACE_STATE_FILE = join(Utils.paths.userData, "workspace-state.json");
 const MAX_RECENT_WORKSPACES = 10;
+const MAX_TEXT_FILE_BYTES = 1024 * 1024;
 
 type WorkspaceState = {
   lastOpenedFolder: string | null;
@@ -91,34 +89,34 @@ export async function listWorkspaceItems(): Promise<WorkspaceItem[]> {
   const items: WorkspaceItem[] = [];
 
   for (const filePath of files) {
-    const extension = extname(filePath).toLowerCase();
     const pathFromRoot = normalizeSlashes(relative(notesRoot, filePath));
+    const kind = getWorkspaceItemKind(filePath);
 
-    if (extension === MARKDOWN_EXTENSION) {
+    if (kind === "note") {
       items.push({
-        kind: "note",
+        kind,
         id: pathFromRoot.slice(0, -MARKDOWN_EXTENSION.length),
         path: pathFromRoot,
-        title: basename(filePath, MARKDOWN_EXTENSION),
+        title: deriveWorkspaceItemTitle(filePath),
       });
       continue;
     }
 
-    if (IMAGE_EXTENSIONS.has(extension)) {
+    if (kind === "image") {
       items.push({
-        kind: "image",
+        kind,
         id: pathFromRoot,
         path: pathFromRoot,
-        title: basename(filePath, extension),
+        title: deriveWorkspaceItemTitle(filePath),
       });
       continue;
     }
 
     items.push({
-      kind: "file",
+      kind,
       id: pathFromRoot,
       path: pathFromRoot,
-      title: basename(filePath, extension),
+      title: deriveWorkspaceItemTitle(filePath),
     });
   }
 
@@ -148,20 +146,54 @@ export async function readImageAsset(path: string): Promise<ImageAsset> {
   const notesRoot = await ensureNotesRoot();
   const safePath = sanitizeRelativePath(path);
   const imagePath = join(notesRoot, safePath);
-  const extension = extname(imagePath).toLowerCase();
-  if (!IMAGE_EXTENSIONS.has(extension)) {
+  if (getWorkspaceItemKind(imagePath) !== "image") {
     throw new Error("Unsupported image format.");
   }
 
   const bytes = await readFile(imagePath);
+  const extension = extname(imagePath).toLowerCase();
   const mimeType = getMimeTypeForExtension(extension);
   const base64 = Buffer.from(bytes).toString("base64");
 
   return {
     path: safePath,
-    title: basename(imagePath, extension),
+    title: deriveWorkspaceItemTitle(imagePath),
     mimeType,
     dataUrl: `data:${mimeType};base64,${base64}`,
+  };
+}
+
+export async function readWorkspaceTextFile(path: string): Promise<WorkspaceTextFile> {
+  const notesRoot = await ensureNotesRoot();
+  const safePath = sanitizeRelativePath(path);
+  const filePath = join(notesRoot, safePath);
+  const bytes = await readFile(filePath);
+  assertReadableTextFile(bytes, MAX_TEXT_FILE_BYTES);
+  const content = bytes.toString("utf8");
+  const fileStats = await stat(filePath);
+  return {
+    path: safePath,
+    title: deriveWorkspaceItemTitle(filePath),
+    content,
+    updatedAt: fileStats.mtime.toISOString(),
+  };
+}
+
+export async function saveWorkspaceTextFile(params: {
+  path: string;
+  content: string;
+}): Promise<WorkspaceTextFile> {
+  const notesRoot = await ensureNotesRoot();
+  const safePath = sanitizeRelativePath(params.path);
+  const filePath = join(notesRoot, safePath);
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, params.content, "utf8");
+  const fileStats = await stat(filePath);
+  return {
+    path: safePath,
+    title: deriveWorkspaceItemTitle(filePath),
+    content: params.content,
+    updatedAt: fileStats.mtime.toISOString(),
   };
 }
 

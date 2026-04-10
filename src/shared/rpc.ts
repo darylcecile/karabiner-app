@@ -13,6 +13,7 @@ import type {
   ImageAsset,
   NoteDocument,
   NoteSummary,
+  WorkspaceTextFile,
   WorkspaceItem,
 } from "./contracts/notes";
 import type { ExtensionPermissionId } from "./contracts/permissions";
@@ -102,6 +103,14 @@ export type AppRPC = {
       readImageAsset: {
         params: { path: string };
         response: ImageAsset;
+      };
+      readWorkspaceTextFile: {
+        params: { path: string };
+        response: WorkspaceTextFile;
+      };
+      saveWorkspaceTextFile: {
+        params: { path: string; content: string };
+        response: WorkspaceTextFile;
       };
     };
     messages: {

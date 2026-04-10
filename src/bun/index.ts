@@ -18,7 +18,9 @@ import {
   listWorkspaceItems,
   readImageAsset,
   readNote,
+  readWorkspaceTextFile,
   restoreWorkspaceRoot,
+  saveWorkspaceTextFile,
   saveNote,
   setWorkspaceRoot,
 } from "./notes/storage";
@@ -84,6 +86,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
       listWorkspaceItems,
       readNote: ({ id }) => readNote(id),
       readImageAsset: ({ path }) => readImageAsset(path),
+      readWorkspaceTextFile: ({ path }) => readWorkspaceTextFile(path),
+      saveWorkspaceTextFile: ({ path, content }) =>
+        saveWorkspaceTextFile({ path, content }),
       saveNote: (params) => saveNote(params),
       listAIProviders: async () => {
         await extensionRuntimeReady;
