@@ -9,11 +9,12 @@ describe("draw document helpers", () => {
     const content = createInitialTldrawDocument();
     const parsed = JSON.parse(content) as {
       tldrawFileFormatVersion: number;
-      schema?: { schemaVersion?: number };
+      schema?: { schemaVersion?: number; sequences?: Record<string, number> };
       records?: unknown[];
     };
     expect(parsed.tldrawFileFormatVersion).toBe(1);
     expect(parsed.schema?.schemaVersion).toBe(2);
+    expect(Object.keys(parsed.schema?.sequences ?? {}).length).toBeGreaterThan(0);
     expect(Array.isArray(parsed.records)).toBe(true);
   });
 
@@ -29,5 +30,22 @@ describe("draw document helpers", () => {
     expect(result.shouldWrite).toBe(true);
     const parsed = JSON.parse(result.content) as { tldrawFileFormatVersion: number };
     expect(parsed.tldrawFileFormatVersion).toBe(1);
+  });
+
+  it("replaces legacy invalid empty tldraw scaffold", () => {
+    const legacy = JSON.stringify({
+      tldrawFileFormatVersion: 1,
+      schema: {
+        schemaVersion: 2,
+        sequences: {},
+      },
+      records: [],
+    });
+    const result = ensureNonEmptyTldrawDocument(legacy);
+    expect(result.shouldWrite).toBe(true);
+    const parsed = JSON.parse(result.content) as {
+      schema: { sequences?: Record<string, number> };
+    };
+    expect(Object.keys(parsed.schema.sequences ?? {}).length).toBeGreaterThan(0);
   });
 });
