@@ -436,37 +436,41 @@ export function App() {
   }
 
   async function openOfficialExtensionTab(extensionId: string): Promise<void> {
-    const tabId = `extension:${extensionId}`;
-    if (tabs.some((tab) => tab.id === tabId)) {
-      setActiveTabId(tabId);
-      return;
-    }
-
-    const extension = await electroview.rpc!.request.readOfficialExtensionReadme({
-      id: extensionId,
-    });
-
-    setTabs((currentTabs) => {
-      if (currentTabs.some((tab) => tab.id === tabId)) {
-        return currentTabs;
+    try {
+      const tabId = `extension:${extensionId}`;
+      if (tabs.some((tab) => tab.id === tabId)) {
+        setActiveTabId(tabId);
+        return;
       }
-      return [
-        ...currentTabs,
-        {
-          id: tabId,
-          type: "extension",
-          extensionId: extension.id,
-          title: extension.name,
-          version: extension.version,
-          description: extension.description,
-          path: `official://${extension.id}`,
-          installed: extension.installed,
-          readme: extension.readme,
-        },
-      ];
-    });
-    setActiveTabId(tabId);
-    setStatusMessage(`Viewing ${extension.name} extension.`);
+
+      const extension = await electroview.rpc!.request.readOfficialExtensionReadme({
+        id: extensionId,
+      });
+
+      setTabs((currentTabs) => {
+        if (currentTabs.some((tab) => tab.id === tabId)) {
+          return currentTabs;
+        }
+        return [
+          ...currentTabs,
+          {
+            id: tabId,
+            type: "extension",
+            extensionId: extension.id,
+            title: extension.name,
+            version: extension.version,
+            description: extension.description,
+            path: `official://${extension.id}`,
+            installed: extension.installed,
+            readme: extension.readme,
+          },
+        ];
+      });
+      setActiveTabId(tabId);
+      setStatusMessage(`Viewing ${extension.name} extension.`);
+    } catch (error: unknown) {
+      reportError("Unable to open extension", error);
+    }
   }
 
   async function installExtensionFromTab(tab: OfficialExtensionReadme): Promise<void> {
