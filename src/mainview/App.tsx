@@ -50,7 +50,8 @@ type SidebarSection = "files" | "extensions" | "kai" | "settings";
 type EditorTab = {
   id: string;
   type: "editor";
-  noteId: string;
+  source: "note" | "text-file";
+  sourceId: string;
   title: string;
   path: string;
 };
@@ -405,30 +406,58 @@ export function App() {
     electroview.rpc?.send.log({ message: `${message}: ${detail}` });
   }
 
-  async function loadNoteIntoEditor(noteId: string): Promise<void> {
-    const note = await electroview.rpc!.request.readNote({ id: noteId });
+  function applyEditorMarkdown(markdown: string, path: string): void {
     let parsedBlocks: PartialBlock[] = [];
     try {
-      parsedBlocks = editor.tryParseMarkdownToBlocks(note.markdown);
+      parsedBlocks = editor.tryParseMarkdownToBlocks(markdown);
     } catch (error: unknown) {
       electroview.rpc?.send.log({
-        message: `Markdown parse failed for ${note.path}: ${String(error)}`,
+        message: `Markdown parse failed for ${path}: ${String(error)}`,
       });
     }
-    const blocks = parsedBlocks.length > 0 ? parsedBlocks : createFallbackBlocks(note.markdown);
+    const blocks = parsedBlocks.length > 0 ? parsedBlocks : createFallbackBlocks(markdown);
     editor.replaceBlocks(
       editor.document.map((block) => block.id),
       blocks,
     );
+  }
+
+  async function loadNoteIntoEditor(noteId: string): Promise<void> {
+    const note = await electroview.rpc!.request.readNote({ id: noteId });
+    applyEditorMarkdown(note.markdown, note.path);
     setNoteTitle(note.title);
     setTabs((currentTabs) =>
       currentTabs.map((tab) =>
-        tab.type === "editor" && tab.noteId === noteId
-          ? { ...tab, title: getFileNameFromPath(note.path), path: note.path }
+        tab.type === "editor" && tab.source === "note" && tab.sourceId === noteId
+          ? {
+              ...tab,
+              sourceId: note.id,
+              title: getFileNameFromPath(note.path),
+              path: note.path,
+            }
           : tab,
       ),
     );
     setStatusMessage(`Opened ${note.path}`);
+  }
+
+  async function loadTextFileIntoEditor(path: string): Promise<void> {
+    const file = await electroview.rpc!.request.readWorkspaceTextFile({ path });
+    applyEditorMarkdown(file.content, file.path);
+    setNoteTitle(file.title);
+    setTabs((currentTabs) =>
+      currentTabs.map((tab) =>
+        tab.type === "editor" && tab.source === "text-file" && tab.sourceId === path
+          ? {
+              ...tab,
+              sourceId: file.path,
+              title: getFileNameFromPath(file.path),
+              path: file.path,
+            }
+          : tab,
+      ),
+    );
+    setStatusMessage(`Opened ${file.path}`);
   }
 
   async function openNoteTab(item: WorkspaceItem): Promise<void> {
@@ -442,7 +471,8 @@ export function App() {
         {
           id: tabId,
           type: "editor",
-          noteId: item.id,
+          source: "note",
+          sourceId: item.id,
           title: getFileNameFromPath(item.path),
           path: item.path,
         },
@@ -450,6 +480,28 @@ export function App() {
     });
     setActiveTabId(tabId);
     await loadNoteIntoEditor(item.id);
+  }
+
+  async function openTextFileTab(item: WorkspaceItem): Promise<void> {
+    const tabId = `text:${item.path}`;
+    setTabs((currentTabs) => {
+      if (currentTabs.some((tab) => tab.id === tabId)) {
+        return currentTabs;
+      }
+      return [
+        ...currentTabs,
+        {
+          id: tabId,
+          type: "editor",
+          source: "text-file",
+          sourceId: item.path,
+          title: getFileNameFromPath(item.path),
+          path: item.path,
+        },
+      ];
+    });
+    setActiveTabId(tabId);
+    await loadTextFileIntoEditor(item.path);
   }
 
   async function openImageTab(item: WorkspaceItem): Promise<void> {
@@ -473,15 +525,14 @@ export function App() {
     setStatusMessage(`Viewing ${item.path}`);
   }
 
-  async function openFilePreviewTab(item: WorkspaceItem): Promise<void> {
+  async function openFilePreviewTab(item: WorkspaceItem): Promise<boolean> {
     const tabId = `preview:${item.path}`;
     if (!tabs.some((tab) => tab.id === tabId)) {
       const preview = await electroview.rpc!.request.renderExtensionFilePreview({
         path: item.path,
       });
       if (!preview) {
-        setStatusMessage(`No preview handler is registered for ${item.path}.`);
-        return;
+        return false;
       }
       setTabs((currentTabs) => [
         ...currentTabs,
@@ -498,6 +549,7 @@ export function App() {
     }
     setActiveTabId(tabId);
     setStatusMessage(`Previewing ${item.path}`);
+    return true;
   }
 
   async function openOfficialExtensionTab(extensionId: string): Promise<void> {
@@ -662,7 +714,11 @@ export function App() {
         await openImageTab(item);
         return;
       }
-      await openFilePreviewTab(item);
+      const openedPreview = await openFilePreviewTab(item);
+      if (openedPreview) {
+        return;
+      }
+      await openTextFileTab(item);
     } catch (error: unknown) {
       reportError("Unable to open item", error);
     }
@@ -730,25 +786,57 @@ export function App() {
     }
     try {
       const markdown = editor.blocksToMarkdownLossy(editor.document);
-      const headingTitle = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
-      const saved = await electroview.rpc!.request.saveNote({
-        id: activeEditorTab.noteId,
-        title: headingTitle || noteTitle.trim(),
-        markdown,
-      });
+      if (activeEditorTab.source === "note") {
+        const headingTitle = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
+        const saved = await electroview.rpc!.request.saveNote({
+          id: activeEditorTab.sourceId,
+          title: headingTitle || noteTitle.trim(),
+          markdown,
+        });
 
+        await refreshWorkspaceItems();
+        setTabs((currentTabs) =>
+          currentTabs.map((tab) =>
+            tab.type === "editor" &&
+            tab.source === "note" &&
+            tab.sourceId === saved.id
+              ? {
+                  ...tab,
+                  sourceId: saved.id,
+                  title: getFileNameFromPath(saved.path),
+                  path: saved.path,
+                }
+              : tab,
+          ),
+        );
+        setNoteTitle(saved.title);
+        setStatusMessage(`Saved ${saved.path}`);
+        return;
+      }
+
+      const saved = await electroview.rpc!.request.saveWorkspaceTextFile({
+        path: activeEditorTab.path,
+        content: markdown,
+      });
       await refreshWorkspaceItems();
       setTabs((currentTabs) =>
         currentTabs.map((tab) =>
-          tab.type === "editor" && tab.noteId === saved.id
-            ? { ...tab, title: getFileNameFromPath(saved.path), path: saved.path }
+          tab.type === "editor" &&
+          tab.source === "text-file" &&
+          tab.sourceId === saved.path
+            ? {
+                ...tab,
+                sourceId: saved.path,
+                title: getFileNameFromPath(saved.path),
+                path: saved.path,
+              }
             : tab,
         ),
       );
       setNoteTitle(saved.title);
       setStatusMessage(`Saved ${saved.path}`);
     } catch (error: unknown) {
-      reportError("Unable to save note", error);
+      reportError("Unable to save file", error);
     }
   }
 
@@ -790,7 +878,11 @@ export function App() {
     setActiveTabId(tab.id);
     if (tab.type === "editor") {
       try {
-        await loadNoteIntoEditor(tab.noteId);
+        if (tab.source === "note") {
+          await loadNoteIntoEditor(tab.sourceId);
+        } else {
+          await loadTextFileIntoEditor(tab.sourceId);
+        }
       } catch (error: unknown) {
         reportError("Unable to load tab", error);
       }

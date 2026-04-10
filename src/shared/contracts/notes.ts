@@ -24,3 +24,10 @@ export type ImageAsset = {
   mimeType: string;
   dataUrl: string;
 };
+
+export type WorkspaceTextFile = {
+  path: string;
+  title: string;
+  content: string;
+  updatedAt: string;
+};
