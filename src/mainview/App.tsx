@@ -13,7 +13,9 @@ import {
   Settings02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { BlockNoteViewRaw, useCreateBlockNote } from "@blocknote/react";
+import type { PartialBlock } from "@blocknote/core";
+import { BlockNoteViewRaw, SuggestionMenuController, useCreateBlockNote } from "@blocknote/react";
+import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote/react";
 import { FileTree } from "@pierre/trees/react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -43,9 +45,88 @@ type ImageTab = {
 
 type AppTab = EditorTab | ImageTab;
 
+function SlashMenu({
+  items,
+  selectedIndex,
+  loadingState,
+  onItemClick,
+}: SuggestionMenuProps<DefaultReactSuggestionItem>) {
+  if (loadingState === "loading-initial") {
+    return null;
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="mx-auto mt-2 w-full max-w-[760px] rounded-md border border-black/10 bg-white px-3 py-2 text-xs text-neutral-500 shadow-lg dark:border-white/[0.14] dark:bg-neutral-950 dark:text-neutral-400">
+        No commands found
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto mt-2 w-full max-w-[760px] rounded-md border border-black/10 bg-white p-1.5 shadow-lg dark:border-white/[0.14] dark:bg-neutral-950">
+      {items.map((item, index) => {
+        const isSelected = index === selectedIndex;
+        return (
+          <button
+            key={`${item.title}-${index}`}
+            type="button"
+            onClick={() => onItemClick?.(item)}
+            className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors ${
+              isSelected
+                ? "bg-neutral-100 text-neutral-900 dark:bg-white/10 dark:text-white"
+                : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.06]"
+            }`}
+          >
+            {item.icon ? <span className="mt-0.5 shrink-0">{item.icon}</span> : null}
+            <span className="min-w-0">
+              <span className="block truncate">{item.title}</span>
+              {item.subtext ? (
+                <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
+                  {item.subtext}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function createFallbackBlocks(markdown: string): PartialBlock[] {
+  const blocks: PartialBlock[] = [];
+  for (const rawLine of markdown.replace(/\r\n/g, "\n").split("\n")) {
+    const line = rawLine.trimEnd();
+    if (line.trim().length === 0) {
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = Math.min(headingMatch[1].length, 3);
+      const content = headingMatch[2].trim();
+      blocks.push({
+        type: "heading",
+        props: { level },
+        content: content.length > 0 ? content : "Untitled",
+      });
+      continue;
+    }
+
+    blocks.push({
+      type: "paragraph",
+      content: line,
+    });
+  }
+
+  return blocks.length > 0 ? blocks : [{ type: "paragraph", content: "" }];
+}
+
 export function App() {
   const editor = useCreateBlockNote();
   const prefersReducedMotion = useReducedMotion();
+  const [prefersDarkMode, setPrefersDarkMode] = useState(true);
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
@@ -57,17 +138,35 @@ export function App() {
   const [aiProviders, setAiProviders] = useState<AIProviderDefinition[]>([]);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("files");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [zoomedImageTabIds, setZoomedImageTabIds] = useState<Record<string, boolean>>({});
 
-  const navIconBtn =
-    "flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-white/[0.07] hover:text-neutral-300";
-  const actionBtn =
-    "flex h-7 w-7 items-center justify-center rounded text-neutral-500 transition-colors hover:bg-white/[0.07] hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40";
+  const borderTone = prefersDarkMode ? "border-white/[0.07]" : "border-neutral-200";
+  const appBg = prefersDarkMode ? "bg-[#0a0a0f]" : "bg-[#f6f8fc]";
+  const railBg = prefersDarkMode ? "bg-[#0f0f14]" : "bg-[#eef1f7]";
+  const panelBg = prefersDarkMode ? "bg-[#0d0d12]" : "bg-[#f9fbff]";
+  const mainPanelBg = prefersDarkMode ? "bg-[#0a0a0f]" : "bg-[#ffffff]";
+  const emptyIconTone = prefersDarkMode ? "text-neutral-700" : "text-neutral-400";
+  const subtleTextTone = prefersDarkMode ? "text-neutral-700" : "text-neutral-500";
+  const mutedTextTone = prefersDarkMode ? "text-neutral-600" : "text-neutral-500";
+  const sectionLabelTone = prefersDarkMode ? "text-neutral-400" : "text-neutral-500";
+  const navIconBtn = `flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+    prefersDarkMode
+      ? "text-neutral-500 hover:bg-white/[0.07] hover:text-neutral-300"
+      : "text-neutral-500 hover:bg-black/[0.05] hover:text-neutral-700"
+  }`;
+  const actionBtn = `flex h-7 w-7 items-center justify-center rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+    prefersDarkMode
+      ? "text-neutral-500 hover:bg-white/[0.07] hover:text-neutral-200"
+      : "text-neutral-500 hover:bg-black/[0.05] hover:text-neutral-700"
+  }`;
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? null,
     [activeTabId, tabs],
   );
   const activeEditorTab = activeTab?.type === "editor" ? activeTab : null;
+  const activeImageTab = activeTab?.type === "image" ? activeTab : null;
+  const isActiveImageZoomed = activeImageTab ? Boolean(zoomedImageTabIds[activeImageTab.id]) : false;
 
   const itemByPath = useMemo(
     () => new Map(workspaceItems.map((item) => [item.path, item])),
@@ -92,8 +191,19 @@ export function App() {
 
   async function loadNoteIntoEditor(noteId: string): Promise<void> {
     const note = await electroview.rpc!.request.readNote({ id: noteId });
-    const blocks = editor.tryParseMarkdownToBlocks(note.markdown);
-    editor.replaceBlocks(editor.document, blocks);
+    let parsedBlocks: PartialBlock[] = [];
+    try {
+      parsedBlocks = editor.tryParseMarkdownToBlocks(note.markdown);
+    } catch (error: unknown) {
+      electroview.rpc?.send.log({
+        message: `Markdown parse failed for ${note.path}: ${String(error)}`,
+      });
+    }
+    const blocks = parsedBlocks.length > 0 ? parsedBlocks : createFallbackBlocks(note.markdown);
+    editor.replaceBlocks(
+      editor.document.map((block) => block.id),
+      blocks,
+    );
     setNoteTitle(note.title);
     setTabs((currentTabs) =>
       currentTabs.map((tab) =>
@@ -141,6 +251,7 @@ export function App() {
           dataUrl: image.dataUrl,
         },
       ]);
+      setZoomedImageTabIds((currentValue) => ({ ...currentValue, [tabId]: false }));
     }
     setActiveTabId(tabId);
     setStatusMessage(`Viewing ${item.path}`);
@@ -196,9 +307,10 @@ export function App() {
     }
     try {
       const markdown = editor.blocksToMarkdownLossy(editor.document);
+      const headingTitle = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
       const saved = await electroview.rpc!.request.saveNote({
         id: activeEditorTab.noteId,
-        title: noteTitle.trim() || "Untitled note",
+        title: headingTitle || noteTitle.trim(),
         markdown,
       });
 
@@ -210,6 +322,7 @@ export function App() {
             : tab,
         ),
       );
+      setNoteTitle(saved.title);
       setStatusMessage(`Saved ${saved.path}`);
     } catch (error: unknown) {
       reportError("Unable to save note", error);
@@ -223,6 +336,7 @@ export function App() {
         return currentTabs;
       }
 
+      const removedTab = currentTabs[tabIndex];
       const nextTabs = currentTabs.filter((tab) => tab.id !== tabId);
       setActiveTabId((currentActive) => {
         if (currentActive !== tabId) {
@@ -231,8 +345,22 @@ export function App() {
         const nextActive = nextTabs[tabIndex] ?? nextTabs[tabIndex - 1] ?? nextTabs[0] ?? null;
         return nextActive?.id ?? null;
       });
+      if (removedTab.type === "image") {
+        setZoomedImageTabIds((currentValue) => {
+          const nextValue = { ...currentValue };
+          delete nextValue[removedTab.id];
+          return nextValue;
+        });
+      }
       return nextTabs;
     });
+  }
+
+  function toggleImageZoom(tabId: string): void {
+    setZoomedImageTabIds((currentValue) => ({
+      ...currentValue,
+      [tabId]: !currentValue[tabId],
+    }));
   }
 
   async function activateTab(tab: AppTab): Promise<void> {
@@ -256,6 +384,16 @@ export function App() {
     setStatusMessage("Choose a folder to open...");
     electroview.rpc?.send.requestOpenWorkspaceFolder({});
   }
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const updatePreferredColorScheme = () => setPrefersDarkMode(mediaQuery.matches);
+    updatePreferredColorScheme();
+    mediaQuery.addEventListener("change", updatePreferredColorScheme);
+    return () => {
+      mediaQuery.removeEventListener("change", updatePreferredColorScheme);
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onWorkspaceFolderSelected((path) => {
@@ -318,7 +456,7 @@ export function App() {
 
   if (isBootstrapping) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0a0a0f] text-xs text-neutral-700">
+      <div className={`flex h-screen items-center justify-center text-xs ${appBg} ${subtleTextTone}`}>
         Loading…
       </div>
     );
@@ -326,34 +464,40 @@ export function App() {
 
   if (!workspaceRoot) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0a0a0f] p-8">
+      <div className={`flex h-screen items-center justify-center p-8 ${appBg}`}>
         <div className="w-full max-w-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-600">
+          <p className={`text-[11px] font-semibold uppercase tracking-widest ${mutedTextTone}`}>
             Karabiner
           </p>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-white">
+          <h1 className={`mt-4 text-2xl font-semibold tracking-tight ${prefersDarkMode ? "text-white" : "text-neutral-900"}`}>
             Open a folder to start writing
           </h1>
-          <p className="mt-3 text-sm leading-relaxed text-neutral-500">
+          <p className={`mt-3 text-sm leading-relaxed ${prefersDarkMode ? "text-neutral-500" : "text-neutral-600"}`}>
             Your notes and images stay in a regular folder on disk. Choose one to use as your
             workspace.
           </p>
           <button
             onClick={requestWorkspaceFolderSelection}
             disabled={isOpeningFolder}
-            className="mt-8 inline-flex items-center gap-2 rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`mt-8 inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+              prefersDarkMode ? "bg-neutral-100 text-neutral-900" : "bg-neutral-900 text-white"
+            }`}
           >
             <HugeiconsIcon icon={FolderOpenIcon} size={16} />
             {isOpeningFolder ? "Waiting for folder picker…" : "Open folder"}
           </button>
-          <p className="mt-3 text-xs text-neutral-700">{statusMessage}</p>
+          <p className={`mt-3 text-xs ${subtleTextTone}`}>{statusMessage}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-[#0a0a0f] text-neutral-100">
+    <div
+      className={`flex h-screen overflow-hidden ${appBg} ${
+        prefersDarkMode ? "text-neutral-100" : "text-neutral-900"
+      }`}
+    >
       <Tabs.Root
         value={sidebarSection}
         onValueChange={(value) => {
@@ -364,7 +508,7 @@ export function App() {
         className="flex h-full shrink-0"
       >
         {/* Nav rail */}
-        <div className="flex w-12 flex-col items-center border-r border-white/[0.07] bg-[#0f0f14] py-2">
+        <div className={`flex w-12 flex-col items-center border-r py-2 ${borderTone} ${railBg}`}>
           <motion.button
             whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
             onClick={() => setIsSidebarCollapsed((v) => !v)}
@@ -380,28 +524,44 @@ export function App() {
           <Tabs.List className="flex flex-1 flex-col items-center gap-0.5">
             <Tabs.Trigger
               value="files"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
+              className={`${navIconBtn} ${
+                prefersDarkMode
+                  ? "data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400"
+                  : "data-[state=active]:bg-black/[0.06] data-[state=active]:text-indigo-600"
+              }`}
               title="Files"
             >
               <HugeiconsIcon icon={FolderTreeIcon} size={18} />
             </Tabs.Trigger>
             <Tabs.Trigger
               value="extensions"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
+              className={`${navIconBtn} ${
+                prefersDarkMode
+                  ? "data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400"
+                  : "data-[state=active]:bg-black/[0.06] data-[state=active]:text-indigo-600"
+              }`}
               title="Extensions"
             >
               <HugeiconsIcon icon={PuzzleIcon} size={18} />
             </Tabs.Trigger>
             <Tabs.Trigger
               value="kai"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
+              className={`${navIconBtn} ${
+                prefersDarkMode
+                  ? "data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400"
+                  : "data-[state=active]:bg-black/[0.06] data-[state=active]:text-indigo-600"
+              }`}
               title="Kai"
             >
               <HugeiconsIcon icon={AiChat02Icon} size={18} />
             </Tabs.Trigger>
             <Tabs.Trigger
               value="settings"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
+              className={`${navIconBtn} ${
+                prefersDarkMode
+                  ? "data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400"
+                  : "data-[state=active]:bg-black/[0.06] data-[state=active]:text-indigo-600"
+              }`}
               title="Settings"
             >
               <HugeiconsIcon icon={Settings02Icon} size={18} />
@@ -419,11 +579,11 @@ export function App() {
               transition={
                 prefersReducedMotion ? { duration: 0 } : { duration: 0.12, ease: "easeOut" }
               }
-              className="flex h-full flex-col overflow-hidden border-r border-white/[0.07] bg-[#0d0d12]"
+              className={`flex h-full flex-col overflow-hidden border-r ${borderTone} ${panelBg}`}
             >
               <Tabs.Content value="files" className="flex h-full flex-col data-[state=inactive]:hidden">
-                <header className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-3 py-2.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+                <header className={`flex shrink-0 items-center justify-between border-b px-3 py-2.5 ${borderTone}`}>
+                  <span className={`text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
                     Files
                   </span>
                   <div className="flex items-center gap-0.5">
@@ -440,7 +600,11 @@ export function App() {
                     <motion.button
                       whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
                       onClick={() => void createNote()}
-                      className={`${actionBtn} text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300`}
+                      className={`${actionBtn} ${
+                        prefersDarkMode
+                          ? "text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300"
+                          : "text-indigo-600 hover:bg-indigo-500/10 hover:text-indigo-700"
+                      }`}
                       title="New note"
                       aria-label="New note"
                     >
@@ -478,11 +642,11 @@ export function App() {
                     }}
                   />
                 </div>
-                <footer className="shrink-0 border-t border-white/[0.07] px-3 py-2.5">
-                  <p className="truncate text-[11px] text-neutral-600" title={statusMessage}>
+                <footer className={`shrink-0 border-t px-3 py-2.5 ${borderTone}`}>
+                  <p className={`truncate text-[11px] ${mutedTextTone}`} title={statusMessage}>
                     {statusMessage}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-neutral-700">
+                  <p className={`mt-0.5 text-[11px] ${subtleTextTone}`}>
                     {workspaceItems.length} {workspaceItems.length === 1 ? "item" : "items"}
                   </p>
                 </footer>
@@ -492,37 +656,37 @@ export function App() {
                 value="extensions"
                 className="h-full p-4 data-[state=inactive]:hidden"
               >
-                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+                <h2 className={`text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
                   Extensions
                 </h2>
-                <p className="mt-3 text-xs leading-relaxed text-neutral-500">
+                <p className={`mt-3 text-xs leading-relaxed ${prefersDarkMode ? "text-neutral-500" : "text-neutral-600"}`}>
                   Manage installed extensions and permission grants here.
                 </p>
-                <div className="mt-4 rounded-md border border-white/[0.07] px-3 py-2.5 text-xs text-neutral-600">
+                <div className={`mt-4 rounded-md border px-3 py-2.5 text-xs ${borderTone} ${mutedTextTone}`}>
                   Official extensions will appear in this panel.
                 </div>
               </Tabs.Content>
 
               <Tabs.Content value="kai" className="h-full p-4 data-[state=inactive]:hidden">
-                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+                <h2 className={`text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
                   Kai
                 </h2>
-                <p className="mt-3 text-xs leading-relaxed text-neutral-500">
+                <p className={`mt-3 text-xs leading-relaxed ${prefersDarkMode ? "text-neutral-500" : "text-neutral-600"}`}>
                   Chat UI entrypoint for note-aware assistant workflows.
                 </p>
-                <p className="mt-2 text-[11px] text-neutral-700">
+                <p className={`mt-2 text-[11px] ${subtleTextTone}`}>
                   Providers: {aiProviders.map((p) => p.id).join(", ") || "none"}
                 </p>
               </Tabs.Content>
 
               <Tabs.Content value="settings" className="h-full p-4 data-[state=inactive]:hidden">
-                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+                <h2 className={`text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
                   Settings
                 </h2>
-                <p className="mt-3 text-xs leading-relaxed text-neutral-500">
+                <p className={`mt-3 text-xs leading-relaxed ${prefersDarkMode ? "text-neutral-500" : "text-neutral-600"}`}>
                   Karabiner preferences and app defaults.
                 </p>
-                <div className="mt-4 rounded-md border border-white/[0.07] px-3 py-2.5 text-xs text-neutral-600">
+                <div className={`mt-4 rounded-md border px-3 py-2.5 text-xs ${borderTone} ${mutedTextTone}`}>
                   Motion and layout preferences will be configured here.
                 </div>
               </Tabs.Content>
@@ -531,16 +695,20 @@ export function App() {
         </AnimatePresence>
       </Tabs.Root>
 
-      <main className="flex min-h-0 flex-1 flex-col bg-[#0a0a0f]">
+      <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${mainPanelBg}`}>
         {/* Tab strip */}
-        <div className="flex shrink-0 items-end overflow-x-auto border-b border-white/[0.07] bg-[#0d0d12] px-1">
+        <div className={`kb-scrollbar-hidden flex shrink-0 items-end overflow-x-auto border-b px-1 ${borderTone} ${panelBg}`}>
           {tabs.map((tab) => (
             <div
               key={tab.id}
               className={`group flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${
                 tab.id === activeTabId
-                  ? "border-indigo-400/70 text-neutral-100"
-                  : "border-transparent text-neutral-500 hover:text-neutral-300"
+                  ? prefersDarkMode
+                    ? "border-indigo-400/70 text-neutral-100"
+                    : "border-indigo-600/80 text-neutral-900"
+                  : prefersDarkMode
+                    ? "border-transparent text-neutral-500 hover:text-neutral-300"
+                    : "border-transparent text-neutral-500 hover:text-neutral-700"
               }`}
             >
               <button
@@ -556,7 +724,11 @@ export function App() {
               </button>
               <button
                 onClick={() => closeTab(tab.id)}
-                className="ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-neutral-700 opacity-0 transition-all hover:bg-white/[0.1] hover:text-neutral-300 group-hover:opacity-100"
+                className={`ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 transition-all group-hover:opacity-100 ${
+                  prefersDarkMode
+                    ? "text-neutral-700 hover:bg-white/[0.1] hover:text-neutral-300"
+                    : "text-neutral-500 hover:bg-black/[0.07] hover:text-neutral-700"
+                }`}
                 aria-label="Close tab"
               >
                 <HugeiconsIcon icon={Cancel01Icon} size={9} />
@@ -564,7 +736,7 @@ export function App() {
             </div>
           ))}
           {tabs.length === 0 && (
-            <span className="px-4 py-2 text-[11px] text-neutral-700">
+            <span className={`px-4 py-2 text-[11px] ${subtleTextTone}`}>
               Open a file from the sidebar to start writing.
             </span>
           )}
@@ -572,57 +744,75 @@ export function App() {
 
         {!activeTab && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2.5">
-            <HugeiconsIcon icon={File01Icon} size={28} className="text-neutral-700" />
-            <p className="text-xs text-neutral-600">No file open</p>
-            <p className="text-[11px] text-neutral-700">
+            <HugeiconsIcon icon={File01Icon} size={28} className={emptyIconTone} />
+            <p className={`text-xs ${mutedTextTone}`}>No file open</p>
+            <p className={`text-[11px] ${subtleTextTone}`}>
               Select a note or image from the sidebar
             </p>
           </div>
         )}
 
         {activeTab?.type === "editor" && (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-white/[0.07] px-12 py-4">
-              <input
-                value={noteTitle}
-                onChange={(event) => setNoteTitle(event.currentTarget.value)}
-                placeholder="Untitled"
-                className="w-full bg-transparent text-[1.625rem] font-semibold tracking-tight text-neutral-100 outline-none placeholder:text-neutral-700"
-              />
-              <p className="mt-1 text-[11px] text-neutral-600">{activeTab.path}</p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-[760px] px-12 pb-20 pt-8">
-                <div className="kb-blocknote">
-                  <BlockNoteViewRaw
-                    editor={editor}
-                    formattingToolbar={false}
-                    linkToolbar={false}
-                    slashMenu={false}
-                    emojiPicker={false}
-                    sideMenu={false}
-                    filePanel={false}
-                    tableHandles={false}
-                    comments={false}
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+            <div className="mx-auto w-full max-w-[760px] px-12 pb-20 pt-10">
+              <div className="kb-blocknote">
+                <BlockNoteViewRaw
+                  editor={editor}
+                  formattingToolbar={false}
+                  linkToolbar={false}
+                  slashMenu={false}
+                  emojiPicker={false}
+                  sideMenu={false}
+                  filePanel={false}
+                  tableHandles={false}
+                  comments={false}
+                >
+                  <SuggestionMenuController
+                    triggerCharacter="/"
+                    suggestionMenuComponent={SlashMenu}
                   />
-                </div>
+                </BlockNoteViewRaw>
               </div>
             </div>
           </div>
         )}
 
         {activeTab?.type === "image" && (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-white/[0.07] px-12 py-4">
-              <p className="text-sm font-medium text-neutral-200">{activeTab.title}</p>
-              <p className="mt-1 text-[11px] text-neutral-600">{activeTab.path}</p>
-            </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-8">
-              <img
-                src={activeTab.dataUrl}
-                alt={activeTab.title}
-                className="max-h-full max-w-full rounded-md border border-white/[0.07] shadow-2xl"
-              />
+          <div
+            className={`min-h-0 min-w-0 flex-1 p-8 ${
+              isActiveImageZoomed ? "overflow-auto" : "overflow-hidden"
+            }`}
+          >
+            <div
+              className={`flex min-h-full min-w-full ${
+                isActiveImageZoomed ? "items-start justify-start" : "items-center justify-center"
+              }`}
+            >
+                <button
+                  type="button"
+                  onClick={() => toggleImageZoom(activeTab.id)}
+                  className={`rounded-md border transition-colors ${borderTone} ${
+                    isActiveImageZoomed
+                      ? prefersDarkMode
+                        ? "cursor-zoom-out bg-black/30"
+                        : "cursor-zoom-out bg-white/70"
+                      : prefersDarkMode
+                        ? "cursor-zoom-in bg-black/20 hover:border-white/[0.18]"
+                        : "cursor-zoom-in bg-white/85 hover:border-neutral-300"
+                  }`}
+                  title={isActiveImageZoomed ? "Zoom out" : "Zoom in"}
+                  aria-label={isActiveImageZoomed ? "Zoom out image" : "Zoom in image"}
+              >
+                <img
+                  src={activeTab.dataUrl}
+                  alt={activeTab.title}
+                  className={`block shadow-2xl ${
+                    isActiveImageZoomed
+                      ? "max-h-none max-w-none"
+                      : "max-h-[calc(100vh-9rem)] max-w-full object-contain"
+                  }`}
+                />
+              </button>
             </div>
           </div>
         )}

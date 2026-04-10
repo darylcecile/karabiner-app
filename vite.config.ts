@@ -7,6 +7,14 @@ export default defineConfig({
   build: {
     outDir: "../../dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          editor: ["@blocknote/core", "@blocknote/react"],
+          tree: ["@pierre/trees", "@pierre/trees/react"],
+        },
+      },
+    },
   },
   server: {
     port: 5173,

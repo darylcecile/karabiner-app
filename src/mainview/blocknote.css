@@ -135,3 +135,51 @@
   border-radius: 8px;
   box-shadow: 0 4px 20px rgb(0 0 0 / 0.45);
 }
+
+@media (prefers-color-scheme: light) {
+  .kb-blocknote .bn-container {
+    --bn-colors-editor-text: rgb(31 37 47);
+  }
+
+  .kb-blocknote .bn-default-styles,
+  .kb-blocknote .bn-editor p {
+    color: rgb(31 37 47);
+  }
+
+  .kb-blocknote .bn-block-content[data-content-type="heading"] {
+    color: rgb(17 24 39);
+  }
+
+  .kb-blocknote .bn-editor a {
+    color: rgb(37 99 235);
+  }
+
+  .kb-blocknote .bn-inline-content code,
+  .kb-blocknote .bn-editor code:not(pre code) {
+    border: 1px solid rgb(15 23 42 / 0.14);
+    background: rgb(15 23 42 / 0.06);
+    color: rgb(31 37 47);
+  }
+
+  .kb-blocknote .bn-editor [data-content-type="codeBlock"] {
+    border: 1px solid rgb(148 163 184 / 0.35);
+    background: rgb(241 245 249 / 0.75);
+    color: rgb(17 24 39);
+  }
+
+  .kb-blocknote .bn-editor [data-content-type="blockquote"] {
+    border-left-color: rgb(148 163 184 / 0.6);
+    color: rgb(71 85 105);
+  }
+
+  .kb-blocknote .bn-editor ::selection {
+    background: rgb(59 130 246 / 0.22);
+  }
+
+  .kb-blocknote .bn-toolbar,
+  .kb-blocknote [class*="formatting-toolbar"] {
+    background: rgb(255 255 255);
+    border: 1px solid rgb(148 163 184 / 0.35);
+    box-shadow: 0 8px 24px rgb(15 23 42 / 0.1);
+  }
+}

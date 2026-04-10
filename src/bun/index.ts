@@ -1,5 +1,58 @@
-import { BrowserView, BrowserWindow, ApplicationMenu } from "electrobun/bun";
+import { BrowserView, BrowserWindow, ApplicationMenu, Utils } from "electrobun/bun";
 import type { AppRPC } from "../shared/rpc";
+import { DEFAULT_PERFORMANCE_BUDGET } from "../shared/contracts/app";
+import { EXTENSION_MANIFEST_VERSION } from "../shared/contracts/extensions";
+import { EXTENSION_PERMISSION_IDS } from "../shared/contracts/permissions";
+import { listAllProviders } from "./ai/providers";
+import { initializeDataLayer } from "./data/client";
+import { ExtensionRegistry } from "./extensions/registry";
+import {
+  getWorkspaceRoot,
+  listNotes,
+  listWorkspaceItems,
+  readImageAsset,
+  readNote,
+  restoreWorkspaceRoot,
+  saveNote,
+  setWorkspaceRoot,
+} from "./notes/storage";
+
+const dataLayerReady = initializeDataLayer();
+const extensionRegistry = new ExtensionRegistry();
+const workspaceRestoreReady = restoreWorkspaceRoot().catch((error: unknown) => {
+  console.error("[bun] failed to restore previous workspace root", error);
+  return null;
+});
+
+async function promptWorkspaceFolderSelection(): Promise<string | null> {
+  const selectedPaths = await Utils.openFileDialog({
+    startingFolder: Utils.paths.documents,
+    canChooseFiles: false,
+    canChooseDirectory: true,
+    allowsMultipleSelection: false,
+  });
+  const selectedPath = selectedPaths.find((value) => value.length > 0) ?? null;
+  if (!selectedPath) {
+    return null;
+  }
+
+  await setWorkspaceRoot(selectedPath);
+  return selectedPath;
+}
+
+void dataLayerReady
+  .then((status) => {
+    console.log(
+      "[bun] data layer ready",
+      status.databasePath,
+      status.appliedMigrations.length,
+      "new migrations",
+    );
+  })
+  .catch((error: unknown) => {
+    console.error("[bun] failed to initialize data layer", error);
+    throw error;
+  });
 
 const rpc = BrowserView.defineRPC<AppRPC>({
   handlers: {
@@ -8,9 +61,34 @@ const rpc = BrowserView.defineRPC<AppRPC>({
         name: "Karabiner",
         version: "0.1.0",
       }),
+      getCoreArchitecture: () => ({
+        extensionManifestVersion: EXTENSION_MANIFEST_VERSION,
+        performanceBudget: DEFAULT_PERFORMANCE_BUDGET,
+        permissionIds: [...EXTENSION_PERMISSION_IDS],
+      }),
+      getDataLayerStatus: async () => dataLayerReady,
+      getWorkspaceRoot: async () => {
+        await workspaceRestoreReady;
+        return { path: getWorkspaceRoot() };
+      },
+      listNotes,
+      listWorkspaceItems,
+      readNote: ({ id }) => readNote(id),
+      readImageAsset: ({ path }) => readImageAsset(path),
+      saveNote: (params) => saveNote(params),
+      listAIProviders: () => listAllProviders(extensionRegistry.list()),
     },
     messages: {
       log: ({ message }) => console.log("[webview]", message),
+      requestOpenWorkspaceFolder: async () => {
+        try {
+          const selectedPath = await promptWorkspaceFolderSelection();
+          win.webview.rpc?.send.workspaceFolderSelected({ path: selectedPath });
+        } catch (error: unknown) {
+          console.error("[bun] failed to pick workspace folder", error);
+          win.webview.rpc?.send.workspaceFolderSelected({ path: null });
+        }
+      },
     },
   },
 });

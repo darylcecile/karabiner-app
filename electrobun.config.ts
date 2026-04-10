@@ -10,6 +10,11 @@ export default {
     copy: {
       "dist/index.html": "views/mainview/index.html",
       "dist/assets": "views/mainview/assets",
+      "node_modules/@electric-sql/pglite/dist/vector.tar.gz": "vector.tar.gz",
+      "node_modules/@electric-sql/pglite/dist/pglite.data": "bun/pglite.data",
+      "node_modules/@electric-sql/pglite/dist/pglite.wasm": "bun/pglite.wasm",
+      "node_modules/@electric-sql/pglite/dist/initdb.wasm": "bun/initdb.wasm",
+      "node_modules/@electric-sql/pglite/dist/initdb.js": "bun/initdb.js",
     },
     watchIgnore: ["dist/**"],
     mac: {
