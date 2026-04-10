@@ -8,6 +8,7 @@ import { initializeDataLayer } from "./data/client";
 import { ExtensionRegistry } from "./extensions/registry";
 import {
   listOfficialExtensions,
+  prepareOfficialExtensionInstall,
   readOfficialExtension,
 } from "./extensions/official/extensions";
 import { ExtensionRuntimeHost } from "./extensions/runtime/host";
@@ -107,16 +108,39 @@ const rpc = BrowserView.defineRPC<AppRPC>({
           installed,
         };
       },
-      installOfficialExtension: async ({ id }) => {
+      prepareOfficialExtensionInstall: async ({ id }) => {
+        await extensionRuntimeReady;
+        return prepareOfficialExtensionInstall(id);
+      },
+      installOfficialExtension: async ({ id, installToken }) => {
         await extensionRuntimeReady;
         if (!extensionRuntimeHost) {
           throw new Error("Extension runtime host is unavailable.");
         }
-        await extensionRuntimeHost.installOfficialExtension(id);
+        await extensionRuntimeHost.installOfficialExtension(id, installToken);
         if (!extensionRuntimeHost.hasInstalledExtension(id)) {
           throw new Error(`Extension "${id}" failed to activate after installation.`);
         }
-        const extension = await readOfficialExtension(id);
+        let extension: Awaited<ReturnType<typeof readOfficialExtension>>;
+        try {
+          extension = await readOfficialExtension(id);
+        } catch (error: unknown) {
+          console.error(
+            `[bun] installed official extension "${id}" but failed to load readme metadata`,
+            error,
+          );
+          const summary = (await listOfficialExtensions()).find(
+            (candidate) => candidate.id === id,
+          );
+          return {
+            id,
+            name: summary?.name ?? id,
+            description: summary?.description,
+            version: summary?.version ?? "0.0.0",
+            installed: true,
+            readme: "",
+          };
+        }
         return {
           ...extension,
           installed: true,

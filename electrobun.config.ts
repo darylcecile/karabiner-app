@@ -15,6 +15,8 @@ export default {
       "node_modules/@electric-sql/pglite/dist/pglite.wasm": "bun/pglite.wasm",
       "node_modules/@electric-sql/pglite/dist/initdb.wasm": "bun/initdb.wasm",
       "node_modules/@electric-sql/pglite/dist/initdb.js": "bun/initdb.js",
+      "node_modules/@jitl/quickjs-wasmfile-release-sync/dist/emscripten-module.wasm":
+        "bun/emscripten-module.wasm",
       "extensions": "bun/official-extensions",
     },
     watchIgnore: ["dist/**"],

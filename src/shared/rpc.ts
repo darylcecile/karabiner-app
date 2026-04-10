@@ -4,6 +4,7 @@ import type { CorePerformanceBudget } from "./contracts/app";
 import type {
   ExtensionInlineEditorBlockContribution,
   ExtensionInlineEditorBlockResult,
+  OfficialExtensionInstallPlan,
   OfficialExtensionReadme,
   OfficialExtensionSummary,
   ExtensionResolvedFilePreview,
@@ -70,8 +71,12 @@ export type AppRPC = {
         params: { id: string };
         response: OfficialExtensionReadme;
       };
-      installOfficialExtension: {
+      prepareOfficialExtensionInstall: {
         params: { id: string };
+        response: OfficialExtensionInstallPlan;
+      };
+      installOfficialExtension: {
+        params: { id: string; installToken: string };
         response: OfficialExtensionReadme;
       };
       listExtensionInlineEditorBlocks: {

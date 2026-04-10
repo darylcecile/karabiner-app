@@ -73,6 +73,15 @@ export type OfficialExtensionReadme = OfficialExtensionSummary & {
   readme: string;
 };
 
+export type OfficialExtensionInstallPlan = {
+  installToken: string;
+  id: string;
+  name: string;
+  description?: string;
+  version: string;
+  permissions: ExtensionPermission[];
+};
+
 export type ExtensionContributions = {
   aiProviders?: AIProviderDefinition[];
   commands?: ExtensionCommandContribution[];
