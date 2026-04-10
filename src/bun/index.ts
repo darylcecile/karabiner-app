@@ -6,6 +6,10 @@ import { EXTENSION_PERMISSION_IDS } from "../shared/contracts/permissions";
 import { listAllProviders } from "./ai/providers";
 import { initializeDataLayer } from "./data/client";
 import { ExtensionRegistry } from "./extensions/registry";
+import {
+  listOfficialExtensions,
+  readOfficialExtension,
+} from "./extensions/official/extensions";
 import { ExtensionRuntimeHost } from "./extensions/runtime/host";
 import {
   getWorkspaceRoot,
@@ -85,6 +89,39 @@ const rpc = BrowserView.defineRPC<AppRPC>({
           extensionRegistry.list(),
           extensionRuntimeHost?.listContributedAIProviders() ?? [],
         );
+      },
+      listOfficialExtensions: async () => {
+        await extensionRuntimeReady;
+        const installedIds = new Set(
+          extensionRegistry.list().map((extension) => extension.manifest.id),
+        );
+        return listOfficialExtensions().map((extension) => ({
+          ...extension,
+          installed: installedIds.has(extension.id),
+        }));
+      },
+      readOfficialExtensionReadme: async ({ id }) => {
+        await extensionRuntimeReady;
+        const extension = readOfficialExtension(id);
+        const installed =
+          extensionRuntimeHost?.hasInstalledExtension(id) ??
+          (extensionRegistry.getById(id) !== undefined);
+        return {
+          ...extension,
+          installed,
+        };
+      },
+      installOfficialExtension: async ({ id }) => {
+        await extensionRuntimeReady;
+        if (!extensionRuntimeHost) {
+          throw new Error("Extension runtime host is unavailable.");
+        }
+        await extensionRuntimeHost.installOfficialExtension(id);
+        const extension = readOfficialExtension(id);
+        return {
+          ...extension,
+          installed: true,
+        };
       },
       listExtensionInlineEditorBlocks: async () => {
         await extensionRuntimeReady;

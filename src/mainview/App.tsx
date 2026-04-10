@@ -29,6 +29,8 @@ import {
 import type { AIProviderDefinition } from "../shared/contracts/ai";
 import type {
   ExtensionInlineEditorBlockContribution,
+  OfficialExtensionReadme,
+  OfficialExtensionSummary,
   ExtensionResolvedFilePreview,
 } from "../shared/contracts/extensions";
 import type { WorkspaceItem } from "../shared/contracts/notes";
@@ -63,7 +65,19 @@ type ExtensionPreviewTab = {
   content: string;
 };
 
-type AppTab = EditorTab | ImageTab | ExtensionPreviewTab;
+type ExtensionReadmeTab = {
+  id: string;
+  type: "extension";
+  extensionId: string;
+  title: string;
+  version: string;
+  description?: string;
+  path: string;
+  installed: boolean;
+  readme: string;
+};
+
+type AppTab = EditorTab | ImageTab | ExtensionPreviewTab | ExtensionReadmeTab;
 
 function TldrawPreview({
   content,
@@ -217,6 +231,10 @@ export function App() {
   const [inlineEditorBlocks, setInlineEditorBlocks] = useState<
     ExtensionInlineEditorBlockContribution[]
   >([]);
+  const [officialExtensions, setOfficialExtensions] = useState<OfficialExtensionSummary[]>([]);
+  const [installingExtensionIds, setInstallingExtensionIds] = useState<Record<string, boolean>>(
+    {},
+  );
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("files");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomedImageTabIds, setZoomedImageTabIds] = useState<Record<string, boolean>>({});
@@ -294,6 +312,20 @@ export function App() {
     const items = await electroview.rpc!.request.listWorkspaceItems({});
     setWorkspaceItems(items);
     return items;
+  }
+
+  async function refreshOfficialExtensions(): Promise<void> {
+    const extensions = await electroview.rpc!.request.listOfficialExtensions({});
+    setOfficialExtensions(extensions);
+  }
+
+  async function refreshRuntimeContributions(): Promise<void> {
+    const [providers, blocks] = await Promise.all([
+      electroview.rpc!.request.listAIProviders({}),
+      electroview.rpc!.request.listExtensionInlineEditorBlocks({}),
+    ]);
+    setAiProviders(providers);
+    setInlineEditorBlocks(blocks);
   }
 
   function reportError(message: string, error: unknown): void {
@@ -395,6 +427,72 @@ export function App() {
     }
     setActiveTabId(tabId);
     setStatusMessage(`Previewing ${item.path}`);
+  }
+
+  async function openOfficialExtensionTab(extensionId: string): Promise<void> {
+    const tabId = `extension:${extensionId}`;
+    if (tabs.some((tab) => tab.id === tabId)) {
+      setActiveTabId(tabId);
+      return;
+    }
+
+    const extension = await electroview.rpc!.request.readOfficialExtensionReadme({
+      id: extensionId,
+    });
+
+    setTabs((currentTabs) => {
+      if (currentTabs.some((tab) => tab.id === tabId)) {
+        return currentTabs;
+      }
+      return [
+        ...currentTabs,
+        {
+          id: tabId,
+          type: "extension",
+          extensionId: extension.id,
+          title: extension.name,
+          version: extension.version,
+          description: extension.description,
+          path: `official://${extension.id}`,
+          installed: extension.installed,
+          readme: extension.readme,
+        },
+      ];
+    });
+    setActiveTabId(tabId);
+    setStatusMessage(`Viewing ${extension.name} extension.`);
+  }
+
+  async function installExtensionFromTab(tab: OfficialExtensionReadme): Promise<void> {
+    if (tab.installed || installingExtensionIds[tab.id]) {
+      return;
+    }
+    setInstallingExtensionIds((current) => ({ ...current, [tab.id]: true }));
+    try {
+      const installed = await electroview.rpc!.request.installOfficialExtension({
+        id: tab.id,
+      });
+      await Promise.all([refreshOfficialExtensions(), refreshRuntimeContributions()]);
+      setTabs((currentTabs) =>
+        currentTabs.map((currentTab) =>
+          currentTab.type === "extension" && currentTab.extensionId === installed.id
+            ? {
+                ...currentTab,
+                installed: true,
+              }
+            : currentTab,
+        ),
+      );
+      setStatusMessage(`Installed ${installed.name}.`);
+    } catch (error: unknown) {
+      reportError("Unable to install extension", error);
+    } finally {
+      setInstallingExtensionIds((current) => {
+        const next = { ...current };
+        delete next[tab.id];
+        return next;
+      });
+    }
   }
 
   async function openWorkspaceItem(path: string): Promise<void> {
@@ -538,6 +636,10 @@ export function App() {
       }
       return;
     }
+    if (tab.type === "extension") {
+      setStatusMessage(`Viewing ${tab.title} extension.`);
+      return;
+    }
     setStatusMessage(`Viewing ${tab.path}`);
   }
 
@@ -574,14 +676,16 @@ export function App() {
 
     void (async () => {
       try {
-        const [workspace, providers, blocks] = await Promise.all([
+        const [workspace, providers, blocks, extensions] = await Promise.all([
           electroview.rpc!.request.getWorkspaceRoot({}),
           electroview.rpc!.request.listAIProviders({}),
           electroview.rpc!.request.listExtensionInlineEditorBlocks({}),
+          electroview.rpc!.request.listOfficialExtensions({}),
         ]);
         setWorkspaceRoot(workspace.path);
         setAiProviders(providers);
         setInlineEditorBlocks(blocks);
+        setOfficialExtensions(extensions);
         if (!workspace.path) {
           setStatusMessage("Select a folder to get started.");
         }
@@ -829,8 +933,45 @@ export function App() {
                 <p className={`mt-3 text-xs leading-relaxed ${prefersDarkMode ? "text-neutral-500" : "text-neutral-600"}`}>
                   Manage installed extensions and permission grants here.
                 </p>
-                <div className={`mt-4 rounded-md border px-3 py-2.5 text-xs ${borderTone} ${mutedTextTone}`}>
-                  Official extensions will appear in this panel.
+                <div className={`mt-4 rounded-md border ${borderTone}`}>
+                  <div className={`border-b px-3 py-2 text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
+                    Suggested official extensions
+                  </div>
+                  <div className="space-y-2 px-3 py-2.5">
+                    {officialExtensions.length === 0 && (
+                      <p className={`text-xs ${mutedTextTone}`}>No suggested extensions available.</p>
+                    )}
+                    {officialExtensions.map((extension) => (
+                      <button
+                        key={extension.id}
+                        type="button"
+                        onClick={() => void openOfficialExtensionTab(extension.id)}
+                        className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${borderTone} ${
+                          prefersDarkMode
+                            ? "hover:border-white/20 hover:bg-white/5"
+                            : "hover:border-neutral-300 hover:bg-black/[0.03]"
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-medium">{extension.name}</span>
+                          <span className={`block truncate text-[11px] ${subtleTextTone}`}>
+                            {extension.description ?? extension.id}
+                          </span>
+                        </span>
+                        <span
+                          className={`shrink-0 rounded border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                            extension.installed
+                              ? prefersDarkMode
+                                ? "border-emerald-400/40 text-emerald-300"
+                                : "border-emerald-500/40 text-emerald-700"
+                              : `${borderTone} ${mutedTextTone}`
+                          }`}
+                        >
+                          {extension.installed ? "Installed" : "Open"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className={`mt-4 rounded-md border ${borderTone}`}>
                   <div className={`border-b px-3 py-2 text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
@@ -922,7 +1063,9 @@ export function App() {
                       ? File01Icon
                       : tab.type === "image"
                         ? Image01Icon
-                        : File01Icon
+                        : tab.type === "extension"
+                          ? PuzzleIcon
+                          : File01Icon
                   }
                   size={13}
                 />
@@ -1046,6 +1189,61 @@ export function App() {
                   {activeTab.content}
                 </pre>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab?.type === "extension" && (
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
+            <div className={`mx-auto max-w-[860px] rounded-md border p-4 ${borderTone} ${panelBg}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className={`text-[11px] uppercase tracking-widest ${sectionLabelTone}`}>
+                    Official extension
+                  </p>
+                  <h2 className="mt-1 text-sm font-semibold">
+                    {activeTab.title} <span className={mutedTextTone}>v{activeTab.version}</span>
+                  </h2>
+                  <p className={`mt-1 text-xs ${mutedTextTone}`}>
+                    {activeTab.description ?? activeTab.extensionId}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={
+                    activeTab.installed ||
+                    Boolean(installingExtensionIds[activeTab.extensionId])
+                  }
+                  onClick={() =>
+                    void installExtensionFromTab({
+                      id: activeTab.extensionId,
+                      name: activeTab.title,
+                      version: activeTab.version,
+                      description: activeTab.description,
+                      installed: activeTab.installed,
+                      readme: activeTab.readme,
+                    })
+                  }
+                  className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${borderTone} ${
+                    prefersDarkMode
+                      ? "hover:border-white/25 hover:bg-white/5"
+                      : "hover:border-neutral-300 hover:bg-black/[0.03]"
+                  }`}
+                >
+                  {activeTab.installed
+                    ? "Installed"
+                    : installingExtensionIds[activeTab.extensionId]
+                      ? "Installing..."
+                      : "Install"}
+                </button>
+              </div>
+              <pre
+                className={`mt-4 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs ${borderTone} ${
+                  prefersDarkMode ? "bg-black/30 text-neutral-200" : "bg-neutral-50 text-neutral-800"
+                }`}
+              >
+                {activeTab.readme}
+              </pre>
             </div>
           </div>
         )}

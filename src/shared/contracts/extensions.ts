@@ -61,6 +61,18 @@ export type ExtensionResolvedFilePreview = {
   content: string;
 };
 
+export type OfficialExtensionSummary = {
+  id: string;
+  name: string;
+  description?: string;
+  version: string;
+  installed: boolean;
+};
+
+export type OfficialExtensionReadme = OfficialExtensionSummary & {
+  readme: string;
+};
+
 export type ExtensionContributions = {
   aiProviders?: AIProviderDefinition[];
   commands?: ExtensionCommandContribution[];

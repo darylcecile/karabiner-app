@@ -4,6 +4,8 @@ import type { CorePerformanceBudget } from "./contracts/app";
 import type {
   ExtensionInlineEditorBlockContribution,
   ExtensionInlineEditorBlockResult,
+  OfficialExtensionReadme,
+  OfficialExtensionSummary,
   ExtensionResolvedFilePreview,
 } from "./contracts/extensions";
 import type {
@@ -59,6 +61,18 @@ export type AppRPC = {
       listAIProviders: {
         params: Record<string, never>;
         response: AIProviderDefinition[];
+      };
+      listOfficialExtensions: {
+        params: Record<string, never>;
+        response: OfficialExtensionSummary[];
+      };
+      readOfficialExtensionReadme: {
+        params: { id: string };
+        response: OfficialExtensionReadme;
+      };
+      installOfficialExtension: {
+        params: { id: string };
+        response: OfficialExtensionReadme;
       };
       listExtensionInlineEditorBlocks: {
         params: Record<string, never>;

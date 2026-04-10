@@ -28,7 +28,7 @@ import {
   saveNote,
 } from "../../notes/storage";
 import { createInstalledExtensionRecord, loadExtensionManifest } from "../manifest";
-import { installOfficialExtensions } from "../official/extensions";
+import { installOfficialExtension as installOfficialExtensionBundle } from "../official/extensions";
 import { ExtensionPermissionGate } from "../permissions";
 import { ExtensionRegistry } from "../registry";
 import { prepareExtensionRuntimeEntrypoint } from "./compiler";
@@ -124,9 +124,30 @@ export class ExtensionRuntimeHost {
 
   async initialize(): Promise<void> {
     await mkdir(EXTENSIONS_DIRECTORY, { recursive: true });
-    await installOfficialExtensions(EXTENSIONS_DIRECTORY);
     await this.discoverInstalledExtensions();
     await this.activateRegisteredExtensions();
+  }
+
+  hasInstalledExtension(extensionId: string): boolean {
+    return this.extensionRegistry.getById(extensionId) !== undefined;
+  }
+
+  async installOfficialExtension(extensionId: string): Promise<void> {
+    await mkdir(EXTENSIONS_DIRECTORY, { recursive: true });
+    const extensionRoot = await installOfficialExtensionBundle(
+      EXTENSIONS_DIRECTORY,
+      extensionId,
+    );
+    const installedExtension =
+      (await this.registerExtensionFromRoot(extensionRoot)) ??
+      this.extensionRegistry.getById(extensionId);
+    if (!installedExtension) {
+      throw new Error(`Failed to register extension "${extensionId}" after install.`);
+    }
+    if (this.activeRuntimes.has(extensionId)) {
+      return;
+    }
+    await this.activateExtension(installedExtension);
   }
 
   listContributedAIProviders(): AIProviderDefinition[] {
@@ -309,29 +330,36 @@ export class ExtensionRuntimeHost {
         continue;
       }
       const extensionRoot = join(EXTENSIONS_DIRECTORY, entry.name);
-      try {
-        const manifestResult = await loadExtensionManifest(extensionRoot);
-        if (!manifestResult.ok) {
-          console.error(
-            `[extensions] skipping "${extensionRoot}" due to invalid manifest`,
-            manifestResult.issues,
-          );
-          continue;
-        }
+      await this.registerExtensionFromRoot(extensionRoot);
+    }
+  }
 
-        this.extensionRegistry.register(
-          createInstalledExtensionRecord({
-            extensionRoot,
-            manifest: manifestResult.manifest,
-            installSource: {
-              type: "local-path",
-              path: extensionRoot,
-            },
-          }),
+  private async registerExtensionFromRoot(
+    extensionRoot: string,
+  ): Promise<InstalledExtension | null> {
+    try {
+      const manifestResult = await loadExtensionManifest(extensionRoot);
+      if (!manifestResult.ok) {
+        console.error(
+          `[extensions] skipping "${extensionRoot}" due to invalid manifest`,
+          manifestResult.issues,
         );
-      } catch (error: unknown) {
-        console.error(`[extensions] failed to load extension at ${extensionRoot}`, error);
+        return null;
       }
+
+      const extensionRecord = createInstalledExtensionRecord({
+        extensionRoot,
+        manifest: manifestResult.manifest,
+        installSource: {
+          type: "local-path",
+          path: extensionRoot,
+        },
+      });
+      this.extensionRegistry.register(extensionRecord);
+      return extensionRecord;
+    } catch (error: unknown) {
+      console.error(`[extensions] failed to load extension at ${extensionRoot}`, error);
+      return null;
     }
   }
 
