@@ -1,10 +1,12 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, sep } from "node:path";
 import { Utils } from "electrobun/bun";
 import type {
   ImageAsset,
   NoteDocument,
   NoteSummary,
+  WorkspaceMoveResult,
+  WorkspacePathResult,
   WorkspaceTextFile,
   WorkspaceItem,
 } from "../../shared/contracts/notes";
@@ -197,6 +199,68 @@ export async function saveWorkspaceTextFile(params: {
   };
 }
 
+export async function createWorkspaceTextFile(params: {
+  path: string;
+  content?: string;
+}): Promise<WorkspaceTextFile> {
+  const notesRoot = await ensureNotesRoot();
+  const safePath = sanitizeRelativePath(params.path);
+  const filePath = join(notesRoot, safePath);
+  await assertPathDoesNotExist(filePath, "File already exists.");
+  await mkdir(dirname(filePath), { recursive: true });
+  const content = params.content ?? "";
+  await writeFile(filePath, content, "utf8");
+  const fileStats = await stat(filePath);
+  return {
+    path: safePath,
+    title: deriveWorkspaceItemTitle(filePath),
+    content,
+    updatedAt: fileStats.mtime.toISOString(),
+  };
+}
+
+export async function createWorkspaceFolder(path: string): Promise<WorkspacePathResult> {
+  const notesRoot = await ensureNotesRoot();
+  const safePath = sanitizeRelativePath(path);
+  const folderPath = join(notesRoot, safePath);
+  await assertPathDoesNotExist(folderPath, "Folder already exists.");
+  await mkdir(dirname(folderPath), { recursive: true });
+  await mkdir(folderPath, { recursive: false });
+  return { path: safePath };
+}
+
+export async function moveWorkspaceItem(params: {
+  fromPath: string;
+  toPath: string;
+}): Promise<WorkspaceMoveResult> {
+  const notesRoot = await ensureNotesRoot();
+  const safeFromPath = sanitizeRelativePath(params.fromPath);
+  const safeToPath = sanitizeRelativePath(params.toPath);
+  if (safeFromPath === safeToPath) {
+    throw new Error("Source and destination paths must be different.");
+  }
+  if (safeToPath.startsWith(`${safeFromPath}/`)) {
+    throw new Error("Cannot move an item into itself.");
+  }
+
+  const sourcePath = join(notesRoot, safeFromPath);
+  const destinationPath = join(notesRoot, safeToPath);
+  await assertPathExists(sourcePath, "Source item does not exist.");
+  await assertPathDoesNotExist(destinationPath, "Destination item already exists.");
+  await mkdir(dirname(destinationPath), { recursive: true });
+  await rename(sourcePath, destinationPath);
+  return { fromPath: safeFromPath, toPath: safeToPath };
+}
+
+export async function deleteWorkspaceItem(path: string): Promise<WorkspacePathResult> {
+  const notesRoot = await ensureNotesRoot();
+  const safePath = sanitizeRelativePath(path);
+  const fullPath = join(notesRoot, safePath);
+  await assertPathExists(fullPath, "Item does not exist.");
+  await rm(fullPath, { recursive: true, force: false });
+  return { path: safePath };
+}
+
 export async function saveNote(params: {
   id?: string;
   title: string;
@@ -320,6 +384,29 @@ async function ensureAvailableNoteId(
   } catch (error: unknown) {
     if (isFileNotFoundError(error)) {
       return noteId;
+    }
+    throw error;
+  }
+}
+
+async function assertPathDoesNotExist(path: string, message: string): Promise<void> {
+  try {
+    await stat(path);
+    throw new Error(message);
+  } catch (error: unknown) {
+    if (isFileNotFoundError(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function assertPathExists(path: string, message: string): Promise<void> {
+  try {
+    await stat(path);
+  } catch (error: unknown) {
+    if (isFileNotFoundError(error)) {
+      throw new Error(message);
     }
     throw error;
   }

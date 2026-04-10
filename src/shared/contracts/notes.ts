@@ -31,3 +31,12 @@ export type WorkspaceTextFile = {
   content: string;
   updatedAt: string;
 };
+
+export type WorkspacePathResult = {
+  path: string;
+};
+
+export type WorkspaceMoveResult = {
+  fromPath: string;
+  toPath: string;
+};
