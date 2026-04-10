@@ -15,6 +15,8 @@ export default {
       "node_modules/@electric-sql/pglite/dist/pglite.wasm": "bun/pglite.wasm",
       "node_modules/@electric-sql/pglite/dist/initdb.wasm": "bun/initdb.wasm",
       "node_modules/@electric-sql/pglite/dist/initdb.js": "bun/initdb.js",
+      "registry.karabiner.json": "bun/registry.karabiner.json",
+      "extensions": "bun/official-extensions",
     },
     watchIgnore: ["dist/**"],
     mac: {

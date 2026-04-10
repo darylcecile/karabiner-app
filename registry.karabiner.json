@@ -1,0 +1,12 @@
+{
+  "registryVersion": 1,
+  "extensions": [
+    {
+      "id": "karabiner.draw",
+      "slug": "draw",
+      "name": "Draw",
+      "description": "Create drawing links and preview .tldraw files.",
+      "version": "1.0.0"
+    }
+  ]
+}

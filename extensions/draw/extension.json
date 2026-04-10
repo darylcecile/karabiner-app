@@ -1,0 +1,40 @@
+{
+  "manifestVersion": 1,
+  "id": "karabiner.draw",
+  "name": "Draw",
+  "version": "1.0.0",
+  "description": "Create drawing links and preview .tldraw files.",
+  "entrypoint": "src/index.ts",
+  "permissions": [
+    {
+      "id": "notes.write",
+      "reason": "Insert draw links into the active note editor."
+    },
+    {
+      "id": "filesystem.read",
+      "roots": ["$workspace"],
+      "reason": "Load .tldraw files from the current workspace for preview rendering."
+    },
+    {
+      "id": "filesystem.write",
+      "roots": ["$workspace"],
+      "reason": "Create new .tldraw files in the current workspace."
+    }
+  ],
+  "contributes": {
+    "inlineEditorBlocks": [
+      {
+        "id": "karabiner.draw.inline",
+        "title": "Drawing canvas",
+        "description": "Create a .tldraw file and insert a note link to it."
+      }
+    ],
+    "filePreviewHandlers": [
+      {
+        "id": "karabiner.draw.preview",
+        "title": "tldraw preview",
+        "fileExtensions": [".tldraw"]
+      }
+    ]
+  }
+}

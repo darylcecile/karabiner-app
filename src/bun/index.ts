@@ -92,14 +92,15 @@ const rpc = BrowserView.defineRPC<AppRPC>({
       },
       listOfficialExtensions: async () => {
         await extensionRuntimeReady;
-        return listOfficialExtensions().map((extension) => ({
+        const extensions = await listOfficialExtensions();
+        return extensions.map((extension) => ({
           ...extension,
           installed: extensionRuntimeHost?.hasInstalledExtension(extension.id) ?? false,
         }));
       },
       readOfficialExtensionReadme: async ({ id }) => {
         await extensionRuntimeReady;
-        const extension = readOfficialExtension(id);
+        const extension = await readOfficialExtension(id);
         const installed = extensionRuntimeHost?.hasInstalledExtension(id) ?? false;
         return {
           ...extension,
@@ -115,7 +116,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
         if (!extensionRuntimeHost.hasInstalledExtension(id)) {
           throw new Error(`Extension "${id}" failed to activate after installation.`);
         }
-        const extension = readOfficialExtension(id);
+        const extension = await readOfficialExtension(id);
         return {
           ...extension,
           installed: true,
