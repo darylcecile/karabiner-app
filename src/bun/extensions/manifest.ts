@@ -11,7 +11,7 @@ import {
   type ExtensionPermissionId,
 } from "../../shared/contracts/permissions";
 
-const EXTENSION_MANIFEST_FILENAME = "karabiner-extension.json";
+const EXTENSION_MANIFEST_FILENAME = "extension.json";
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const EXTENSION_ID_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 

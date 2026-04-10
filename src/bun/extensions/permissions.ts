@@ -24,7 +24,7 @@ export class ExtensionPermissionGate {
     }
     throw new Error(
       `Permission "${permissionId}" is required for ${context}. ` +
-        "The extension must request it in karabiner-extension.json.",
+        "The extension must request it in extension.json.",
     );
   }
 

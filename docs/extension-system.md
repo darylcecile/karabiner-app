@@ -5,6 +5,8 @@ This document defines the extension model for Karabiner with two priorities:
 1. **Simple to use** for extension authors.
 2. **Safe and extendable** for long-term platform growth.
 
+For SDK APIs and implementation examples, see [Extension Runtime SDK](./extension-runtime-sdk.md).
+
 ---
 
 ## Design goals
@@ -17,9 +19,34 @@ This document defines the extension model for Karabiner with two priorities:
 
 ---
 
+## Authoring model
+
+Karabiner extensions are written primarily in **TypeScript** and **WASM**:
+
+- **TypeScript-first** for most extension logic, APIs, and integration code.
+- **WASM-friendly** for portable, performance-sensitive modules (parsing, transforms, indexing, etc.).
+
+The manifest `entrypoint` points to the built JavaScript module loaded by the extension runtime.
+
+---
+
+## Installation flow
+
+Extensions are installed through the app’s **Extension Installer**:
+
+1. User selects an extension release from GitHub Releases.
+2. App fetches the release tarball (`.tar.gz`).
+3. App validates and unpacks the extension bundle.
+4. App installs it under:
+   - `~/.karabiner/user/extensions`
+5. App reads `extension.json` and shows the permission prompt.
+6. Extension is activated only after user approval.
+
+---
+
 ## Manifest contract
 
-Each extension ships a `karabiner-extension.json` manifest.
+Each extension ships an `extension.json` manifest.
 
 Core fields:
 
@@ -30,7 +57,25 @@ Core fields:
 - `contributes` (optional)
 - `engines` (optional compatibility constraints)
 
-Example:
+### Sample manifest (minimal)
+
+```json
+{
+  "manifestVersion": 1,
+  "id": "acme.quick-note",
+  "name": "ACME Quick Note",
+  "version": "1.0.0",
+  "entrypoint": "dist/index.js",
+  "permissions": [
+    {
+      "id": "notes.write",
+      "reason": "Create quick notes from extension commands."
+    }
+  ]
+}
+```
+
+### Sample manifest (full)
 
 ```json
 {
@@ -67,6 +112,42 @@ Example:
   }
 }
 ```
+
+---
+
+## Sample entrypoint (TypeScript)
+
+```ts
+import { registerExtension } from "@karabiner/extensions-runtime";
+
+export default registerExtension((runtime) => {
+  runtime.registerCommand({
+    id: "acme.insertTemplate",
+    title: "Insert ACME template",
+    run: async (ctx) => {
+      await ctx.notes.insertAtCursor("# Project template\n\n");
+    },
+  });
+
+  runtime.registerTool({
+    id: "acme.summarize",
+    description: "Summarize selected note blocks",
+    run: async (input, ctx) => ctx.ai.summarize(input.text),
+  });
+
+  runtime.registerBlockNotePlugin({
+    id: "acme.blocknote.commands",
+    setup: (editor) => {
+      editor.addSlashCommand({
+        title: "ACME checklist",
+        onSelect: () => editor.insertBlocks([{ type: "paragraph", content: "- [ ] Task" }]),
+      });
+    },
+  });
+});
+```
+
+> Note: exact runtime SDK symbols may evolve; this example shows the intended registration pattern.
 
 ---
 
@@ -198,7 +279,7 @@ Implemented today:
 
 Planned / in-progress:
 
-- full installer workflow
+- installer UX wiring and release-ingestion hardening
 - interactive permission prompt UI
 - persistent permission grants + revocation UX
 - finalized extension runtime process model

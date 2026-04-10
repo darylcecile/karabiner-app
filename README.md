@@ -70,3 +70,4 @@ src/
 ## Architecture docs
 
 - [Extension system](docs/extension-system.md)
+- [Extension runtime SDK](docs/extension-runtime-sdk.md)
