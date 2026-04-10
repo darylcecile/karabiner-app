@@ -1131,12 +1131,38 @@ export function App() {
                           ...inlineEditorBlocks.map((block) => ({
                             title: block.title,
                             subtext: block.description ?? `Insert ${block.title}`,
-                            aliases: [block.id, ...block.title.toLowerCase().split(/\s+/)],
+                            aliases: [
+                              block.id,
+                              ...block.title.toLowerCase().split(/\s+/),
+                              ...(block.id.includes("draw") ||
+                              block.title.toLowerCase().includes("draw")
+                                ? ["draw"]
+                                : []),
+                            ],
                             icon: <HugeiconsIcon icon={PuzzleIcon} size={16} />,
                             onItemClick: () => {
                               void insertInlineEditorBlock(block);
                             },
                           })),
+                          ...officialExtensions
+                            .filter((extension) => !extension.installed)
+                            .map((extension) => ({
+                              title: `Install ${extension.name}`,
+                              subtext:
+                                extension.description ??
+                                `Install the official ${extension.name} extension`,
+                              aliases: [
+                                extension.id,
+                                extension.name.toLowerCase(),
+                                ...extension.name.toLowerCase().split(/\s+/),
+                              ],
+                              icon: <HugeiconsIcon icon={PuzzleIcon} size={16} />,
+                              onItemClick: () => {
+                                setSidebarSection("extensions");
+                                setIsSidebarCollapsed(false);
+                                void openOfficialExtensionTab(extension.id);
+                              },
+                            })),
                         ],
                         query,
                       )
