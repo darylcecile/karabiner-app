@@ -6,6 +6,7 @@ import { EXTENSION_PERMISSION_IDS } from "../shared/contracts/permissions";
 import { listAllProviders } from "./ai/providers";
 import { initializeDataLayer } from "./data/client";
 import { ExtensionRegistry } from "./extensions/registry";
+import { ExtensionRuntimeHost } from "./extensions/runtime/host";
 import {
   getWorkspaceRoot,
   listNotes,
@@ -19,6 +20,19 @@ import {
 
 const dataLayerReady = initializeDataLayer();
 const extensionRegistry = new ExtensionRegistry();
+const extensionRuntimeHost = new ExtensionRuntimeHost(extensionRegistry);
+const extensionRuntimeReady = extensionRuntimeHost
+  .initialize()
+  .then(() => {
+    console.log(
+      "[bun] extension runtime ready",
+      extensionRuntimeHost.listContributedAIProviders().length,
+      "runtime provider(s)",
+    );
+  })
+  .catch((error: unknown) => {
+    console.error("[bun] extension runtime failed to initialize", error);
+  });
 const workspaceRestoreReady = restoreWorkspaceRoot().catch((error: unknown) => {
   console.error("[bun] failed to restore previous workspace root", error);
   return null;
@@ -76,7 +90,13 @@ const rpc = BrowserView.defineRPC<AppRPC>({
       readNote: ({ id }) => readNote(id),
       readImageAsset: ({ path }) => readImageAsset(path),
       saveNote: (params) => saveNote(params),
-      listAIProviders: () => listAllProviders(extensionRegistry.list()),
+      listAIProviders: async () => {
+        await extensionRuntimeReady;
+        return listAllProviders(
+          extensionRegistry.list(),
+          extensionRuntimeHost.listContributedAIProviders(),
+        );
+      },
     },
     messages: {
       log: ({ message }) => console.log("[webview]", message),

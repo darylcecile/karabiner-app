@@ -48,6 +48,7 @@ export function listBuiltinProviders(): AIProviderDefinition[] {
 
 export function listAllProviders(
   installedExtensions: InstalledExtension[],
+  runtimeProviders: AIProviderDefinition[] = [],
 ): AIProviderDefinition[] {
   const providers = new Map<string, AIProviderDefinition>();
 
@@ -59,6 +60,10 @@ export function listAllProviders(
     for (const provider of extension.manifest.contributes?.aiProviders ?? []) {
       providers.set(provider.id, provider);
     }
+  }
+
+  for (const provider of runtimeProviders) {
+    providers.set(provider.id, provider);
   }
 
   return [...providers.values()].sort((left, right) =>

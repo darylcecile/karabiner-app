@@ -1,7 +1,10 @@
 import type {
+  AIProviderPermission,
   CliExecPermission,
   ExtensionPermission,
   ExtensionPermissionId,
+  FilesystemReadPermission,
+  FilesystemWritePermission,
   NetworkPermission,
 } from "../../shared/contracts/permissions";
 
@@ -42,5 +45,29 @@ export class ExtensionPermissionGate {
         permission.id === "cli.exec",
     );
     return cliPermission?.commands ?? [];
+  }
+
+  getFilesystemRoots(mode: "read" | "write"): string[] {
+    if (mode === "read") {
+      const readPermission = this.grantedPermissions.find(
+        (permission): permission is FilesystemReadPermission =>
+          permission.id === "filesystem.read",
+      );
+      return readPermission?.roots ?? [];
+    }
+
+    const writePermission = this.grantedPermissions.find(
+      (permission): permission is FilesystemWritePermission =>
+        permission.id === "filesystem.write",
+    );
+    return writePermission?.roots ?? [];
+  }
+
+  getAllowedAIProviderIds(): string[] {
+    const aiProviderPermission = this.grantedPermissions.find(
+      (permission): permission is AIProviderPermission =>
+        permission.id === "ai.provider",
+    );
+    return aiProviderPermission?.providerIds ?? [];
   }
 }
