@@ -558,14 +558,6 @@ export function App() {
     if (!tab.installed || uninstallingExtensionIds[tab.id]) {
       return;
     }
-    const approved = window.confirm(
-      `Uninstall "${tab.name}"? This will remove it from your extensions folder.`,
-    );
-    if (!approved) {
-      setStatusMessage(`Uninstall canceled for ${tab.name}.`);
-      return;
-    }
-
     setStatusMessage(`Uninstalling ${tab.name}...`);
     setUninstallingExtensionIds((current) => ({ ...current, [tab.id]: true }));
     try {
