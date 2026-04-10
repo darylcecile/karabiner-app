@@ -4,13 +4,26 @@ import {
   ArrowLeft02Icon,
   ArrowRight02Icon,
   Cancel01Icon,
+  CodeIcon,
   File01Icon,
   FolderOpenIcon,
   FolderTreeIcon,
+  HighlighterIcon,
   Image01Icon,
+  Link01Icon,
   PuzzleIcon,
   SaveIcon,
   Settings02Icon,
+  TextAlignCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+  TextBoldIcon,
+  TextColorIcon,
+  TextIndentLessIcon,
+  TextIndentMoreIcon,
+  TextItalicIcon,
+  TextStrikethroughIcon,
+  TextUnderlineIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { BlockNoteSchema, createCodeBlockSpec, defaultBlockSpecs } from "@blocknote/core";
@@ -20,9 +33,9 @@ import {
   FormattingToolbarController,
   getDefaultReactSlashMenuItems,
   SuggestionMenuController,
-  useActiveStyles,
   useBlockNoteEditor,
   useCreateBlockNote,
+  useEditorState,
 } from "@blocknote/react";
 import type {
   DefaultReactSuggestionItem,
@@ -36,6 +49,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Tldraw, parseTldrawJsonFile } from "tldraw";
 import {
   electroview,
@@ -337,48 +351,622 @@ function SlashMenu({
 
 // ── Custom formatting toolbar ──────────────────────────────────────────────
 
-type StyleKey = "bold" | "italic" | "strike" | "underline" | "code";
+type InlineStyleKey = "bold" | "italic" | "underline" | "strike" | "code";
+type BlockPresetValue =
+  | "paragraph"
+  | "heading-1"
+  | "heading-2"
+  | "heading-3"
+  | "quote"
+  | "bullet"
+  | "numbered"
+  | "check";
+type AlignmentValue = "left" | "center" | "right";
 
-const TOOLBAR_BUTTONS: {
-  key: StyleKey;
+type BlockPreset = {
+  value: BlockPresetValue;
   label: string;
-  title: string;
-}[] = [
-  { key: "bold", label: "B", title: "Bold" },
-  { key: "italic", label: "I", title: "Italic" },
-  { key: "underline", label: "U", title: "Underline" },
-  { key: "strike", label: "S", title: "Strikethrough" },
-  { key: "code", label: "</>", title: "Inline code" },
+};
+
+type ColorPreset = {
+  value: string;
+  label: string;
+  swatch: string;
+};
+
+const BLOCK_PRESETS: BlockPreset[] = [
+  { value: "paragraph", label: "Paragraph" },
+  { value: "heading-1", label: "Heading 1" },
+  { value: "heading-2", label: "Heading 2" },
+  { value: "heading-3", label: "Heading 3" },
+  { value: "quote", label: "Quote" },
+  { value: "bullet", label: "Bulleted list" },
+  { value: "numbered", label: "Numbered list" },
+  { value: "check", label: "Checklist" },
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const INLINE_STYLE_BUTTONS: Array<{ key: InlineStyleKey; icon: typeof TextBoldIcon; ariaLabel: string }> = [
+  { key: "bold", icon: TextBoldIcon, ariaLabel: "Bold" },
+  { key: "italic", icon: TextItalicIcon, ariaLabel: "Italic" },
+  { key: "underline", icon: TextUnderlineIcon, ariaLabel: "Underline" },
+  { key: "strike", icon: TextStrikethroughIcon, ariaLabel: "Strikethrough" },
+  { key: "code", icon: CodeIcon, ariaLabel: "Inline code" },
+];
+
+const ALIGNMENT_BUTTONS: Array<{
+  value: AlignmentValue;
+  icon: typeof TextAlignLeftIcon;
+  ariaLabel: string;
+}> = [
+  { value: "left", icon: TextAlignLeftIcon, ariaLabel: "Align left" },
+  { value: "center", icon: TextAlignCenterIcon, ariaLabel: "Align center" },
+  { value: "right", icon: TextAlignRightIcon, ariaLabel: "Align right" },
+];
+
+const TEXT_COLOR_PRESETS: ColorPreset[] = [
+  { value: "default", label: "Default", swatch: "transparent" },
+  { value: "gray", label: "Gray", swatch: "#9ca3af" },
+  { value: "brown", label: "Brown", swatch: "#92400e" },
+  { value: "red", label: "Red", swatch: "#ef4444" },
+  { value: "orange", label: "Orange", swatch: "#f97316" },
+  { value: "yellow", label: "Yellow", swatch: "#f59e0b" },
+  { value: "green", label: "Green", swatch: "#22c55e" },
+  { value: "blue", label: "Blue", swatch: "#3b82f6" },
+  { value: "purple", label: "Purple", swatch: "#a855f7" },
+  { value: "pink", label: "Pink", swatch: "#ec4899" },
+];
+
+const HIGHLIGHT_PRESETS: ColorPreset[] = [
+  { value: "default", label: "Default", swatch: "transparent" },
+  { value: "gray", label: "Gray", swatch: "#6b7280" },
+  { value: "brown", label: "Brown", swatch: "#78350f" },
+  { value: "red", label: "Red", swatch: "#dc2626" },
+  { value: "orange", label: "Orange", swatch: "#ea580c" },
+  { value: "yellow", label: "Yellow", swatch: "#ca8a04" },
+  { value: "green", label: "Green", swatch: "#16a34a" },
+  { value: "blue", label: "Blue", swatch: "#2563eb" },
+  { value: "purple", label: "Purple", swatch: "#9333ea" },
+  { value: "pink", label: "Pink", swatch: "#db2777" },
+];
+
+function getBlockPresetValue(block: { type: string; props: Record<string, unknown> }): BlockPresetValue {
+  if (block.type === "heading") {
+    const level = typeof block.props.level === "number" ? block.props.level : Number(block.props.level);
+    if (level === 1) {
+      return "heading-1";
+    }
+    if (level === 2) {
+      return "heading-2";
+    }
+    if (level === 3) {
+      return "heading-3";
+    }
+  }
+  if (block.type === "quote") {
+    return "quote";
+  }
+  if (block.type === "bulletListItem") {
+    return "bullet";
+  }
+  if (block.type === "numberedListItem") {
+    return "numbered";
+  }
+  if (block.type === "checkListItem") {
+    return "check";
+  }
+  return "paragraph";
+}
+
+function getBlockUpdate(value: BlockPresetValue): PartialBlock {
+  switch (value) {
+    case "heading-1":
+      return { type: "heading", props: { level: 1, isToggleable: false } };
+    case "heading-2":
+      return { type: "heading", props: { level: 2, isToggleable: false } };
+    case "heading-3":
+      return { type: "heading", props: { level: 3, isToggleable: false } };
+    case "quote":
+      return { type: "quote" };
+    case "bullet":
+      return { type: "bulletListItem" };
+    case "numbered":
+      return { type: "numberedListItem" };
+    case "check":
+      return { type: "checkListItem" };
+    case "paragraph":
+    default:
+      return { type: "paragraph" };
+  }
+}
+
 function CustomFormattingToolbar(_props: FormattingToolbarProps) {
   const editor = useBlockNoteEditor();
-  const activeStyles = useActiveStyles(editor);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const menuPanelRef = useRef<HTMLDivElement | null>(null);
+  const blockMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const textColorMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const highlightMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [openMenu, setOpenMenu] = useState<"block" | "textColor" | "highlight" | null>(null);
+  const [menuPosition, setMenuPosition] = useState({
+    top: 0,
+    left: 0,
+    minWidth: 180,
+  });
 
-  return (
-    <div className="kb-custom-toolbar" role="toolbar" aria-label="Text formatting">
-      {TOOLBAR_BUTTONS.map(({ key, label, title }) => {
-        const isActive = Boolean((activeStyles as Record<string, boolean | undefined>)[key]);
-        return (
+  const state = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor.isEditable) {
+        return undefined;
+      }
+
+      const selectedBlocks = editor.getSelection()?.blocks || [editor.getTextCursorPosition().block];
+      if (selectedBlocks.length === 0) {
+        return undefined;
+      }
+
+      const firstBlock = selectedBlocks[0] as {
+        type: string;
+        props: Record<string, unknown>;
+      };
+      const activeStyles = editor.getActiveStyles() as Record<string, string | boolean | undefined>;
+      const textAlignmentProp = firstBlock.props.textAlignment;
+      const textAlignment: AlignmentValue =
+        textAlignmentProp === "center" || textAlignmentProp === "right" ? textAlignmentProp : "left";
+
+      return {
+        selectedBlocks,
+        activeStyles,
+        blockPreset: getBlockPresetValue(firstBlock),
+        textAlignment,
+        textColor: typeof activeStyles.textColor === "string" ? activeStyles.textColor : "default",
+        backgroundColor:
+          typeof activeStyles.backgroundColor === "string" ? activeStyles.backgroundColor : "default",
+        canNest: editor.canNestBlock(),
+        canUnnest: editor.canUnnestBlock(),
+        hasLink: Boolean(editor.getSelectedLinkUrl()),
+        supportsTextColor: "textColor" in editor.schema.styleSchema,
+        supportsBackgroundColor: "backgroundColor" in editor.schema.styleSchema,
+      };
+    },
+  });
+
+  useEffect(() => {
+    if (!state) {
+      setOpenMenu(null);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (toolbarRef.current?.contains(target) || menuPanelRef.current?.contains(target))) {
+        return;
+      }
+      setOpenMenu(null);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!openMenu) {
+      return;
+    }
+
+    const getMenuTrigger = () => {
+      if (openMenu === "block") {
+        return blockMenuButtonRef.current;
+      }
+      if (openMenu === "textColor") {
+        return textColorMenuButtonRef.current;
+      }
+      return highlightMenuButtonRef.current;
+    };
+
+    const updateMenuPosition = () => {
+      const trigger = getMenuTrigger();
+      if (!trigger) {
+        return;
+      }
+
+      const rect = trigger.getBoundingClientRect();
+      const viewportPadding = 8;
+      const menuVerticalOffset = 8;
+      const minWidth = Math.max(180, Math.round(rect.width));
+      const estimatedMenuHeight = Math.min(240, Math.max(120, window.innerHeight - viewportPadding * 2));
+
+      const preferBelow = rect.bottom + menuVerticalOffset + estimatedMenuHeight <= window.innerHeight - viewportPadding;
+      const top = preferBelow
+        ? rect.bottom + menuVerticalOffset
+        : Math.max(viewportPadding, rect.top - estimatedMenuHeight - menuVerticalOffset);
+
+      const maxLeft = Math.max(viewportPadding, window.innerWidth - minWidth - viewportPadding);
+      const left = Math.min(Math.max(viewportPadding, rect.left), maxLeft);
+
+      setMenuPosition({
+        top,
+        left,
+        minWidth,
+      });
+    };
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [openMenu]);
+
+  if (!state) {
+    return null;
+  }
+
+  const blockLabel = BLOCK_PRESETS.find((preset) => preset.value === state.blockPreset)?.label ?? "Paragraph";
+
+  const isStyleActive = (style: InlineStyleKey) => {
+    return state.activeStyles[style] === true;
+  };
+
+  const toggleStyle = (style: InlineStyleKey) => {
+    editor.focus();
+    switch (style) {
+      case "bold":
+        editor.toggleStyles({ bold: true });
+        break;
+      case "italic":
+        editor.toggleStyles({ italic: true });
+        break;
+      case "underline":
+        editor.toggleStyles({ underline: true });
+        break;
+      case "strike":
+        editor.toggleStyles({ strike: true });
+        break;
+      case "code":
+        editor.toggleStyles({ code: true });
+        break;
+      default:
+        break;
+    }
+  };
+
+  const applyBlockPreset = (preset: BlockPresetValue) => {
+    const update = getBlockUpdate(preset);
+    editor.focus();
+    editor.transact(() => {
+      for (const block of state.selectedBlocks) {
+        editor.updateBlock(block, update);
+      }
+    });
+    setOpenMenu(null);
+  };
+
+  const applyAlignment = (alignment: AlignmentValue) => {
+    editor.focus();
+    editor.transact(() => {
+      for (const block of state.selectedBlocks) {
+        if ("textAlignment" in block.props) {
+          editor.updateBlock(block, {
+            props: { ...block.props, textAlignment: alignment },
+          });
+        }
+      }
+    });
+  };
+
+  const applyTextColor = (color: string) => {
+    if (!state.supportsTextColor) {
+      return;
+    }
+    editor.focus();
+    if (color === "default") {
+      editor.removeStyles({ textColor: "default" } as never);
+    } else {
+      editor.addStyles({ textColor: color } as never);
+    }
+    setOpenMenu(null);
+  };
+
+  const applyBackgroundColor = (color: string) => {
+    if (!state.supportsBackgroundColor) {
+      return;
+    }
+    editor.focus();
+    if (color === "default") {
+      editor.removeStyles({ backgroundColor: "default" } as never);
+    } else {
+      editor.addStyles({ backgroundColor: color } as never);
+    }
+    setOpenMenu(null);
+  };
+
+  const applyLink = () => {
+    const initialValue = editor.getSelectedLinkUrl() ?? "https://";
+    const enteredUrl = window.prompt("Enter URL", initialValue);
+    if (enteredUrl === null) {
+      return;
+    }
+    const url = enteredUrl.trim();
+    if (url.length === 0) {
+      return;
+    }
+    editor.focus();
+    editor.createLink(url);
+  };
+
+  const menuLabel =
+    openMenu === "block"
+      ? "Block type options"
+      : openMenu === "textColor"
+        ? "Text color options"
+        : "Highlight color options";
+
+  const menuContent =
+    openMenu === "block"
+      ? BLOCK_PRESETS.map((preset) => (
           <button
-            key={key}
+            key={preset.value}
             type="button"
-            title={title}
-            aria-label={title}
-            aria-pressed={isActive}
-            className={`kb-toolbar-btn${isActive ? " kb-toolbar-btn--active" : ""}`}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              editor.focus();
-              editor.toggleStyles({ [key]: true } as Record<StyleKey, true>);
+            role="menuitemradio"
+            aria-checked={state.blockPreset === preset.value}
+            className="kb-toolbar-menu-item"
+            data-active={state.blockPreset === preset.value ? "true" : "false"}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              applyBlockPreset(preset.value);
             }}
           >
-            {label}
+            {preset.label}
           </button>
-        );
-      })}
-    </div>
+        ))
+      : openMenu === "textColor"
+        ? TEXT_COLOR_PRESETS.map((color) => (
+            <button
+              key={color.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={state.textColor === color.value}
+              className="kb-toolbar-menu-item"
+              data-active={state.textColor === color.value ? "true" : "false"}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                applyTextColor(color.value);
+              }}
+            >
+              <span
+                className="kb-toolbar-swatch"
+                style={{ backgroundColor: color.swatch }}
+                aria-hidden="true"
+              />
+              {color.label}
+            </button>
+          ))
+        : HIGHLIGHT_PRESETS.map((color) => (
+            <button
+              key={color.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={state.backgroundColor === color.value}
+              className="kb-toolbar-menu-item"
+              data-active={state.backgroundColor === color.value ? "true" : "false"}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                applyBackgroundColor(color.value);
+              }}
+            >
+              <span
+                className="kb-toolbar-swatch"
+                style={{ backgroundColor: color.swatch }}
+                aria-hidden="true"
+              />
+              {color.label}
+            </button>
+          ));
+
+  return (
+    <>
+      <div
+        ref={toolbarRef}
+        className="kb-custom-toolbar"
+        role="toolbar"
+        aria-label="Text formatting controls"
+      >
+        <div className="kb-toolbar-menu">
+          <button
+            ref={blockMenuButtonRef}
+            type="button"
+            className="kb-toolbar-button kb-toolbar-button--menu"
+            data-active={openMenu === "block" ? "true" : "false"}
+            aria-label="Block type"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              setOpenMenu((current) => (current === "block" ? null : "block"));
+            }}
+          >
+            <span className="kb-toolbar-button-label">{blockLabel}</span>
+            <span className="kb-toolbar-caret" aria-hidden="true">
+              ▾
+            </span>
+          </button>
+        </div>
+
+        <div className="kb-toolbar-separator" role="separator" aria-hidden="true" />
+
+        {INLINE_STYLE_BUTTONS.map((styleButton) => (
+          <button
+            key={styleButton.key}
+            type="button"
+            className="kb-toolbar-button"
+            data-active={isStyleActive(styleButton.key) ? "true" : "false"}
+            aria-label={styleButton.ariaLabel}
+            aria-pressed={isStyleActive(styleButton.key)}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              toggleStyle(styleButton.key);
+            }}
+          >
+            <HugeiconsIcon icon={styleButton.icon} size={14} />
+          </button>
+        ))}
+
+        <div className="kb-toolbar-separator" role="separator" aria-hidden="true" />
+
+        {ALIGNMENT_BUTTONS.map((alignmentButton) => (
+          <button
+            key={alignmentButton.value}
+            type="button"
+            className="kb-toolbar-button"
+            data-active={state.textAlignment === alignmentButton.value ? "true" : "false"}
+            aria-label={alignmentButton.ariaLabel}
+            aria-pressed={state.textAlignment === alignmentButton.value}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              applyAlignment(alignmentButton.value);
+            }}
+          >
+            <HugeiconsIcon icon={alignmentButton.icon} size={14} />
+          </button>
+        ))}
+
+        {state.supportsTextColor ? (
+          <div className="kb-toolbar-menu">
+            <button
+              ref={textColorMenuButtonRef}
+              type="button"
+              className="kb-toolbar-button kb-toolbar-button--color"
+              data-active={openMenu === "textColor" ? "true" : "false"}
+              aria-label="Text color"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setOpenMenu((current) => (current === "textColor" ? null : "textColor"));
+              }}
+            >
+              <span className="kb-color-button-inner">
+                <HugeiconsIcon icon={TextColorIcon} size={14} />
+                <span
+                  className="kb-color-swatch-bar"
+                  style={{
+                    backgroundColor:
+                      state.textColor === "default" || !state.textColor
+                        ? "currentColor"
+                        : TEXT_COLOR_PRESETS.find((c) => c.value === state.textColor)?.swatch ?? "currentColor",
+                  }}
+                  aria-hidden="true"
+                />
+              </span>
+            </button>
+          </div>
+        ) : null}
+
+        {state.supportsBackgroundColor ? (
+          <div className="kb-toolbar-menu">
+            <button
+              ref={highlightMenuButtonRef}
+              type="button"
+              className="kb-toolbar-button kb-toolbar-button--color"
+              data-active={openMenu === "highlight" ? "true" : "false"}
+              aria-label="Highlight color"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setOpenMenu((current) => (current === "highlight" ? null : "highlight"));
+              }}
+            >
+              <span className="kb-color-button-inner">
+                <HugeiconsIcon icon={HighlighterIcon} size={14} />
+                <span
+                  className="kb-color-swatch-bar"
+                  style={{
+                    backgroundColor:
+                      state.backgroundColor === "default" || !state.backgroundColor
+                        ? "transparent"
+                        : HIGHLIGHT_PRESETS.find((c) => c.value === state.backgroundColor)?.swatch ?? "transparent",
+                    border:
+                      state.backgroundColor === "default" || !state.backgroundColor
+                        ? "1px dashed currentColor"
+                        : "none",
+                  }}
+                  aria-hidden="true"
+                />
+              </span>
+            </button>
+          </div>
+        ) : null}
+
+        <div className="kb-toolbar-separator" role="separator" aria-hidden="true" />
+
+        <button
+          type="button"
+          className="kb-toolbar-button"
+          data-active={state.hasLink ? "true" : "false"}
+          aria-label="Insert link"
+          aria-pressed={state.hasLink}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            applyLink();
+          }}
+        >
+          <HugeiconsIcon icon={Link01Icon} size={14} />
+        </button>
+        <button
+          type="button"
+          className="kb-toolbar-button"
+          aria-label="Indent"
+          disabled={!state.canNest}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            if (!state.canNest) {
+              return;
+            }
+            editor.focus();
+            editor.nestBlock();
+          }}
+        >
+          <HugeiconsIcon icon={TextIndentMoreIcon} size={14} />
+        </button>
+        <button
+          type="button"
+          className="kb-toolbar-button"
+          aria-label="Outdent"
+          disabled={!state.canUnnest}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            if (!state.canUnnest) {
+              return;
+            }
+            editor.focus();
+            editor.unnestBlock();
+          }}
+        >
+          <HugeiconsIcon icon={TextIndentLessIcon} size={14} />
+        </button>
+      </div>
+
+      {openMenu && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={menuPanelRef}
+              className="kb-toolbar-menu-panel"
+              role="menu"
+              aria-label={menuLabel}
+              style={{
+                top: `${menuPosition.top}px`,
+                left: `${menuPosition.left}px`,
+                minWidth: `${menuPosition.minWidth}px`,
+              }}
+            >
+              {menuContent}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 

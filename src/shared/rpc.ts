@@ -13,6 +13,8 @@ import type {
   ImageAsset,
   NoteDocument,
   NoteSummary,
+  WorkspaceMoveResult,
+  WorkspacePathResult,
   WorkspaceTextFile,
   WorkspaceItem,
 } from "./contracts/notes";
@@ -111,6 +113,22 @@ export type AppRPC = {
       saveWorkspaceTextFile: {
         params: { path: string; content: string };
         response: WorkspaceTextFile;
+      };
+      createWorkspaceTextFile: {
+        params: { path: string; content?: string };
+        response: WorkspaceTextFile;
+      };
+      createWorkspaceFolder: {
+        params: { path: string };
+        response: WorkspacePathResult;
+      };
+      moveWorkspaceItem: {
+        params: { fromPath: string; toPath: string };
+        response: WorkspaceMoveResult;
+      };
+      deleteWorkspaceItem: {
+        params: { path: string };
+        response: WorkspacePathResult;
       };
     };
     messages: {

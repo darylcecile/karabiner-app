@@ -13,9 +13,13 @@ import {
 } from "./extensions/official/extensions";
 import { ExtensionRuntimeHost } from "./extensions/runtime/host";
 import {
+  createWorkspaceFolder,
+  createWorkspaceTextFile,
+  deleteWorkspaceItem,
   getWorkspaceRoot,
   listNotes,
   listWorkspaceItems,
+  moveWorkspaceItem,
   readImageAsset,
   readNote,
   readWorkspaceTextFile,
@@ -89,6 +93,12 @@ const rpc = BrowserView.defineRPC<AppRPC>({
       readWorkspaceTextFile: ({ path }) => readWorkspaceTextFile(path),
       saveWorkspaceTextFile: ({ path, content }) =>
         saveWorkspaceTextFile({ path, content }),
+      createWorkspaceTextFile: ({ path, content }) =>
+        createWorkspaceTextFile({ path, content }),
+      createWorkspaceFolder: ({ path }) => createWorkspaceFolder(path),
+      moveWorkspaceItem: ({ fromPath, toPath }) =>
+        moveWorkspaceItem({ fromPath, toPath }),
+      deleteWorkspaceItem: ({ path }) => deleteWorkspaceItem(path),
       saveNote: (params) => saveNote(params),
       listAIProviders: async () => {
         await extensionRuntimeReady;
