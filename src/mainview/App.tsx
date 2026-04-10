@@ -35,11 +35,13 @@ import {
 import type { AIProviderDefinition } from "../shared/contracts/ai";
 import type {
   ExtensionInlineEditorBlockContribution,
+  OfficialExtensionInstallPlan,
   OfficialExtensionReadme,
   OfficialExtensionSummary,
   ExtensionResolvedFilePreview,
 } from "../shared/contracts/extensions";
 import type { WorkspaceItem } from "../shared/contracts/notes";
+import type { ExtensionPermission } from "../shared/contracts/permissions";
 import "tldraw/tldraw.css";
 
 type SidebarSection = "files" | "extensions" | "kai" | "settings";
@@ -133,6 +135,40 @@ function getFileNameFromPath(path: string): string {
   const segments = normalized.split("/").filter(Boolean);
   const fileName = segments[segments.length - 1];
   return fileName && fileName.length > 0 ? fileName : path;
+}
+
+function formatPermissionScope(permission: ExtensionPermission): string {
+  if (permission.id === "filesystem.read" || permission.id === "filesystem.write") {
+    return permission.roots.join(", ");
+  }
+  if (permission.id === "network") {
+    return permission.allowlist.join(", ");
+  }
+  if (permission.id === "ai.provider") {
+    return permission.providerIds.join(", ");
+  }
+  if (permission.id === "cli.exec") {
+    return permission.commands.join(", ");
+  }
+  return "n/a";
+}
+
+function createInstallApprovalPrompt(plan: OfficialExtensionInstallPlan): string {
+  const permissionLines =
+    plan.permissions.length === 0
+      ? ["- (none)"]
+      : plan.permissions.map((permission) => {
+          const scope = formatPermissionScope(permission);
+          return `- ${permission.id}\n  reason: ${permission.reason}\n  scope: ${scope}`;
+        });
+  return [
+    `Install "${plan.name}" v${plan.version}?`,
+    "",
+    "The extension requests these permissions:",
+    ...permissionLines,
+    "",
+    "You can only proceed if you trust this extension.",
+  ].join("\n");
 }
 
 function SlashMenu({
@@ -477,10 +513,20 @@ export function App() {
     if (tab.installed || installingExtensionIds[tab.id]) {
       return;
     }
+    setStatusMessage(`Installing ${tab.name}...`);
     setInstallingExtensionIds((current) => ({ ...current, [tab.id]: true }));
     try {
+      const installPlan = await electroview.rpc!.request.prepareOfficialExtensionInstall({
+        id: tab.id,
+      });
+      const approved = window.confirm(createInstallApprovalPrompt(installPlan));
+      if (!approved) {
+        setStatusMessage(`Install canceled for ${installPlan.name}.`);
+        return;
+      }
       const installed = await electroview.rpc!.request.installOfficialExtension({
         id: tab.id,
+        installToken: installPlan.installToken,
       });
       await Promise.all([refreshOfficialExtensions(), refreshRuntimeContributions()]);
       setTabs((currentTabs) =>
@@ -1245,6 +1291,7 @@ export function App() {
                   <p className={`mt-1 text-xs ${mutedTextTone}`}>
                     {activeTab.description ?? activeTab.extensionId}
                   </p>
+                  <p className={`mt-2 text-[11px] ${subtleTextTone}`}>{statusMessage}</p>
                 </div>
                 <button
                   type="button"

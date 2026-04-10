@@ -28,10 +28,11 @@ import {
   saveNote,
 } from "../../notes/storage";
 import { createInstalledExtensionRecord, loadExtensionManifest } from "../manifest";
-import { installOfficialExtension as installOfficialExtensionBundle } from "../official/extensions";
+import { installPreparedOfficialExtension } from "../official/extensions";
 import { ExtensionPermissionGate } from "../permissions";
 import { ExtensionRegistry } from "../registry";
 import { prepareExtensionRuntimeEntrypoint } from "./compiler";
+import { resolveMaybePromiseHandle } from "./quickjs-handles";
 import {
   KARABINER_SDK_MODULE_SOURCE,
   KARABINER_SDK_MODULE_SPECIFIER,
@@ -132,15 +133,19 @@ export class ExtensionRuntimeHost {
     return this.activeRuntimes.has(extensionId);
   }
 
-  async installOfficialExtension(extensionId: string): Promise<void> {
+  async installOfficialExtension(
+    extensionId: string,
+    installToken: string,
+  ): Promise<void> {
     if (this.activeRuntimes.has(extensionId)) {
       return;
     }
 
     await mkdir(EXTENSIONS_DIRECTORY, { recursive: true });
-    const extensionRoot = await installOfficialExtensionBundle(
+    const extensionRoot = await installPreparedOfficialExtension(
       EXTENSIONS_DIRECTORY,
       extensionId,
+      installToken,
     );
     const installedExtension = await this.registerExtensionFromRoot(extensionRoot);
     if (!installedExtension) {
@@ -511,7 +516,7 @@ export class ExtensionRuntimeHost {
       strict: true,
     });
     const moduleValueHandle = context.unwrapResult(moduleResult);
-    return this.resolveMaybePromiseHandle(context, moduleValueHandle);
+    return resolveMaybePromiseHandle(context, moduleValueHandle);
   }
 
   private resolveSetupHandler(
@@ -1496,20 +1501,7 @@ export class ExtensionRuntimeHost {
   ): Promise<QuickJSHandle> {
     const callResult = context.callFunction(functionHandle, thisHandle, ...args);
     const callValueHandle = context.unwrapResult(callResult);
-    return this.resolveMaybePromiseHandle(context, callValueHandle);
-  }
-
-  private async resolveMaybePromiseHandle(
-    context: QuickJSAsyncContext,
-    handle: QuickJSHandle,
-  ): Promise<QuickJSHandle> {
-    const promiseState = context.getPromiseState(handle);
-    if (promiseState.type === "fulfilled" && promiseState.notAPromise) {
-      return handle;
-    }
-    const resolved = await context.resolvePromise(handle);
-    handle.dispose();
-    return context.unwrapResult(resolved);
+    return resolveMaybePromiseHandle(context, callValueHandle);
   }
 
   private readHandleAsString(

@@ -1,9 +1,15 @@
 import { $ } from "bun";
 import { Buffer } from "node:buffer";
-import { access, cp, readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionManifest } from "../../../shared/contracts/extensions";
+import type {
+  ExtensionManifest,
+  OfficialExtensionInstallPlan,
+} from "../../../shared/contracts/extensions";
+import { loadExtensionManifest } from "../manifest";
 
 const REGISTRY_FILENAME = "registry.karabiner.json";
 const DEV_EXTENSIONS_DIRECTORY = "extensions";
@@ -12,6 +18,8 @@ const OFFICIAL_REGISTRY_OWNER = "darylcecile";
 const OFFICIAL_REGISTRY_REPO = "karabiner-app";
 const OFFICIAL_REGISTRY_REF = Bun.env.KARABINER_OFFICIAL_REGISTRY_REF ?? "main";
 const OFFICIAL_REGISTRY_CACHE_TTL_MS = 5 * 60 * 1000;
+const PREPARED_INSTALL_TTL_MS = 10 * 60 * 1000;
+const SDK_MODULE_SPECIFIER = "@karabiner/sdk";
 
 type OfficialRegistryEntry = {
   id: string;
@@ -33,6 +41,16 @@ type OfficialExtensionBundle = {
   extensionDirectory: string;
 };
 
+type PreparedOfficialInstall = {
+  token: string;
+  entry: OfficialRegistryEntry;
+  manifest: ExtensionManifest;
+  readme: string;
+  extractedExtensionDirectory: string;
+  tempDirectory: string;
+  expiresAt: number;
+};
+
 type RegistryContentLoadResult =
   | {
       ok: true;
@@ -48,6 +66,16 @@ type GithubContentResponse = {
   encoding: string;
 };
 
+type GithubReleaseAsset = {
+  name: string;
+  browser_download_url: string;
+};
+
+type GithubRelease = {
+  tag_name: string;
+  assets: GithubReleaseAsset[];
+};
+
 export type OfficialExtensionMetadata = {
   id: string;
   name: string;
@@ -60,6 +88,7 @@ export type OfficialExtensionReadme = OfficialExtensionMetadata & {
 };
 
 let cachedRegistry: { value: OfficialRegistry; expiresAt: number } | null = null;
+const preparedInstalls = new Map<string, PreparedOfficialInstall>();
 
 export async function listOfficialExtensions(): Promise<OfficialExtensionMetadata[]> {
   let registry: OfficialRegistry;
@@ -96,23 +125,125 @@ export async function readOfficialExtension(
   };
 }
 
-export async function installOfficialExtension(
-  extensionsDirectory: string,
+export async function prepareOfficialExtensionInstall(
   extensionId: string,
-): Promise<string> {
+): Promise<OfficialExtensionInstallPlan> {
+  await clearExpiredPreparedInstalls();
+
   const registry = await readOfficialRegistry();
   const entry = registry.extensions.find((candidate) => candidate.id === extensionId);
   if (!entry) {
     throw new Error(`Unknown official extension "${extensionId}".`);
   }
-  const bundle = await readOfficialExtensionBundle(entry);
-  const extensionDirectory = join(extensionsDirectory, bundle.manifest.id);
-  await rm(extensionDirectory, { recursive: true, force: true });
-  await cp(bundle.extensionDirectory, extensionDirectory, {
-    recursive: true,
-    force: true,
-  });
-  return extensionDirectory;
+
+  const archiveUrl = await resolveOfficialReleaseAssetUrl(entry);
+  const tempDirectory = await mkdtemp(
+    join(tmpdir(), `karabiner-official-install-${entry.slug}-`),
+  );
+  const archivePath = join(tempDirectory, `${entry.slug}.tar.gz`);
+  const extractedDirectory = join(tempDirectory, "extracted");
+  await mkdir(extractedDirectory, { recursive: true });
+
+  try {
+    const archiveBytes = await downloadOfficialReleaseAsset(archiveUrl);
+    await writeFile(archivePath, archiveBytes);
+    await extractTarball(archivePath, extractedDirectory);
+    const extractedExtensionDirectory = await resolveExtractedExtensionDirectory(
+      extractedDirectory,
+      entry.slug,
+    );
+
+    const manifestResult = await loadExtensionManifest(extractedExtensionDirectory);
+    if (!manifestResult.ok) {
+      const details = manifestResult.issues
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join("; ");
+      throw new Error(`Invalid extension manifest in release bundle. ${details}`);
+    }
+    if (manifestResult.manifest.id !== entry.id) {
+      throw new Error(
+        `Release bundle id "${manifestResult.manifest.id}" does not match registry id "${entry.id}".`,
+      );
+    }
+
+    const readmePath = join(extractedExtensionDirectory, "README.md");
+    const readme = (await pathExists(readmePath))
+      ? await readFile(readmePath, "utf8")
+      : "";
+    const token = randomUUID();
+    preparedInstalls.set(token, {
+      token,
+      entry,
+      manifest: manifestResult.manifest,
+      readme,
+      extractedExtensionDirectory,
+      tempDirectory,
+      expiresAt: Date.now() + PREPARED_INSTALL_TTL_MS,
+    });
+
+    return {
+      installToken: token,
+      id: manifestResult.manifest.id,
+      name: manifestResult.manifest.name,
+      description: manifestResult.manifest.description ?? entry.description,
+      version: manifestResult.manifest.version,
+      permissions: manifestResult.manifest.permissions,
+    };
+  } catch (error) {
+    await rm(tempDirectory, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export async function installPreparedOfficialExtension(
+  extensionsDirectory: string,
+  extensionId: string,
+  installToken: string,
+): Promise<string> {
+  await clearExpiredPreparedInstalls();
+  const prepared = preparedInstalls.get(installToken);
+  if (!prepared) {
+    throw new Error("Install approval expired. Please review permissions and try again.");
+  }
+  if (prepared.entry.id !== extensionId) {
+    throw new Error(
+      `Install token is for "${prepared.entry.id}", but "${extensionId}" was requested.`,
+    );
+  }
+
+  preparedInstalls.delete(installToken);
+  try {
+    const runtimeEntrypointSource = await buildRuntimeEntrypoint(prepared);
+    const extensionDirectory = join(extensionsDirectory, prepared.manifest.id);
+    await rm(extensionDirectory, { recursive: true, force: true });
+    await mkdir(join(extensionDirectory, "runtime"), { recursive: true });
+
+    const installManifest: ExtensionManifest = {
+      ...prepared.manifest,
+      entrypoint: "runtime/index.mjs",
+    };
+    await writeFile(
+      join(extensionDirectory, "extension.json"),
+      `${JSON.stringify(installManifest, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(extensionDirectory, "runtime/index.mjs"),
+      runtimeEntrypointSource,
+      "utf8",
+    );
+    if (prepared.readme.trim().length > 0) {
+      await writeFile(
+        join(extensionDirectory, "README.md"),
+        `${prepared.readme.trim()}\n`,
+        "utf8",
+      );
+    }
+
+    return extensionDirectory;
+  } finally {
+    await rm(prepared.tempDirectory, { recursive: true, force: true });
+  }
 }
 
 async function readOfficialRegistry(): Promise<OfficialRegistry> {
@@ -203,18 +334,11 @@ async function tryReadRegistryViaGhCli(): Promise<RegistryContentLoadResult> {
 }
 
 async function tryReadRegistryViaGithubApi(): Promise<RegistryContentLoadResult> {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "User-Agent": "karabiner-app",
-  };
-  const token = Bun.env.GH_TOKEN ?? Bun.env.GITHUB_TOKEN;
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const url = `https://api.github.com/repos/${OFFICIAL_REGISTRY_OWNER}/${OFFICIAL_REGISTRY_REPO}/contents/${REGISTRY_FILENAME}?ref=${OFFICIAL_REGISTRY_REF}`;
   try {
-    const response = await fetch(url, { headers });
+    const response = await fetch(
+      `https://api.github.com/repos/${OFFICIAL_REGISTRY_OWNER}/${OFFICIAL_REGISTRY_REPO}/contents/${REGISTRY_FILENAME}?ref=${OFFICIAL_REGISTRY_REF}`,
+      { headers: buildGithubApiHeaders() },
+    );
     if (!response.ok) {
       return {
         ok: false,
@@ -261,17 +385,162 @@ async function tryReadRegistryFromLocalFile(): Promise<RegistryContentLoadResult
   };
 }
 
-async function resolveOfficialExtensionsDirectory(): Promise<string> {
-  const candidates = getExtensionDirectoryCandidates();
-
-  for (const candidate of candidates) {
-    if (await pathExists(candidate)) {
-      return candidate;
+async function resolveOfficialReleaseAssetUrl(
+  entry: OfficialRegistryEntry,
+): Promise<string> {
+  const releases = await readOfficialRepoReleases();
+  const assetName = `${entry.slug}.tar.gz`;
+  for (const release of releases) {
+    const asset = release.assets.find((candidate) => candidate.name === assetName);
+    if (asset) {
+      return asset.browser_download_url;
     }
   }
   throw new Error(
-    "Unable to resolve official extension source. Missing extensions directory.",
+    `No release asset named "${assetName}" found in ${OFFICIAL_REGISTRY_OWNER}/${OFFICIAL_REGISTRY_REPO} releases.`,
   );
+}
+
+async function readOfficialRepoReleases(): Promise<GithubRelease[]> {
+  const path = `repos/${OFFICIAL_REGISTRY_OWNER}/${OFFICIAL_REGISTRY_REPO}/releases?per_page=20`;
+  const ghResult = await tryReadGithubJsonViaGhCli(path);
+  if (ghResult.ok) {
+    return parseGithubReleases(ghResult.value);
+  }
+  const apiResult = await tryReadGithubJsonViaApi(path);
+  if (apiResult.ok) {
+    return parseGithubReleases(apiResult.value);
+  }
+  throw new Error(
+    `Failed to load GitHub releases. gh CLI: ${ghResult.error}. GitHub API: ${apiResult.error}.`,
+  );
+}
+
+async function downloadOfficialReleaseAsset(url: string): Promise<Uint8Array> {
+  const response = await fetch(url, {
+    headers: buildGithubApiHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download release asset from "${url}". HTTP ${response.status}.`,
+    );
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function extractTarball(
+  archivePath: string,
+  outputDirectory: string,
+): Promise<void> {
+  const tarBinary = Bun.which("tar");
+  if (!tarBinary) {
+    throw new Error("tar binary is required to extract official extension bundles.");
+  }
+  await $`${tarBinary} -xzf ${archivePath} -C ${outputDirectory}`.quiet();
+}
+
+async function resolveExtractedExtensionDirectory(
+  extractRoot: string,
+  expectedSlug: string,
+): Promise<string> {
+  const directCandidate = join(extractRoot, expectedSlug);
+  if (await hasManifestFile(directCandidate)) {
+    return directCandidate;
+  }
+
+  const discovered = await findManifestDirectory(extractRoot, 3);
+  if (!discovered) {
+    throw new Error("Extracted extension bundle did not contain extension.json.");
+  }
+  return discovered;
+}
+
+async function findManifestDirectory(
+  rootDirectory: string,
+  maxDepth: number,
+): Promise<string | null> {
+  if (maxDepth < 0) {
+    return null;
+  }
+  if (await hasManifestFile(rootDirectory)) {
+    return rootDirectory;
+  }
+  if (maxDepth === 0) {
+    return null;
+  }
+
+  const entries = await readdir(rootDirectory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const childPath = join(rootDirectory, entry.name);
+    const found = await findManifestDirectory(childPath, maxDepth - 1);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+async function hasManifestFile(directory: string): Promise<boolean> {
+  return pathExists(join(directory, "extension.json"));
+}
+
+async function buildRuntimeEntrypoint(
+  prepared: PreparedOfficialInstall,
+): Promise<string> {
+  const sourceEntrypoint = resolve(
+    prepared.extractedExtensionDirectory,
+    prepared.manifest.entrypoint,
+  );
+  const buildOutputDirectory = join(prepared.tempDirectory, "build");
+  await mkdir(buildOutputDirectory, { recursive: true });
+
+  const buildResult = await Bun.build({
+    entrypoints: [sourceEntrypoint],
+    outdir: buildOutputDirectory,
+    target: "browser",
+    format: "esm",
+    splitting: false,
+    sourcemap: "none",
+    external: [SDK_MODULE_SPECIFIER],
+  });
+
+  if (!buildResult.success) {
+    const diagnostics = buildResult.logs
+      .map((log) => {
+        if (log.position) {
+          return `${log.position.file}:${log.position.line}:${log.position.column} ${log.message}`;
+        }
+        return log.message;
+      })
+      .join("\n");
+    throw new Error(
+      `Failed to compile extension "${prepared.manifest.id}" for runtime install.\n${diagnostics}`,
+    );
+  }
+
+  const entrypointOutput = buildResult.outputs.find(
+    (output) => output.path.endsWith(".mjs") || output.path.endsWith(".js"),
+  );
+  if (!entrypointOutput) {
+    throw new Error(
+      `Bundling extension "${prepared.manifest.id}" did not produce a JavaScript entrypoint.`,
+    );
+  }
+  return readFile(entrypointOutput.path, "utf8");
+}
+
+async function clearExpiredPreparedInstalls(): Promise<void> {
+  const now = Date.now();
+  const expired = [...preparedInstalls.values()].filter(
+    (install) => install.expiresAt <= now,
+  );
+  for (const install of expired) {
+    preparedInstalls.delete(install.token);
+    await rm(install.tempDirectory, { recursive: true, force: true });
+  }
 }
 
 function getRegistryPathCandidates(): string[] {
@@ -281,6 +550,18 @@ function getRegistryPathCandidates(): string[] {
     candidates.add(resolve(baseDirectory, "bun", REGISTRY_FILENAME));
   }
   return [...candidates];
+}
+
+async function resolveOfficialExtensionsDirectory(): Promise<string> {
+  const candidates = getExtensionDirectoryCandidates();
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error(
+    "Unable to resolve official extension source. Missing extensions directory.",
+  );
 }
 
 function getExtensionDirectoryCandidates(): string[] {
@@ -307,7 +588,6 @@ function getRuntimeBaseDirectories(): string[] {
     directories.add(resolve(bunMainDirectory, ".."));
     directories.add(resolve(bunMainDirectory, "../.."));
   }
-
   return [...directories];
 }
 
@@ -359,13 +639,6 @@ function decodeBase64Content(response: GithubContentResponse): string {
   return Buffer.from(normalizedContent, "base64").toString("utf8");
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
-
 function validateRegistry(value: unknown): asserts value is OfficialRegistry {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("registry.karabiner.json must contain an object.");
@@ -404,4 +677,119 @@ function validateRegistry(value: unknown): asserts value is OfficialRegistry {
       );
     }
   }
+}
+
+function buildGithubApiHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "karabiner-app",
+  };
+  const token = Bun.env.GH_TOKEN ?? Bun.env.GITHUB_TOKEN;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+function parseGithubReleases(value: unknown): GithubRelease[] {
+  if (!Array.isArray(value)) {
+    throw new Error("GitHub releases response must be an array.");
+  }
+  return value.map((release) => parseGithubRelease(release));
+}
+
+function parseGithubRelease(value: unknown): GithubRelease {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("GitHub release entry must be an object.");
+  }
+  const release = value as Record<string, unknown>;
+  if (typeof release.tag_name !== "string") {
+    throw new Error("GitHub release is missing tag_name.");
+  }
+  if (!Array.isArray(release.assets)) {
+    throw new Error(`GitHub release "${release.tag_name}" is missing assets.`);
+  }
+  const assets = release.assets.map((asset) => parseGithubReleaseAsset(asset));
+  return {
+    tag_name: release.tag_name,
+    assets,
+  };
+}
+
+function parseGithubReleaseAsset(value: unknown): GithubReleaseAsset {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("GitHub release asset must be an object.");
+  }
+  const asset = value as Record<string, unknown>;
+  if (typeof asset.name !== "string" || asset.name.length === 0) {
+    throw new Error("GitHub release asset is missing name.");
+  }
+  if (
+    typeof asset.browser_download_url !== "string" ||
+    asset.browser_download_url.length === 0
+  ) {
+    throw new Error(`GitHub release asset "${asset.name}" is missing download URL.`);
+  }
+  return {
+    name: asset.name,
+    browser_download_url: asset.browser_download_url,
+  };
+}
+
+async function tryReadGithubJsonViaGhCli(path: string): Promise<
+  | { ok: true; value: unknown }
+  | { ok: false; error: string }
+> {
+  const ghBinary = Bun.which("gh");
+  if (!ghBinary) {
+    return {
+      ok: false,
+      error: "gh CLI is not available",
+    };
+  }
+  try {
+    const raw = await $`${ghBinary} api ${path}`.quiet().text();
+    return {
+      ok: true,
+      value: JSON.parse(raw) as unknown,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: getErrorMessage(error),
+    };
+  }
+}
+
+async function tryReadGithubJsonViaApi(path: string): Promise<
+  | { ok: true; value: unknown }
+  | { ok: false; error: string }
+> {
+  try {
+    const response = await fetch(`https://api.github.com/${path}`, {
+      headers: buildGithubApiHeaders(),
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: `HTTP ${response.status}`,
+      };
+    }
+    return {
+      ok: true,
+      value: (await response.json()) as unknown,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: getErrorMessage(error),
+    };
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
