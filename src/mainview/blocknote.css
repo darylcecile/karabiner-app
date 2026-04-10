@@ -178,16 +178,6 @@
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
 }
 
-.kb-blocknote [data-slot="tooltip-content"] > svg:last-child,
-[data-slot="tooltip-content"] > svg:last-child,
-[data-slot="tooltip-content"] > [class*="rotate-45"],
-[data-slot="tooltip-content"] svg[class*="rotate-45"][viewBox="0 0 30 10"][preserveAspectRatio="none"],
-svg[class*="rotate-45"][viewBox="0 0 30 10"][preserveAspectRatio="none"] {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-
 /* ── Menus/dropdowns ─────────────────────────────────────────────────────── */
 
 .kb-blocknote .bn-menu-dropdown,

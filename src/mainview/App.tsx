@@ -359,7 +359,7 @@ function CustomFormattingToolbar(_props: FormattingToolbarProps) {
   return (
     <div className="kb-custom-toolbar" role="toolbar" aria-label="Text formatting">
       {TOOLBAR_BUTTONS.map(({ key, label, title }) => {
-        const isActive = Boolean((activeStyles as Record<string, unknown>)[key]);
+        const isActive = Boolean((activeStyles as Record<string, boolean | undefined>)[key]);
         return (
           <button
             key={key}
@@ -2034,6 +2034,7 @@ export function App() {
                 >
                   <FormattingToolbarController
                     formattingToolbar={CustomFormattingToolbar}
+                    floatingUIOptions={{ elementProps: { style: { zIndex: 1100 } } }}
                   />
                   <SuggestionMenuController
                     triggerCharacter="/"
