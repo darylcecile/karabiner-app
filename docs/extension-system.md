@@ -108,6 +108,20 @@ Core fields:
         "id": "acme.summarize",
         "description": "Summarize selected note blocks."
       }
+    ],
+    "inlineEditorBlocks": [
+      {
+        "id": "acme.draw.inline",
+        "title": "Insert drawing block",
+        "description": "Insert a drawing embed marker in the current note."
+      }
+    ],
+    "filePreviewHandlers": [
+      {
+        "id": "acme.draw.preview",
+        "title": "tldraw preview",
+        "fileExtensions": [".tldraw"]
+      }
     ]
   }
 }
@@ -118,14 +132,15 @@ Core fields:
 ## Sample entrypoint (TypeScript)
 
 ```ts
-import { registerExtension } from "@karabiner/extensions-runtime";
+import { registerExtension } from "@karabiner/sdk";
 
 export default registerExtension((runtime) => {
   runtime.registerCommand({
     id: "acme.insertTemplate",
     title: "Insert ACME template",
     run: async (ctx) => {
-      await ctx.notes.insertAtCursor("# Project template\n\n");
+      const editor = await ctx.notes.getActiveEditor();
+      await editor.insertAtCursor("# Project template\n\n");
     },
   });
 
@@ -167,6 +182,8 @@ Current static permission IDs:
 | `network` | Outbound network access | `allowlist[]` |
 | `ai.provider` | Access model/provider integrations | `providerIds[]` |
 | `cli.exec` | Execute local CLI commands | `commands[]` |
+
+For `filesystem.read` / `filesystem.write`, roots can include `"$workspace"` to scope access to the currently opened workspace folder.
 
 ### Approval model (required behavior)
 
@@ -234,6 +251,8 @@ Extensions can contribute capabilities to app surfaces.
 - `contributes.aiProviders[]`
 - `contributes.commands[]`
 - `contributes.tools[]`
+- `contributes.inlineEditorBlocks[]`
+- `contributes.filePreviewHandlers[]`
 
 ### Editor (BlockNote) contributions
 

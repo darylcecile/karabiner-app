@@ -111,7 +111,15 @@ export async function listWorkspaceItems(): Promise<WorkspaceItem[]> {
         path: pathFromRoot,
         title: basename(filePath, extension),
       });
+      continue;
     }
+
+    items.push({
+      kind: "file",
+      id: pathFromRoot,
+      path: pathFromRoot,
+      title: basename(filePath, extension),
+    });
   }
 
   return items.sort((left, right) => left.path.localeCompare(right.path));

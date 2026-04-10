@@ -46,6 +46,8 @@ bun tsc --noEmit
 ## Project structure
 
 ```text
+packages/
+└── sdk/              # @karabiner/sdk (TypeScript extension SDK scaffolding)
 src/
 ├── bun/
 │   ├── ai/           # Provider catalog + AI wiring entrypoints

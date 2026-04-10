@@ -27,10 +27,58 @@ export type ExtensionToolContribution = {
   description: string;
 };
 
+export type ExtensionInlineEditorBlockContribution = {
+  id: string;
+  title: string;
+  description?: string;
+};
+
+export type ExtensionFilePreviewHandlerContribution = {
+  id: string;
+  title: string;
+  description?: string;
+  fileExtensions: string[];
+};
+
+export type ExtensionInlineEditorBlockResult = {
+  markdown: string;
+};
+
+export type ExtensionFilePreviewContentType = "text" | "markdown" | "json" | "tldraw";
+
+export type ExtensionFilePreviewRenderResult = {
+  title?: string;
+  contentType?: ExtensionFilePreviewContentType;
+  content: string;
+};
+
+export type ExtensionResolvedFilePreview = {
+  handlerId: string;
+  handlerTitle: string;
+  path: string;
+  title: string;
+  contentType: ExtensionFilePreviewContentType;
+  content: string;
+};
+
+export type OfficialExtensionSummary = {
+  id: string;
+  name: string;
+  description?: string;
+  version: string;
+  installed: boolean;
+};
+
+export type OfficialExtensionReadme = OfficialExtensionSummary & {
+  readme: string;
+};
+
 export type ExtensionContributions = {
   aiProviders?: AIProviderDefinition[];
   commands?: ExtensionCommandContribution[];
   tools?: ExtensionToolContribution[];
+  inlineEditorBlocks?: ExtensionInlineEditorBlockContribution[];
+  filePreviewHandlers?: ExtensionFilePreviewHandlerContribution[];
 };
 
 export type ExtensionManifest = {

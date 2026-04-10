@@ -7,6 +7,11 @@ import { listAllProviders } from "./ai/providers";
 import { initializeDataLayer } from "./data/client";
 import { ExtensionRegistry } from "./extensions/registry";
 import {
+  listOfficialExtensions,
+  readOfficialExtension,
+} from "./extensions/official/extensions";
+import { ExtensionRuntimeHost } from "./extensions/runtime/host";
+import {
   getWorkspaceRoot,
   listNotes,
   listWorkspaceItems,
@@ -19,6 +24,8 @@ import {
 
 const dataLayerReady = initializeDataLayer();
 const extensionRegistry = new ExtensionRegistry();
+let extensionRuntimeHost: ExtensionRuntimeHost | null = null;
+let extensionRuntimeReady: Promise<void> = Promise.resolve();
 const workspaceRestoreReady = restoreWorkspaceRoot().catch((error: unknown) => {
   console.error("[bun] failed to restore previous workspace root", error);
   return null;
@@ -76,7 +83,62 @@ const rpc = BrowserView.defineRPC<AppRPC>({
       readNote: ({ id }) => readNote(id),
       readImageAsset: ({ path }) => readImageAsset(path),
       saveNote: (params) => saveNote(params),
-      listAIProviders: () => listAllProviders(extensionRegistry.list()),
+      listAIProviders: async () => {
+        await extensionRuntimeReady;
+        return listAllProviders(
+          extensionRegistry.list(),
+          extensionRuntimeHost?.listContributedAIProviders() ?? [],
+        );
+      },
+      listOfficialExtensions: async () => {
+        await extensionRuntimeReady;
+        return listOfficialExtensions().map((extension) => ({
+          ...extension,
+          installed: extensionRuntimeHost?.hasInstalledExtension(extension.id) ?? false,
+        }));
+      },
+      readOfficialExtensionReadme: async ({ id }) => {
+        await extensionRuntimeReady;
+        const extension = readOfficialExtension(id);
+        const installed = extensionRuntimeHost?.hasInstalledExtension(id) ?? false;
+        return {
+          ...extension,
+          installed,
+        };
+      },
+      installOfficialExtension: async ({ id }) => {
+        await extensionRuntimeReady;
+        if (!extensionRuntimeHost) {
+          throw new Error("Extension runtime host is unavailable.");
+        }
+        await extensionRuntimeHost.installOfficialExtension(id);
+        if (!extensionRuntimeHost.hasInstalledExtension(id)) {
+          throw new Error(`Extension "${id}" failed to activate after installation.`);
+        }
+        const extension = readOfficialExtension(id);
+        return {
+          ...extension,
+          installed: true,
+        };
+      },
+      listExtensionInlineEditorBlocks: async () => {
+        await extensionRuntimeReady;
+        return extensionRuntimeHost?.listContributedInlineEditorBlocks() ?? [];
+      },
+      invokeExtensionInlineEditorBlock: async ({ blockId }) => {
+        await extensionRuntimeReady;
+        if (!extensionRuntimeHost) {
+          throw new Error("Extension runtime host is unavailable.");
+        }
+        return extensionRuntimeHost.invokeInlineEditorBlock(blockId);
+      },
+      renderExtensionFilePreview: async ({ path }) => {
+        await extensionRuntimeReady;
+        if (!extensionRuntimeHost) {
+          return null;
+        }
+        return extensionRuntimeHost.renderFilePreview(path);
+      },
     },
     messages: {
       log: ({ message }) => console.log("[webview]", message),
@@ -99,6 +161,36 @@ export const win = new BrowserWindow({
   frame: { x: 100, y: 100, width: 1024, height: 768 },
   rpc,
 });
+
+extensionRuntimeHost = new ExtensionRuntimeHost(extensionRegistry, {
+  getActiveEditorSelectionAsMarkdown: async () => {
+    const webviewRpc = win.webview.rpc;
+    if (!webviewRpc?.request.getActiveEditorSelectionAsMarkdown) {
+      throw new Error("Webview editor bridge is unavailable.");
+    }
+    const response = await webviewRpc.request.getActiveEditorSelectionAsMarkdown({});
+    return response.markdown;
+  },
+  insertAtActiveEditorCursor: async (markdown) => {
+    const webviewRpc = win.webview.rpc;
+    if (!webviewRpc?.request.insertAtActiveEditorCursor) {
+      throw new Error("Webview editor bridge is unavailable.");
+    }
+    await webviewRpc.request.insertAtActiveEditorCursor({ markdown });
+  },
+});
+extensionRuntimeReady = extensionRuntimeHost
+  .initialize()
+  .then(() => {
+    console.log(
+      "[bun] extension runtime ready",
+      extensionRuntimeHost?.listContributedAIProviders().length ?? 0,
+      "runtime provider(s)",
+    );
+  })
+  .catch((error: unknown) => {
+    console.error("[bun] extension runtime failed to initialize", error);
+  });
 
 ApplicationMenu.setApplicationMenu([
   {

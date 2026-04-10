@@ -18,7 +18,7 @@ This document describes the extension runtime SDK, what functionality it provide
 ## Quick start
 
 ```ts
-import { registerExtension } from "@karabiner/extensions-runtime";
+import { registerExtension } from "@karabiner/sdk";
 
 export default registerExtension((runtime) => {
   runtime.onActivate(async (ctx) => {
@@ -64,6 +64,8 @@ Extensions provide functionality by registering contributions through runtime me
 | `registerTool(...)` | Add callable tools for app/Kai workflows |
 | `registerAIProvider(...)` | Contribute model/provider integrations |
 | `registerBlockNotePlugin(...)` | Contribute editor capabilities |
+| `registerInlineEditorBlock(...)` | Contribute inline editor blocks |
+| `registerFilePreviewHandler(...)` | Contribute file preview tabs by extension |
 | `registerEventHook(...)` | Subscribe to runtime/app events |
 
 Example:
@@ -73,7 +75,8 @@ runtime.registerTool({
   id: "acme.summarizeSelection",
   description: "Summarize selected editor blocks",
   run: async (input, ctx) => {
-    const markdown = await ctx.notes.getSelectionAsMarkdown();
+    const editor = await ctx.notes.getActiveEditor();
+    const markdown = await editor.getSelectionAsMarkdown();
     return ctx.ai.summarize(markdown, { style: input.style ?? "concise" });
   },
 });
@@ -91,6 +94,8 @@ Handler functions receive a `ctx` object with scoped APIs.
 - `ctx.notes.read(noteId)`
 - `ctx.notes.create(...)`
 - `ctx.notes.update(...)`
+- `ctx.notes.getActiveEditor().getSelectionAsMarkdown()`
+- `ctx.notes.getActiveEditor().insertAtCursor(markdown)`
 - `ctx.workspace.root()`
 
 ### AI integration
@@ -161,12 +166,40 @@ runtime.registerBlockNotePlugin({
 
 ---
 
+## Inline blocks and file preview handlers
+
+Extensions can contribute inline editor blocks and file preview renderers:
+
+```ts
+runtime.registerInlineEditorBlock({
+  id: "acme.draw.inline",
+  title: "Insert drawing block",
+  run: async () => ({ markdown: "![Drawing](./diagram.tldraw)" }),
+});
+
+runtime.registerFilePreviewHandler({
+  id: "acme.draw.preview",
+  title: "tldraw preview",
+  fileExtensions: [".tldraw"],
+  render: async ({ path }, ctx) => {
+    const json = await ctx.fs.readFile(path);
+    return {
+      title: path,
+      contentType: "tldraw",
+      content: json,
+    };
+  },
+});
+```
+
+---
+
 ## WASM usage in extensions
 
 Extensions can use WASM for performance-sensitive logic, while still using SDK registration and permission gates.
 
 ```ts
-import { registerExtension } from "@karabiner/extensions-runtime";
+import { registerExtension } from "@karabiner/sdk";
 import initParser, { parseMarkdown } from "./pkg/markdown_parser";
 
 export default registerExtension((runtime) => {
@@ -178,7 +211,8 @@ export default registerExtension((runtime) => {
     id: "acme.parseOutline",
     description: "Parse markdown headings with a WASM parser",
     run: async (_input, ctx) => {
-      const markdown = await ctx.notes.getSelectionAsMarkdown();
+      const editor = await ctx.notes.getActiveEditor();
+      const markdown = await editor.getSelectionAsMarkdown();
       return parseMarkdown(markdown);
     },
   });
@@ -207,4 +241,3 @@ Extensions should keep handlers fast and split heavy work into smaller operation
 - Manifest `manifestVersion` defines compatibility with core schema.
 - `engines.karabiner` and `engines.sdk` can constrain compatible app/SDK ranges.
 - Breaking SDK changes should increment SDK major version and include migration notes.
-

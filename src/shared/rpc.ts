@@ -2,6 +2,13 @@ import { RPCSchema } from "electrobun/bun";
 import type { AIProviderDefinition } from "./contracts/ai";
 import type { CorePerformanceBudget } from "./contracts/app";
 import type {
+  ExtensionInlineEditorBlockContribution,
+  ExtensionInlineEditorBlockResult,
+  OfficialExtensionReadme,
+  OfficialExtensionSummary,
+  ExtensionResolvedFilePreview,
+} from "./contracts/extensions";
+import type {
   ImageAsset,
   NoteDocument,
   NoteSummary,
@@ -55,6 +62,30 @@ export type AppRPC = {
         params: Record<string, never>;
         response: AIProviderDefinition[];
       };
+      listOfficialExtensions: {
+        params: Record<string, never>;
+        response: OfficialExtensionSummary[];
+      };
+      readOfficialExtensionReadme: {
+        params: { id: string };
+        response: OfficialExtensionReadme;
+      };
+      installOfficialExtension: {
+        params: { id: string };
+        response: OfficialExtensionReadme;
+      };
+      listExtensionInlineEditorBlocks: {
+        params: Record<string, never>;
+        response: ExtensionInlineEditorBlockContribution[];
+      };
+      invokeExtensionInlineEditorBlock: {
+        params: { blockId: string };
+        response: ExtensionInlineEditorBlockResult;
+      };
+      renderExtensionFilePreview: {
+        params: { path: string };
+        response: ExtensionResolvedFilePreview | null;
+      };
       listWorkspaceItems: {
         params: Record<string, never>;
         response: WorkspaceItem[];
@@ -70,7 +101,16 @@ export type AppRPC = {
     };
   }>;
   webview: RPCSchema<{
-    requests: Record<string, never>;
+    requests: {
+      getActiveEditorSelectionAsMarkdown: {
+        params: Record<string, never>;
+        response: { markdown: string };
+      };
+      insertAtActiveEditorCursor: {
+        params: { markdown: string };
+        response: { ok: true };
+      };
+    };
     messages: {
       notify: { text: string };
       workspaceFolderSelected: { path: string | null };
