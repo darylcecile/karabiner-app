@@ -524,21 +524,28 @@ export function App() {
   async function insertInlineEditorBlock(
     block: ExtensionInlineEditorBlockContribution,
   ): Promise<void> {
+    await insertInlineEditorBlockById(block.id, block.title);
+  }
+
+  async function insertInlineEditorBlockById(
+    blockId: string,
+    blockTitle: string,
+  ): Promise<void> {
     if (!activeEditorTab) {
-      setStatusMessage(`Open a note before inserting "${block.title}".`);
+      setStatusMessage(`Open a note before inserting "${blockTitle}".`);
       return;
     }
     try {
       const response = await electroview.rpc!.request.invokeExtensionInlineEditorBlock({
-        blockId: block.id,
+        blockId,
       });
       if (response.markdown.trim().length === 0) {
         throw new Error("Inline block returned empty markdown.");
       }
       editor.pasteMarkdown(response.markdown);
-      setStatusMessage(`Inserted ${block.title}.`);
+      setStatusMessage(`Inserted ${blockTitle}.`);
     } catch (error: unknown) {
-      reportError(`Unable to insert ${block.title}`, error);
+      reportError(`Unable to insert ${blockTitle}`, error);
     }
   }
 
@@ -1125,47 +1132,25 @@ export function App() {
                   <SuggestionMenuController
                     triggerCharacter="/"
                     getItems={async (query) =>
-                      filterSuggestionItems(
-                        [
-                          ...getDefaultReactSlashMenuItems(editor),
-                          ...inlineEditorBlocks.map((block) => ({
-                            title: block.title,
-                            subtext: block.description ?? `Insert ${block.title}`,
-                            aliases: [
-                              block.id,
-                              ...block.title.toLowerCase().split(/\s+/),
-                              ...(block.id.includes("draw") ||
-                              block.title.toLowerCase().includes("draw")
-                                ? ["draw"]
-                                : []),
-                            ],
-                            icon: <HugeiconsIcon icon={PuzzleIcon} size={16} />,
-                            onItemClick: () => {
-                              void insertInlineEditorBlock(block);
-                            },
-                          })),
-                          ...officialExtensions
-                            .filter((extension) => !extension.installed)
-                            .map((extension) => ({
-                              title: `Install ${extension.name}`,
-                              subtext:
-                                extension.description ??
-                                `Install the official ${extension.name} extension`,
-                              aliases: [
-                                extension.id,
-                                extension.name.toLowerCase(),
-                                ...extension.name.toLowerCase().split(/\s+/),
-                              ],
+                      (async () => {
+                        const latestBlocks = await electroview.rpc!.request
+                          .listExtensionInlineEditorBlocks({});
+                        return filterSuggestionItems(
+                          [
+                            ...getDefaultReactSlashMenuItems(editor),
+                            ...latestBlocks.map((block) => ({
+                              title: block.title,
+                              subtext: block.description ?? `Insert ${block.title}`,
+                              aliases: [block.id, ...block.title.toLowerCase().split(/\s+/)],
                               icon: <HugeiconsIcon icon={PuzzleIcon} size={16} />,
                               onItemClick: () => {
-                                setSidebarSection("extensions");
-                                setIsSidebarCollapsed(false);
-                                void openOfficialExtensionTab(extension.id);
+                                void insertInlineEditorBlockById(block.id, block.title);
                               },
                             })),
-                        ],
-                        query,
-                      )
+                          ],
+                          query,
+                        );
+                      })()
                     }
                     suggestionMenuComponent={SlashMenu}
                   />
