@@ -112,7 +112,7 @@ function TldrawPreview({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   return (
-    <div className="mt-4">
+    <div>
       {loadError ? (
         <p className={`mb-2 text-xs ${mutedTextTone}`}>{loadError}</p>
       ) : null}
@@ -1391,12 +1391,8 @@ export function App() {
         )}
 
         {activeTab?.type === "preview" && (
-          <div className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
-            <div className={`mx-auto max-w-[860px] rounded-md border p-4 ${borderTone} ${panelBg}`}>
-              <p className={`text-[11px] uppercase tracking-widest ${sectionLabelTone}`}>
-                Preview · {activeTab.handlerTitle}
-              </p>
-              <p className={`mt-1 text-xs ${mutedTextTone}`}>{activeTab.path}</p>
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto p-8">
+            <div className="mx-auto w-full max-w-[960px]">
               {activeTab.contentType === "tldraw" ? (
                 <TldrawPreview
                   content={activeTab.content}
@@ -1406,7 +1402,7 @@ export function App() {
                 />
               ) : (
                 <pre
-                  className={`mt-4 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs ${borderTone} ${
+                  className={`overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs ${borderTone} ${
                     prefersDarkMode ? "bg-black/30 text-neutral-200" : "bg-neutral-50 text-neutral-800"
                   }`}
                 >

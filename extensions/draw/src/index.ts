@@ -1,19 +1,8 @@
 import { registerExtension } from "@karabiner/sdk";
-
-function createInitialTldrawDocument() {
-  return JSON.stringify(
-    {
-      tldrawFileFormatVersion: 1,
-      schema: {
-        schemaVersion: 2,
-        sequences: {},
-      },
-      records: [],
-    },
-    null,
-    2,
-  );
-}
+import {
+  createInitialTldrawDocument,
+  ensureNonEmptyTldrawDocument,
+} from "./document";
 
 function createFileName() {
   const now = new Date();
@@ -41,10 +30,14 @@ export default registerExtension((runtime) => {
     fileExtensions: [".tldraw"],
     render: async ({ path, fileName }, ctx) => {
       const content = await ctx.fs.readFile(path);
+      const normalized = ensureNonEmptyTldrawDocument(content);
+      if (normalized.shouldWrite) {
+        await ctx.fs.writeFile(path, normalized.content);
+      }
       return {
         title: fileName,
         contentType: "tldraw",
-        content,
+        content: normalized.content,
       };
     },
   });
