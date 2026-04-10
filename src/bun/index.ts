@@ -20,19 +20,8 @@ import {
 
 const dataLayerReady = initializeDataLayer();
 const extensionRegistry = new ExtensionRegistry();
-const extensionRuntimeHost = new ExtensionRuntimeHost(extensionRegistry);
-const extensionRuntimeReady = extensionRuntimeHost
-  .initialize()
-  .then(() => {
-    console.log(
-      "[bun] extension runtime ready",
-      extensionRuntimeHost.listContributedAIProviders().length,
-      "runtime provider(s)",
-    );
-  })
-  .catch((error: unknown) => {
-    console.error("[bun] extension runtime failed to initialize", error);
-  });
+let extensionRuntimeHost: ExtensionRuntimeHost | null = null;
+let extensionRuntimeReady: Promise<void> = Promise.resolve();
 const workspaceRestoreReady = restoreWorkspaceRoot().catch((error: unknown) => {
   console.error("[bun] failed to restore previous workspace root", error);
   return null;
@@ -94,7 +83,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
         await extensionRuntimeReady;
         return listAllProviders(
           extensionRegistry.list(),
-          extensionRuntimeHost.listContributedAIProviders(),
+          extensionRuntimeHost?.listContributedAIProviders() ?? [],
         );
       },
     },
@@ -119,6 +108,36 @@ export const win = new BrowserWindow({
   frame: { x: 100, y: 100, width: 1024, height: 768 },
   rpc,
 });
+
+extensionRuntimeHost = new ExtensionRuntimeHost(extensionRegistry, {
+  getActiveEditorSelectionAsMarkdown: async () => {
+    const webviewRpc = win.webview.rpc;
+    if (!webviewRpc?.request.getActiveEditorSelectionAsMarkdown) {
+      throw new Error("Webview editor bridge is unavailable.");
+    }
+    const response = await webviewRpc.request.getActiveEditorSelectionAsMarkdown({});
+    return response.markdown;
+  },
+  insertAtActiveEditorCursor: async (markdown) => {
+    const webviewRpc = win.webview.rpc;
+    if (!webviewRpc?.request.insertAtActiveEditorCursor) {
+      throw new Error("Webview editor bridge is unavailable.");
+    }
+    await webviewRpc.request.insertAtActiveEditorCursor({ markdown });
+  },
+});
+extensionRuntimeReady = extensionRuntimeHost
+  .initialize()
+  .then(() => {
+    console.log(
+      "[bun] extension runtime ready",
+      extensionRuntimeHost?.listContributedAIProviders().length ?? 0,
+      "runtime provider(s)",
+    );
+  })
+  .catch((error: unknown) => {
+    console.error("[bun] extension runtime failed to initialize", error);
+  });
 
 ApplicationMenu.setApplicationMenu([
   {

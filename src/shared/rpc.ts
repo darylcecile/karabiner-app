@@ -70,7 +70,16 @@ export type AppRPC = {
     };
   }>;
   webview: RPCSchema<{
-    requests: Record<string, never>;
+    requests: {
+      getActiveEditorSelectionAsMarkdown: {
+        params: Record<string, never>;
+        response: { markdown: string };
+      };
+      insertAtActiveEditorCursor: {
+        params: { markdown: string };
+        response: { ok: true };
+      };
+    };
     messages: {
       notify: { text: string };
       workspaceFolderSelected: { path: string | null };

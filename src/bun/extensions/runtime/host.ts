@@ -68,12 +68,22 @@ type ActiveExtensionRuntime = {
   blockNotePlugins: Map<string, RegisteredBlockNotePlugin>;
 };
 
+type ExtensionRuntimeHostOptions = {
+  getActiveEditorSelectionAsMarkdown?: () => Promise<string>;
+  insertAtActiveEditorCursor?: (markdown: string) => Promise<void>;
+};
+
 export class ExtensionRuntimeHost {
   private readonly extensionRegistry: ExtensionRegistry;
+  private readonly options: ExtensionRuntimeHostOptions;
   private readonly activeRuntimes = new Map<string, ActiveExtensionRuntime>();
 
-  constructor(extensionRegistry: ExtensionRegistry) {
+  constructor(
+    extensionRegistry: ExtensionRegistry,
+    options: ExtensionRuntimeHostOptions = {},
+  ) {
     this.extensionRegistry = extensionRegistry;
+    this.options = options;
   }
 
   async initialize(): Promise<void> {
@@ -774,9 +784,11 @@ export class ExtensionRuntimeHost {
           "notes.read",
           "ctx.notes.getActiveEditor().getSelectionAsMarkdown",
         );
-        throw new Error(
-          "Active editor selection is not available in the Bun extension host yet.",
-        );
+        const getSelectionAsMarkdown = this.options.getActiveEditorSelectionAsMarkdown;
+        if (!getSelectionAsMarkdown) {
+          throw new Error("No active editor bridge is available.");
+        }
+        return context.newString(await getSelectionAsMarkdown());
       },
     );
     context.setProp(activeEditorHandle, "getSelectionAsMarkdown", selectionHandle);
@@ -789,9 +801,12 @@ export class ExtensionRuntimeHost {
           "notes.write",
           "ctx.notes.getActiveEditor().insertAtCursor",
         );
-        this.readHandleAsString(context, markdownHandle, "markdown");
-        throw new Error(
-          "Active editor cursor insertion is not available in the Bun extension host yet.",
+        const insertAtActiveEditorCursor = this.options.insertAtActiveEditorCursor;
+        if (!insertAtActiveEditorCursor) {
+          throw new Error("No active editor bridge is available.");
+        }
+        await insertAtActiveEditorCursor(
+          this.readHandleAsString(context, markdownHandle, "markdown"),
         );
       },
     );

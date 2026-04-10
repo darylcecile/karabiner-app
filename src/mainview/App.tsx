@@ -19,8 +19,12 @@ import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote
 import { FileTree } from "@pierre/trees/react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
-import { electroview, onWorkspaceFolderSelected } from "./rpc";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  electroview,
+  onWorkspaceFolderSelected,
+  registerActiveEditorBridge,
+} from "./rpc";
 import type { AIProviderDefinition } from "../shared/contracts/ai";
 import type { WorkspaceItem } from "../shared/contracts/notes";
 
@@ -131,7 +135,15 @@ function createFallbackBlocks(markdown: string): PartialBlock[] {
 }
 
 export function App() {
-  const editor = useCreateBlockNote();
+  const editor = useCreateBlockNote({
+    // Keep paste behavior explicit and predictable:
+    // prefer markdown-rich pastes when available, and parse plain text as markdown.
+    pasteHandler: ({ defaultPasteHandler }) =>
+      defaultPasteHandler({
+        prioritizeMarkdownOverHTML: true,
+        plainTextAsMarkdown: true,
+      }),
+  });
   const prefersReducedMotion = useReducedMotion();
   const [prefersDarkMode, setPrefersDarkMode] = useState(true);
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null);
@@ -146,6 +158,7 @@ export function App() {
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("files");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomedImageTabIds, setZoomedImageTabIds] = useState<Record<string, boolean>>({});
+  const activeTabRef = useRef<AppTab | null>(null);
 
   const borderTone = prefersDarkMode ? "border-white/[0.07]" : "border-neutral-200";
   const appBg = prefersDarkMode ? "bg-[#0a0a0f]" : "bg-[#f6f8fc]";
@@ -183,6 +196,37 @@ export function App() {
     () => workspaceItems.map((item) => item.path),
     [workspaceItems],
   );
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    return registerActiveEditorBridge({
+      getSelectionAsMarkdown: () => {
+        const currentActiveTab = activeTabRef.current;
+        if (!currentActiveTab || currentActiveTab.type !== "editor") {
+          throw new Error("No active editor tab.");
+        }
+        const selection = editor.getSelection();
+        if (!selection) {
+          return "";
+        }
+        const { blocks } = editor.getSelectionCutBlocks(true);
+        return editor.blocksToMarkdownLossy(blocks as PartialBlock[]).trim();
+      },
+      insertAtCursor: (markdown: string) => {
+        const currentActiveTab = activeTabRef.current;
+        if (!currentActiveTab || currentActiveTab.type !== "editor") {
+          throw new Error("No active editor tab.");
+        }
+        if (markdown.trim().length === 0) {
+          return;
+        }
+        editor.pasteMarkdown(markdown);
+      },
+    });
+  }, [editor]);
 
   async function refreshWorkspaceItems(): Promise<WorkspaceItem[]> {
     const items = await electroview.rpc!.request.listWorkspaceItems({});
