@@ -1,54 +1,68 @@
 # Karabiner
 
-A desktop application built with [Electrobun](https://blackboard.sh/electrobun/), React 19, and Tailwind CSS v4.
+Karabiner is now a local-first desktop notes workspace built with Electrobun, React 19, and Tailwind CSS v4.
 
-## Prerequisites
+## What it currently does
 
-- [Bun](https://bun.sh/) (v1.0+)
-- macOS, Linux, or Windows
+- Open a folder as your workspace (with last-opened folder restore).
+- Browse markdown and image files in a tree sidebar.
+- Open files into tabs:
+  - Markdown files open in a BlockNote editor.
+  - Images open in a contained preview with click-to-zoom.
+- Create and save notes directly to disk.
+- Use a clean icon-first shell with sections for **Files**, **Extensions**, **Kai**, and **Settings**.
 
-## Getting Started
+## Stack
+
+- **Runtime**: Bun
+- **Desktop framework**: Electrobun (not Electron)
+- **UI**: React 19 + Tailwind CSS v4
+- **Editor**: BlockNote
+- **Data layer**: PGlite + pgvector extension
+- **Build**: Vite + Electrobun build pipeline
+
+## Development
 
 ```bash
 # Install dependencies
 bun install
 
-# Run in development (build + launch)
+# Build webview and run desktop app in dev mode
 bun start
 
-# Development with file watching
+# Electrobun watch mode
 bun run dev
 
-# Development with Vite HMR
+# Vite HMR + desktop runtime
 bun run dev:hmr
 
 # Production build
 bun run build
+
+# Type-check
+bun tsc --noEmit
 ```
 
-## Project Structure
+## Project structure
 
-```
+```text
 src/
-├── bun/          # Main process (Bun runtime)
-│   └── index.ts
-├── mainview/     # Webview UI (React + Tailwind, built by Vite)
-│   ├── index.html
-│   ├── main.tsx
-│   ├── App.tsx
-│   ├── rpc.ts
-│   └── index.css
-└── shared/       # Shared types (RPC schema)
-    └── rpc.ts
+├── bun/
+│   ├── ai/           # Provider catalog + AI wiring entrypoints
+│   ├── data/         # PGlite client + schema migrations
+│   ├── extensions/   # Extension manifest/permissions/registry scaffolding
+│   ├── notes/        # Workspace storage, file IO, note/image loading
+│   └── index.ts      # App bootstrap + Bun-side RPC handlers
+├── mainview/
+│   ├── App.tsx       # Main UI shell, tabs, tree, editor/image views
+│   ├── blocknote.css # Editor theming
+│   ├── rpc.ts        # Webview-side RPC bridge
+│   └── main.tsx      # React entrypoint
+└── shared/
+    ├── contracts/    # Shared domain contracts (notes, ai, app, permissions)
+    └── rpc.ts        # Shared typed RPC schema
 ```
 
-## Stack
+## Important implementation note
 
-- **Runtime**: Bun
-- **Desktop framework**: Electrobun (NOT Electron)
-- **Frontend**: React 19, Tailwind CSS v4
-- **Build tool**: Vite
-
-## License
-
-MIT
+`electrobun.config.ts` explicitly copies required PGlite/pgvector runtime assets into the bundle (`vector.tar.gz`, `pglite.data`, `pglite.wasm`, `initdb.wasm`, `initdb.js`). If this mapping is removed or drifted, desktop runtime initialization will fail.
