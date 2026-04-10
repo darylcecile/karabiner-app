@@ -5,6 +5,11 @@ on:
     types:
       - published
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to upload extension archives to
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag }}
 
       - name: Package extension folders
         run: |
@@ -48,7 +55,10 @@ jobs:
           path: dist/extensions/*.tar.gz
 
       - name: Attach extension archives to release
-        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/extensions/*.tar.gz
+          tag_name: ${{ github.event.release.tag_name || inputs.release_tag }}
+          files: |
+            dist/extensions/*.tar.gz
+          fail_on_unmatched_files: true
+          overwrite_files: true
