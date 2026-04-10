@@ -66,3 +66,7 @@ src/
 ## Important implementation note
 
 `electrobun.config.ts` explicitly copies required PGlite/pgvector runtime assets into the bundle (`vector.tar.gz`, `pglite.data`, `pglite.wasm`, `initdb.wasm`, `initdb.js`). If this mapping is removed or drifted, desktop runtime initialization will fail.
+
+## Architecture docs
+
+- [Extension system](docs/extension-system.md)

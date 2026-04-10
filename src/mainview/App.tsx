@@ -45,6 +45,13 @@ type ImageTab = {
 
 type AppTab = EditorTab | ImageTab;
 
+function getFileNameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  const fileName = segments[segments.length - 1];
+  return fileName && fileName.length > 0 ? fileName : path;
+}
+
 function SlashMenu({
   items,
   selectedIndex,
@@ -208,7 +215,7 @@ export function App() {
     setTabs((currentTabs) =>
       currentTabs.map((tab) =>
         tab.type === "editor" && tab.noteId === noteId
-          ? { ...tab, title: note.title, path: note.path }
+          ? { ...tab, title: getFileNameFromPath(note.path), path: note.path }
           : tab,
       ),
     );
@@ -227,7 +234,7 @@ export function App() {
           id: tabId,
           type: "editor",
           noteId: item.id,
-          title: item.title,
+          title: getFileNameFromPath(item.path),
           path: item.path,
         },
       ];
@@ -245,7 +252,7 @@ export function App() {
         {
           id: tabId,
           type: "image",
-          title: image.title,
+          title: getFileNameFromPath(image.path),
           path: image.path,
           mimeType: image.mimeType,
           dataUrl: image.dataUrl,
@@ -318,7 +325,7 @@ export function App() {
       setTabs((currentTabs) =>
         currentTabs.map((tab) =>
           tab.type === "editor" && tab.noteId === saved.id
-            ? { ...tab, title: saved.title, path: saved.path }
+            ? { ...tab, title: getFileNameFromPath(saved.path), path: saved.path }
             : tab,
         ),
       );
