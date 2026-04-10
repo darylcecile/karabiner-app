@@ -14,7 +14,13 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { PartialBlock } from "@blocknote/core";
-import { BlockNoteViewRaw, SuggestionMenuController, useCreateBlockNote } from "@blocknote/react";
+import { filterSuggestionItems } from "@blocknote/core/extensions";
+import {
+  BlockNoteViewRaw,
+  getDefaultReactSlashMenuItems,
+  SuggestionMenuController,
+  useCreateBlockNote,
+} from "@blocknote/react";
 import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote/react";
 import { FileTree } from "@pierre/trees/react";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -1118,6 +1124,23 @@ export function App() {
                 >
                   <SuggestionMenuController
                     triggerCharacter="/"
+                    getItems={async (query) =>
+                      filterSuggestionItems(
+                        [
+                          ...getDefaultReactSlashMenuItems(editor),
+                          ...inlineEditorBlocks.map((block) => ({
+                            title: block.title,
+                            subtext: block.description ?? `Insert ${block.title}`,
+                            aliases: [block.id, ...block.title.toLowerCase().split(/\s+/)],
+                            icon: <HugeiconsIcon icon={PuzzleIcon} size={16} />,
+                            onItemClick: () => {
+                              void insertInlineEditorBlock(block);
+                            },
+                          })),
+                        ],
+                        query,
+                      )
+                    }
                     suggestionMenuComponent={SlashMenu}
                   />
                 </BlockNoteViewRaw>
