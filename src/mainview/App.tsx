@@ -27,6 +27,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { BlockNoteSchema, createCodeBlockSpec, defaultBlockSpecs } from "@blocknote/core";
+import { createHighlighter } from "shiki";
 import type { PartialBlock } from "@blocknote/core";
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 import {
@@ -146,6 +147,13 @@ const blockNoteSchema = BlockNoteSchema.create({
     codeBlock: createCodeBlockSpec({
       defaultLanguage: "typescript",
       supportedLanguages: CODE_BLOCK_LANGUAGES,
+      createHighlighter: () =>
+        createHighlighter({
+          themes: ["github-dark", "github-light"],
+          langs: Object.keys(CODE_BLOCK_LANGUAGES).filter(
+            (l) => l !== "text",
+          ),
+        }),
     }),
   },
 });
