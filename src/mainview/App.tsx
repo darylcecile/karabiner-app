@@ -3,6 +3,7 @@ import {
   AddSquareIcon,
   ArrowLeft02Icon,
   ArrowRight02Icon,
+  Cancel01Icon,
   File01Icon,
   FolderOpenIcon,
   FolderTreeIcon,
@@ -379,28 +380,28 @@ export function App() {
           <Tabs.List className="flex flex-1 flex-col items-center gap-0.5">
             <Tabs.Trigger
               value="files"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.09] data-[state=active]:text-white`}
+              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
               title="Files"
             >
               <HugeiconsIcon icon={FolderTreeIcon} size={18} />
             </Tabs.Trigger>
             <Tabs.Trigger
               value="extensions"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.09] data-[state=active]:text-white`}
+              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
               title="Extensions"
             >
               <HugeiconsIcon icon={PuzzleIcon} size={18} />
             </Tabs.Trigger>
             <Tabs.Trigger
               value="kai"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.09] data-[state=active]:text-white`}
+              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
               title="Kai"
             >
               <HugeiconsIcon icon={AiChat02Icon} size={18} />
             </Tabs.Trigger>
             <Tabs.Trigger
               value="settings"
-              className={`${navIconBtn} data-[state=active]:bg-white/[0.09] data-[state=active]:text-white`}
+              className={`${navIconBtn} data-[state=active]:bg-white/[0.08] data-[state=active]:text-indigo-400`}
               title="Settings"
             >
               <HugeiconsIcon icon={Settings02Icon} size={18} />
@@ -422,7 +423,7 @@ export function App() {
             >
               <Tabs.Content value="files" className="flex h-full flex-col data-[state=inactive]:hidden">
                 <header className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-3 py-2.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
                     Files
                   </span>
                   <div className="flex items-center gap-0.5">
@@ -477,10 +478,12 @@ export function App() {
                     }}
                   />
                 </div>
-                <footer className="shrink-0 border-t border-white/[0.07] px-3 py-2">
-                  <p className="text-[11px] text-neutral-600">{workspaceItems.length} items</p>
-                  <p className="truncate text-[11px] text-neutral-700" title={statusMessage}>
+                <footer className="shrink-0 border-t border-white/[0.07] px-3 py-2.5">
+                  <p className="truncate text-[11px] text-neutral-600" title={statusMessage}>
                     {statusMessage}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-neutral-700">
+                    {workspaceItems.length} {workspaceItems.length === 1 ? "item" : "items"}
                   </p>
                 </footer>
               </Tabs.Content>
@@ -489,7 +492,7 @@ export function App() {
                 value="extensions"
                 className="h-full p-4 data-[state=inactive]:hidden"
               >
-                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
                   Extensions
                 </h2>
                 <p className="mt-3 text-xs leading-relaxed text-neutral-500">
@@ -501,7 +504,7 @@ export function App() {
               </Tabs.Content>
 
               <Tabs.Content value="kai" className="h-full p-4 data-[state=inactive]:hidden">
-                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
                   Kai
                 </h2>
                 <p className="mt-3 text-xs leading-relaxed text-neutral-500">
@@ -513,7 +516,7 @@ export function App() {
               </Tabs.Content>
 
               <Tabs.Content value="settings" className="h-full p-4 data-[state=inactive]:hidden">
-                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
                   Settings
                 </h2>
                 <p className="mt-3 text-xs leading-relaxed text-neutral-500">
@@ -553,23 +556,27 @@ export function App() {
               </button>
               <button
                 onClick={() => closeTab(tab.id)}
-                className="ml-0.5 rounded px-0.5 text-neutral-700 transition-colors hover:text-neutral-300 group-hover:text-neutral-500"
+                className="ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-neutral-700 opacity-0 transition-all hover:bg-white/[0.1] hover:text-neutral-300 group-hover:opacity-100"
                 aria-label="Close tab"
               >
-                ×
+                <HugeiconsIcon icon={Cancel01Icon} size={9} />
               </button>
             </div>
           ))}
           {tabs.length === 0 && (
-            <span className="px-4 py-2 text-xs text-neutral-700">
-              Open a note or image from Files.
+            <span className="px-4 py-2 text-[11px] text-neutral-700">
+              Open a file from the sidebar to start writing.
             </span>
           )}
         </div>
 
         {!activeTab && (
-          <div className="flex flex-1 items-center justify-center">
-            <p className="text-xs text-neutral-700">No file open.</p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-2.5">
+            <HugeiconsIcon icon={File01Icon} size={28} className="text-neutral-700" />
+            <p className="text-xs text-neutral-600">No file open</p>
+            <p className="text-[11px] text-neutral-700">
+              Select a note or image from the sidebar
+            </p>
           </div>
         )}
 
