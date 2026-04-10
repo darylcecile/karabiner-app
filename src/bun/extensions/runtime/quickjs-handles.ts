@@ -17,8 +17,45 @@ export async function resolveMaybePromiseHandle(
 
   try {
     const resolved = await context.resolvePromise(handle);
-    return context.unwrapResult(resolved);
+    if ("error" in resolved) {
+      const rejectionHandle = resolved.error;
+      if (!rejectionHandle) {
+        throw new Error("QuickJS promise rejected without an error handle.");
+      }
+      try {
+        throw new Error(
+          `QuickJS promise rejected: ${formatQuickJSError(context, rejectionHandle)}`,
+        );
+      } finally {
+        rejectionHandle.dispose();
+      }
+    }
+    return resolved.value;
   } finally {
     handle.dispose();
+  }
+}
+
+function formatQuickJSError(
+  context: QuickJSContext | QuickJSAsyncContext,
+  errorHandle: QuickJSHandle,
+): string {
+  const dumped = context.dump(errorHandle);
+  if (
+    dumped &&
+    typeof dumped === "object" &&
+    !Array.isArray(dumped) &&
+    "message" in dumped &&
+    typeof dumped.message === "string"
+  ) {
+    return dumped.message;
+  }
+  if (typeof dumped === "string") {
+    return dumped;
+  }
+  try {
+    return JSON.stringify(dumped);
+  } catch {
+    return String(dumped);
   }
 }

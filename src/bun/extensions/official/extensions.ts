@@ -76,6 +76,12 @@ type GithubRelease = {
   assets: GithubReleaseAsset[];
 };
 
+type OfficialReleaseAsset = {
+  tagName: string;
+  assetName: string;
+  downloadUrl: string;
+};
+
 export type OfficialExtensionMetadata = {
   id: string;
   name: string;
@@ -136,7 +142,7 @@ export async function prepareOfficialExtensionInstall(
     throw new Error(`Unknown official extension "${extensionId}".`);
   }
 
-  const archiveUrl = await resolveOfficialReleaseAssetUrl(entry);
+  const releaseAsset = await resolveOfficialReleaseAsset(entry);
   const tempDirectory = await mkdtemp(
     join(tmpdir(), `karabiner-official-install-${entry.slug}-`),
   );
@@ -145,7 +151,7 @@ export async function prepareOfficialExtensionInstall(
   await mkdir(extractedDirectory, { recursive: true });
 
   try {
-    const archiveBytes = await downloadOfficialReleaseAsset(archiveUrl);
+    const archiveBytes = await downloadOfficialReleaseAsset(releaseAsset);
     await writeFile(archivePath, archiveBytes);
     await extractTarball(archivePath, extractedDirectory);
     const extractedExtensionDirectory = await resolveExtractedExtensionDirectory(
@@ -385,15 +391,19 @@ async function tryReadRegistryFromLocalFile(): Promise<RegistryContentLoadResult
   };
 }
 
-async function resolveOfficialReleaseAssetUrl(
+async function resolveOfficialReleaseAsset(
   entry: OfficialRegistryEntry,
-): Promise<string> {
+): Promise<OfficialReleaseAsset> {
   const releases = await readOfficialRepoReleases();
   const assetName = `${entry.slug}.tar.gz`;
   for (const release of releases) {
     const asset = release.assets.find((candidate) => candidate.name === assetName);
     if (asset) {
-      return asset.browser_download_url;
+      return {
+        tagName: release.tag_name,
+        assetName,
+        downloadUrl: asset.browser_download_url,
+      };
     }
   }
   throw new Error(
@@ -416,16 +426,52 @@ async function readOfficialRepoReleases(): Promise<GithubRelease[]> {
   );
 }
 
-async function downloadOfficialReleaseAsset(url: string): Promise<Uint8Array> {
-  const response = await fetch(url, {
+async function downloadOfficialReleaseAsset(
+  releaseAsset: OfficialReleaseAsset,
+): Promise<Uint8Array> {
+  const ghResult = await tryDownloadOfficialReleaseAssetViaGhCli(releaseAsset);
+  if (ghResult.ok) {
+    return ghResult.bytes;
+  }
+
+  const response = await fetch(releaseAsset.downloadUrl, {
     headers: buildGithubApiHeaders(),
   });
   if (!response.ok) {
     throw new Error(
-      `Failed to download release asset from "${url}". HTTP ${response.status}.`,
+      `Failed to download release asset "${releaseAsset.assetName}" (tag "${releaseAsset.tagName}") from "${releaseAsset.downloadUrl}". gh CLI: ${ghResult.error}. HTTP ${response.status}.`,
     );
   }
   return new Uint8Array(await response.arrayBuffer());
+}
+
+async function tryDownloadOfficialReleaseAssetViaGhCli(
+  releaseAsset: OfficialReleaseAsset,
+): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; error: string }> {
+  const ghBinary = Bun.which("gh");
+  if (!ghBinary) {
+    return {
+      ok: false,
+      error: "gh CLI is not available",
+    };
+  }
+
+  const tempDirectory = await mkdtemp(join(tmpdir(), "karabiner-release-asset-"));
+  const outputPath = join(tempDirectory, releaseAsset.assetName);
+  try {
+    await $`${ghBinary} release download ${releaseAsset.tagName} --repo ${OFFICIAL_REGISTRY_OWNER}/${OFFICIAL_REGISTRY_REPO} --pattern ${releaseAsset.assetName} --output ${outputPath}`.quiet();
+    return {
+      ok: true,
+      bytes: new Uint8Array(await readFile(outputPath)),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: getErrorMessage(error),
+    };
+  } finally {
+    await rm(tempDirectory, { recursive: true, force: true });
+  }
 }
 
 async function extractTarball(

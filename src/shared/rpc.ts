@@ -79,6 +79,10 @@ export type AppRPC = {
         params: { id: string; installToken: string };
         response: OfficialExtensionReadme;
       };
+      uninstallOfficialExtension: {
+        params: { id: string };
+        response: OfficialExtensionReadme;
+      };
       listExtensionInlineEditorBlocks: {
         params: Record<string, never>;
         response: ExtensionInlineEditorBlockContribution[];
