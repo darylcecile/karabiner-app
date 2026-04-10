@@ -46,6 +46,8 @@ bun tsc --noEmit
 ## Project structure
 
 ```text
+extensions/
+└── draw/             # Official draw extension source (manifest + README + entrypoint)
 packages/
 └── sdk/              # @karabiner/sdk (TypeScript extension SDK scaffolding)
 src/
@@ -64,6 +66,11 @@ src/
     ├── contracts/    # Shared domain contracts (notes, ai, app, permissions)
     └── rpc.ts        # Shared typed RPC schema
 ```
+
+## Official extension registry
+
+- `registry.karabiner.json` at repo root is the source of truth for official extension entries.
+- `.github/workflows/release-extensions.yml` packages every `/extensions/*` folder as a `.tar.gz` artifact and attaches them to GitHub releases.
 
 ## Important implementation note
 

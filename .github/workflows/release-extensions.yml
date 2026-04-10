@@ -1,0 +1,54 @@
+name: Release official extensions
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package-extensions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package extension folders
+        run: |
+          set -euo pipefail
+          mkdir -p dist/extensions
+
+          found=0
+          for extension_dir in extensions/*; do
+            if [ ! -d "${extension_dir}" ]; then
+              continue
+            fi
+
+            found=1
+            extension_slug="$(basename "${extension_dir}")"
+            archive_path="dist/extensions/${extension_slug}.tar.gz"
+            tar -czf "${archive_path}" -C extensions "${extension_slug}"
+            echo "Packaged ${archive_path}"
+          done
+
+          if [ "${found}" -eq 0 ]; then
+            echo "No extension folders found in /extensions."
+            exit 1
+          fi
+
+      - name: Upload packaged extension artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: karabiner-extensions
+          path: dist/extensions/*.tar.gz
+
+      - name: Attach extension archives to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/extensions/*.tar.gz
