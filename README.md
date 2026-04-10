@@ -69,7 +69,7 @@ src/
 
 ## Official extension registry
 
-- `registry.karabiner.json` at repo root is the source of truth for official extension entries.
+- `registry.karabiner.json` at repo root is the source of truth for official extension entries and is fetched at runtime via `gh api` (when available), then the GitHub API, with a local file fallback.
 - `.github/workflows/release-extensions.yml` packages every `/extensions/*` folder as a `.tar.gz` artifact and attaches them to GitHub releases.
 
 ## Important implementation note
