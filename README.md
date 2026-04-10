@@ -1,85 +1,73 @@
 # Karabiner
 
-A lightweight desktop code editor built with [Electrobun](https://electrobun.dev), React, and TypeScript. Karabiner provides a VSCode-inspired interface with integrated terminal, Monaco editor, git support, and a dockable panel layout — all in a ~14MB bundle with sub-50ms startup.
+Karabiner is now a local-first desktop notes workspace built with Electrobun, React 19, and Tailwind CSS v4.
 
-![karabiner](image.png)
+## What it currently does
 
-## Features
+- Open a folder as your workspace (with last-opened folder restore).
+- Browse markdown and image files in a tree sidebar.
+- Open files into tabs:
+  - Markdown files open in a BlockNote editor.
+  - Images open in a contained preview with click-to-zoom.
+- Create and save notes directly to disk.
+- Use a clean icon-first shell with sections for **Files**, **Extensions**, **Kai**, and **Settings**.
 
-- **Monaco Editor** — Full-featured code editing with syntax highlighting for 30+ languages, minimap, bracket matching, and save-to-disk
-- **Integrated Terminal** — PTY-backed terminal with xterm.js, WebGL rendering, truecolor support, search, and Cmd+click URL opening
-- **Git Integration** — Branch display, ahead/behind tracking, file status decorations (modified, added, deleted, untracked, renamed, conflicted) propagated through the file tree
-- **Diff Viewer** — Side-by-side diff view for git-modified files
-- **File Explorer** — Recursive directory tree with git status decorations and smart directory filtering
-- **Command Palette** — Quick access to commands via `Cmd+K` or `Cmd+Shift+P`
-- **Dockable Panels** — Flexible tabbed layout powered by Dockview, supporting splits and rearrangement
-- **Image Preview** — In-editor preview for common image formats
-- **Theming** — Dark and light themes with system preference detection
+## Stack
 
-## Getting Started
+- **Runtime**: Bun
+- **Desktop framework**: Electrobun (not Electron)
+- **UI**: React 19 + Tailwind CSS v4
+- **Editor**: BlockNote
+- **Data layer**: PGlite + pgvector extension
+- **Build**: Vite + Electrobun build pipeline
 
-**Prerequisites:** [Bun](https://bun.sh) and the [Electrobun CLI](https://electrobun.dev)
+## Development
 
 ```bash
 # Install dependencies
 bun install
 
-# Development with HMR (recommended)
-bun run dev:hmr
-
-# Development without HMR (watches for changes, rebuilds automatically)
-bun run dev
-
-# Build and run with bundled assets
+# Build webview and run desktop app in dev mode
 bun start
 
-# Build for distribution (canary)
-bun run build:canary
+# Electrobun watch mode
+bun run dev
+
+# Vite HMR + desktop runtime
+bun run dev:hmr
+
+# Production build
+bun run build
+
+# Type-check
+bun tsc --noEmit
 ```
 
-### How HMR Works
+## Project structure
 
-When you run `bun run dev:hmr`:
-
-1. A Vite dev server starts on `http://localhost:5173`
-2. Electrobun detects the running Vite server and loads from it
-3. Changes to React components update instantly without a full reload
-
-## Project Structure
-
-```
+```text
 src/
 ├── bun/
-│   └── index.ts              # Main process: window, PTY, file I/O, git, menus, watchers
+│   ├── ai/           # Provider catalog + AI wiring entrypoints
+│   ├── data/         # PGlite client + schema migrations
+│   ├── extensions/   # Extension manifest/permissions/registry scaffolding
+│   ├── notes/        # Workspace storage, file IO, note/image loading
+│   └── index.ts      # App bootstrap + Bun-side RPC handlers
 ├── mainview/
-│   ├── App.tsx               # Root component: layout, workspace state, panel orchestration
-│   ├── main.tsx              # React entry point
-│   ├── index.html            # HTML template
-│   ├── index.css             # Tailwind v4 theme tokens, Dockview/xterm/cmdk styles
-│   ├── rpc.ts                # Webview-side RPC bridge
-│   └── components/
-│       ├── TerminalPanel.tsx  # xterm.js terminal with PTY and search
-│       ├── EditorPanel.tsx    # Monaco editor with save and language detection
-│       ├── DiffPanel.tsx      # Git diff viewer
-│       ├── Sidebar.tsx        # File tree with git status decorations
-│       ├── StatusBar.tsx      # Bottom bar: branch, changes, encoding
-│       ├── CommandPalette.tsx # Cmd+K command palette
-│       └── ContextPanel.tsx   # Right-side collapsible info panel
+│   ├── App.tsx       # Main UI shell, tabs, tree, editor/image views
+│   ├── blocknote.css # Editor theming
+│   ├── rpc.ts        # Webview-side RPC bridge
+│   └── main.tsx      # React entrypoint
 └── shared/
-    └── rpc.ts                # Shared RPC type definitions (Bun <-> Webview)
+    ├── contracts/    # Shared domain contracts (notes, ai, app, permissions)
+    └── rpc.ts        # Shared typed RPC schema
 ```
 
-## Tech Stack
+## Important implementation note
 
-- **[Electrobun](https://electrobun.dev)** — Desktop framework using Bun + system WebView
-- **[React 19](https://react.dev)** + **TypeScript**
-- **[Tailwind CSS v4](https://tailwindcss.com)** + PostCSS
-- **[Vite 6](https://vite.dev)** — Build tooling and dev server
-- **[Monaco Editor](https://microsoft.github.io/monaco-editor/)** — Code editing
-- **[xterm.js](https://xtermjs.org)** — Terminal emulation
-- **[Dockview](https://dockview.dev)** — Panel layout system
-- **[cmdk](https://cmdk.paco.me)** — Command palette
+`electrobun.config.ts` explicitly copies required PGlite/pgvector runtime assets into the bundle (`vector.tar.gz`, `pglite.data`, `pglite.wasm`, `initdb.wasm`, `initdb.js`). If this mapping is removed or drifted, desktop runtime initialization will fail.
 
-## License
+## Architecture docs
 
-[AGPL-3.0](LICENSE)
+- [Extension system](docs/extension-system.md)
+- [Extension runtime SDK](docs/extension-runtime-sdk.md)

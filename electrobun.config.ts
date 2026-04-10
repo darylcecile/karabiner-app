@@ -1,27 +1,30 @@
 import type { ElectrobunConfig } from "electrobun";
 
 export default {
-	app: {
-		name: "Karabiner",
-		identifier: "app.karabiner.dev",
-		version: "0.0.1",
-	},
-	build: {
-		// Vite builds to dist/, we copy from there
-		copy: {
-			"dist/index.html": "views/mainview/index.html",
-			"dist/assets": "views/mainview/assets",
-		},
-		// Ignore Vite output in watch mode — HMR handles view rebuilds separately
-		watchIgnore: ["dist/**"],
-		mac: {
-			bundleCEF: false,
-		},
-		linux: {
-			bundleCEF: false,
-		},
-		win: {
-			bundleCEF: false,
-		},
-	},
+  app: {
+    name: "Karabiner",
+    identifier: "app.karabiner.dev",
+    version: "0.1.0",
+  },
+  build: {
+    copy: {
+      "dist/index.html": "views/mainview/index.html",
+      "dist/assets": "views/mainview/assets",
+      "node_modules/@electric-sql/pglite/dist/vector.tar.gz": "vector.tar.gz",
+      "node_modules/@electric-sql/pglite/dist/pglite.data": "bun/pglite.data",
+      "node_modules/@electric-sql/pglite/dist/pglite.wasm": "bun/pglite.wasm",
+      "node_modules/@electric-sql/pglite/dist/initdb.wasm": "bun/initdb.wasm",
+      "node_modules/@electric-sql/pglite/dist/initdb.js": "bun/initdb.js",
+    },
+    watchIgnore: ["dist/**"],
+    mac: {
+      bundleCEF: false,
+    },
+    linux: {
+      bundleCEF: false,
+    },
+    win: {
+      bundleCEF: false,
+    },
+  },
 } satisfies ElectrobunConfig;

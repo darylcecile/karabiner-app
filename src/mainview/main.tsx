@@ -1,12 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "@blocknote/core/fonts/inter.css";
+import "@blocknote/react/style.css";
+import { App } from "./App";
+import "./blocknote.css";
 import "./index.css";
-// Initialize the Electrobun RPC bridge before React mounts
 import "./rpc";
-import App from "./App";
 
 createRoot(document.getElementById("root")!).render(
-	<StrictMode>
-		<App />
-	</StrictMode>,
+  <StrictMode>
+    <App />
+  </StrictMode>,
 );
