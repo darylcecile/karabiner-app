@@ -1,4 +1,11 @@
-import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import {
   basename,
   dirname,
@@ -10,7 +17,12 @@ import {
   sep,
 } from "node:path";
 import { Utils } from "electrobun/bun";
-import { newAsyncContext, type QuickJSAsyncContext, type QuickJSHandle } from "quickjs-emscripten";
+import {
+  newAsyncRuntime,
+  type QuickJSAsyncContext,
+  type QuickJSAsyncRuntime,
+  type QuickJSHandle,
+} from "quickjs-emscripten";
 import type { AIProviderDefinition } from "../../../shared/contracts/ai";
 import type {
   ExtensionFilePreviewHandlerContribution,
@@ -91,6 +103,7 @@ type RegisteredFilePreviewHandler = {
 type ActiveExtensionRuntime = {
   extension: InstalledExtension;
   gate: ExtensionPermissionGate;
+  runtimeOwner: QuickJSAsyncRuntime;
   context: QuickJSAsyncContext;
   runtimeApiHandle: QuickJSHandle;
   storage: Map<string, unknown>;
@@ -387,6 +400,20 @@ export class ExtensionRuntimeHost {
     }
   }
 
+  async uninstallExtension(extensionId: string): Promise<void> {
+    const activeRuntime = this.activeRuntimes.get(extensionId);
+    if (activeRuntime) {
+      await this.deactivateRuntime(activeRuntime);
+      this.activeRuntimes.delete(extensionId);
+    }
+
+    const installedExtension = this.extensionRegistry.getById(extensionId);
+    this.extensionRegistry.remove(extensionId);
+    const extensionRoot =
+      installedExtension?.rootDir ?? join(EXTENSIONS_DIRECTORY, extensionId);
+    await rm(extensionRoot, { recursive: true, force: true });
+  }
+
   private async activateExtension(extension: InstalledExtension): Promise<void> {
     if (this.activeRuntimes.has(extension.manifest.id)) {
       return;
@@ -394,37 +421,40 @@ export class ExtensionRuntimeHost {
 
     const runtimeEntrypoint = await prepareExtensionRuntimeEntrypoint(extension);
     const entrypointSource = await readFile(runtimeEntrypoint, "utf8");
-    const context = await newAsyncContext();
-    context.runtime.setMemoryLimit(QUICKJS_MEMORY_LIMIT_BYTES);
-    context.runtime.setMaxStackSize(QUICKJS_MAX_STACK_BYTES);
-    context.runtime.setModuleLoader(async (moduleName) => {
-      if (moduleName === KARABINER_SDK_MODULE_SPECIFIER) {
-        return KARABINER_SDK_MODULE_SOURCE;
-      }
-      throw new Error(
-        `Unsupported module import "${moduleName}" in extension "${extension.manifest.id}".`,
-      );
-    });
-
-    const runtimeState: ActiveExtensionRuntime = {
-      extension,
-      gate: new ExtensionPermissionGate(extension.manifest.permissions),
-      context,
-      runtimeApiHandle: context.undefined.dup(),
-      storage: await this.loadRuntimeStorage(extension),
-      eventHandlers: new Map(),
-      commands: new Map(),
-      tools: new Map(),
-      aiProviders: new Map(),
-      blockNotePlugins: new Map(),
-      inlineEditorBlocks: new Map(),
-      filePreviewHandlers: new Map(),
-    };
-
-    runtimeState.runtimeApiHandle.dispose();
-    runtimeState.runtimeApiHandle = this.createRuntimeApiHandle(runtimeState);
-
+    const runtimeOwner = await newAsyncRuntime();
+    const context = runtimeOwner.newContext();
+    let runtimeState: ActiveExtensionRuntime | null = null;
     try {
+      runtimeOwner.setMemoryLimit(QUICKJS_MEMORY_LIMIT_BYTES);
+      runtimeOwner.setMaxStackSize(QUICKJS_MAX_STACK_BYTES);
+      runtimeOwner.setModuleLoader(async (moduleName) => {
+        if (moduleName === KARABINER_SDK_MODULE_SPECIFIER) {
+          return KARABINER_SDK_MODULE_SOURCE;
+        }
+        throw new Error(
+          `Unsupported module import "${moduleName}" in extension "${extension.manifest.id}".`,
+        );
+      });
+
+      runtimeState = {
+        extension,
+        gate: new ExtensionPermissionGate(extension.manifest.permissions),
+        runtimeOwner,
+        context,
+        runtimeApiHandle: context.undefined.dup(),
+        storage: await this.loadRuntimeStorage(extension),
+        eventHandlers: new Map(),
+        commands: new Map(),
+        tools: new Map(),
+        aiProviders: new Map(),
+        blockNotePlugins: new Map(),
+        inlineEditorBlocks: new Map(),
+        filePreviewHandlers: new Map(),
+      };
+
+      runtimeState.runtimeApiHandle.dispose();
+      runtimeState.runtimeApiHandle = this.createRuntimeApiHandle(runtimeState);
+
       const exportsHandle = await this.evaluateExtensionModule(
         context,
         entrypointSource,
@@ -455,7 +485,26 @@ export class ExtensionRuntimeHost {
         extensionId: extension.manifest.id,
       });
     } catch (error: unknown) {
-      await this.disposeRuntime(runtimeState);
+      if (runtimeState) {
+        await this.disposeRuntime(runtimeState);
+      } else {
+        try {
+          context.dispose();
+        } catch (disposeError: unknown) {
+          console.error(
+            `[extensions] failed to dispose context after activation error for ${extension.manifest.id}`,
+            disposeError,
+          );
+        }
+        try {
+          runtimeOwner.dispose();
+        } catch (disposeError: unknown) {
+          console.error(
+            `[extensions] failed to dispose runtime after activation error for ${extension.manifest.id}`,
+            disposeError,
+          );
+        }
+      }
       throw error;
     }
   }
@@ -480,6 +529,8 @@ export class ExtensionRuntimeHost {
   }
 
   private async disposeRuntime(runtime: ActiveExtensionRuntime): Promise<void> {
+    this.drainPendingJobs(runtime);
+
     for (const command of runtime.commands.values()) {
       command.runHandler.dispose();
     }
@@ -504,6 +555,45 @@ export class ExtensionRuntimeHost {
     runtime.deactivateHandler?.dispose();
     runtime.runtimeApiHandle.dispose();
     runtime.context.dispose();
+    if (runtime.runtimeOwner.alive) {
+      runtime.runtimeOwner.dispose();
+    }
+  }
+
+  private drainPendingJobs(runtime: ActiveExtensionRuntime): void {
+    const quickJsRuntime = runtime.context.runtime;
+    let runs = 0;
+    while (quickJsRuntime.hasPendingJob()) {
+      runs += 1;
+      if (runs > 1024) {
+        console.warn(
+          `[extensions] stopped draining pending jobs for ${runtime.extension.manifest.id} after ${runs} iterations`,
+        );
+        break;
+      }
+
+      const jobResult = quickJsRuntime.executePendingJobs();
+      if ("error" in jobResult) {
+        const errorHandle = jobResult.error;
+        if (!errorHandle) {
+          console.error(
+            `[extensions] pending job failed for ${runtime.extension.manifest.id} without an error handle`,
+          );
+          break;
+        }
+        try {
+          console.error(
+            `[extensions] pending job failed for ${runtime.extension.manifest.id}: ${this.formatQuickJSError(
+              runtime.context,
+              errorHandle,
+            )}`,
+          );
+        } finally {
+          errorHandle.dispose();
+        }
+        break;
+      }
+    }
   }
 
   private async evaluateExtensionModule(
@@ -515,7 +605,11 @@ export class ExtensionRuntimeHost {
       type: "module",
       strict: true,
     });
-    const moduleValueHandle = context.unwrapResult(moduleResult);
+    const moduleValueHandle = this.unwrapQuickJSResult(
+      context,
+      moduleResult,
+      "module evaluation",
+    );
     return resolveMaybePromiseHandle(context, moduleValueHandle);
   }
 
@@ -1275,47 +1369,89 @@ export class ExtensionRuntimeHost {
     const context = runtime.context;
     const filesystemHandle = context.newObject();
 
-    const readFileHandle = context.newAsyncifiedFunction(
+    const readFileHandle = context.newFunction(
       "readFile",
-      async (pathHandle) => {
-        runtime.gate.require("filesystem.read", "ctx.fs.readFile");
-        const requestedPath = this.readHandleAsString(
-          context,
-          pathHandle,
-          "filesystem path",
-        );
-        const resolvedPath = await this.resolveFilesystemPath(
-          runtime,
-          requestedPath,
-          "read",
-        );
-        return context.newString(await readFile(resolvedPath, "utf8"));
+      (pathHandle) => {
+        const deferred = context.newPromise();
+        const pathHandleCopy = pathHandle.dup();
+        void (async () => {
+          try {
+            runtime.gate.require("filesystem.read", "ctx.fs.readFile");
+            const requestedPath = this.readHandleAsString(
+              context,
+              pathHandleCopy,
+              "filesystem path",
+            );
+            const resolvedPath = await this.resolveFilesystemPath(
+              runtime,
+              requestedPath,
+              "read",
+            );
+            const content = await readFile(resolvedPath, "utf8");
+            const contentHandle = context.newString(content);
+            deferred.resolve(contentHandle);
+            contentHandle.dispose();
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            const errorHandle = context.newError(message);
+            deferred.reject(errorHandle);
+            errorHandle.dispose();
+          } finally {
+            pathHandleCopy.dispose();
+          }
+        })();
+        void deferred.settled.then(() => {
+          this.drainPendingJobs(runtime);
+        });
+        return deferred.handle;
       },
     );
     context.setProp(filesystemHandle, "readFile", readFileHandle);
     readFileHandle.dispose();
 
-    const writeFileHandle = context.newAsyncifiedFunction(
+    const writeFileHandle = context.newFunction(
       "writeFile",
-      async (pathHandle, contentHandle) => {
-        runtime.gate.require("filesystem.write", "ctx.fs.writeFile");
-        const requestedPath = this.readHandleAsString(
-          context,
-          pathHandle,
-          "filesystem path",
-        );
-        const content = this.readHandleAsString(
-          context,
-          contentHandle,
-          "filesystem content",
-        );
-        const resolvedPath = await this.resolveFilesystemPath(
-          runtime,
-          requestedPath,
-          "write",
-        );
-        await mkdir(dirname(resolvedPath), { recursive: true });
-        await writeFile(resolvedPath, content, "utf8");
+      (pathHandle, contentHandle) => {
+        const deferred = context.newPromise();
+        const pathHandleCopy = pathHandle.dup();
+        const contentHandleCopy = contentHandle.dup();
+        void (async () => {
+          try {
+            runtime.gate.require("filesystem.write", "ctx.fs.writeFile");
+            const requestedPath = this.readHandleAsString(
+              context,
+              pathHandleCopy,
+              "filesystem path",
+            );
+            const content = this.readHandleAsString(
+              context,
+              contentHandleCopy,
+              "filesystem content",
+            );
+            const resolvedPath = await this.resolveFilesystemPath(
+              runtime,
+              requestedPath,
+              "write",
+            );
+            await mkdir(dirname(resolvedPath), { recursive: true });
+            await writeFile(resolvedPath, content, "utf8");
+            const okHandle = context.undefined.dup();
+            deferred.resolve(okHandle);
+            okHandle.dispose();
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            const errorHandle = context.newError(message);
+            deferred.reject(errorHandle);
+            errorHandle.dispose();
+          } finally {
+            pathHandleCopy.dispose();
+            contentHandleCopy.dispose();
+          }
+        })();
+        void deferred.settled.then(() => {
+          this.drainPendingJobs(runtime);
+        });
+        return deferred.handle;
       },
     );
     context.setProp(filesystemHandle, "writeFile", writeFileHandle);
@@ -1500,8 +1636,57 @@ export class ExtensionRuntimeHost {
     args: QuickJSHandle[],
   ): Promise<QuickJSHandle> {
     const callResult = context.callFunction(functionHandle, thisHandle, ...args);
-    const callValueHandle = context.unwrapResult(callResult);
+    const callValueHandle = this.unwrapQuickJSResult(
+      context,
+      callResult,
+      "function invocation",
+    );
     return resolveMaybePromiseHandle(context, callValueHandle);
+  }
+
+  private unwrapQuickJSResult<T>(
+    context: QuickJSAsyncContext,
+    result: { value: T } | { error: QuickJSHandle },
+    operation: string,
+  ): T {
+    if ("error" in result) {
+      const errorHandle = result.error;
+      try {
+        throw new Error(
+          `Extension ${operation} failed: ${this.formatQuickJSError(
+            context,
+            errorHandle,
+          )}`,
+        );
+      } finally {
+        errorHandle.dispose();
+      }
+    }
+    return result.value;
+  }
+
+  private formatQuickJSError(
+    context: QuickJSAsyncContext,
+    errorHandle: QuickJSHandle,
+  ): string {
+    const dumped = context.dump(errorHandle);
+    if (
+      dumped &&
+      typeof dumped === "object" &&
+      !Array.isArray(dumped) &&
+      "message" in dumped &&
+      typeof dumped.message === "string"
+    ) {
+      return dumped.message;
+    }
+    if (typeof dumped === "string") {
+      return dumped;
+    }
+    try {
+      return JSON.stringify(dumped);
+    } catch {
+      return String(dumped);
+    }
   }
 
   private readHandleAsString(

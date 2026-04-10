@@ -10,6 +10,7 @@ type ActiveEditorBridge = {
 let activeEditorBridge: ActiveEditorBridge | null = null;
 
 const rpc = Electroview.defineRPC<AppRPC>({
+  maxRequestTime: 120_000,
   handlers: {
     requests: {
       getActiveEditorSelectionAsMarkdown: async () => {

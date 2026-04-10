@@ -277,6 +277,9 @@ export function App() {
   const [installingExtensionIds, setInstallingExtensionIds] = useState<Record<string, boolean>>(
     {},
   );
+  const [uninstallingExtensionIds, setUninstallingExtensionIds] = useState<
+    Record<string, boolean>
+  >({});
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("files");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomedImageTabIds, setZoomedImageTabIds] = useState<Record<string, boolean>>({});
@@ -544,6 +547,47 @@ export function App() {
       reportError("Unable to install extension", error);
     } finally {
       setInstallingExtensionIds((current) => {
+        const next = { ...current };
+        delete next[tab.id];
+        return next;
+      });
+    }
+  }
+
+  async function uninstallExtensionFromTab(tab: OfficialExtensionReadme): Promise<void> {
+    if (!tab.installed || uninstallingExtensionIds[tab.id]) {
+      return;
+    }
+    const approved = window.confirm(
+      `Uninstall "${tab.name}"? This will remove it from your extensions folder.`,
+    );
+    if (!approved) {
+      setStatusMessage(`Uninstall canceled for ${tab.name}.`);
+      return;
+    }
+
+    setStatusMessage(`Uninstalling ${tab.name}...`);
+    setUninstallingExtensionIds((current) => ({ ...current, [tab.id]: true }));
+    try {
+      const uninstalled = await electroview.rpc!.request.uninstallOfficialExtension({
+        id: tab.id,
+      });
+      await Promise.all([refreshOfficialExtensions(), refreshRuntimeContributions()]);
+      setTabs((currentTabs) =>
+        currentTabs.map((currentTab) =>
+          currentTab.type === "extension" && currentTab.extensionId === uninstalled.id
+            ? {
+                ...currentTab,
+                installed: false,
+              }
+            : currentTab,
+        ),
+      );
+      setStatusMessage(`Uninstalled ${uninstalled.name}.`);
+    } catch (error: unknown) {
+      reportError("Unable to uninstall extension", error);
+    } finally {
+      setUninstallingExtensionIds((current) => {
         const next = { ...current };
         delete next[tab.id];
         return next;
@@ -1296,10 +1340,22 @@ export function App() {
                 <button
                   type="button"
                   disabled={
-                    activeTab.installed ||
-                    Boolean(installingExtensionIds[activeTab.extensionId])
+                    activeTab.installed
+                      ? Boolean(uninstallingExtensionIds[activeTab.extensionId])
+                      : Boolean(installingExtensionIds[activeTab.extensionId])
                   }
-                  onClick={() =>
+                  onClick={() => {
+                    if (activeTab.installed) {
+                      void uninstallExtensionFromTab({
+                        id: activeTab.extensionId,
+                        name: activeTab.title,
+                        version: activeTab.version,
+                        description: activeTab.description,
+                        installed: activeTab.installed,
+                        readme: activeTab.readme,
+                      });
+                      return;
+                    }
                     void installExtensionFromTab({
                       id: activeTab.extensionId,
                       name: activeTab.title,
@@ -1307,8 +1363,8 @@ export function App() {
                       description: activeTab.description,
                       installed: activeTab.installed,
                       readme: activeTab.readme,
-                    })
-                  }
+                    });
+                  }}
                   className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${borderTone} ${
                     prefersDarkMode
                       ? "hover:border-white/25 hover:bg-white/5"
@@ -1316,7 +1372,9 @@ export function App() {
                   }`}
                 >
                   {activeTab.installed
-                    ? "Installed"
+                    ? uninstallingExtensionIds[activeTab.extensionId]
+                      ? "Uninstalling..."
+                      : "Uninstall"
                     : installingExtensionIds[activeTab.extensionId]
                       ? "Installing..."
                       : "Install"}

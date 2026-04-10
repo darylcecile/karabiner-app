@@ -28,7 +28,6 @@ describe("resolveMaybePromiseHandle", () => {
       resolvePromise: async () => {
         throw new Error("resolvePromise should not be called for non-promises");
       },
-      unwrapResult: (result: unknown) => result,
     } as unknown as QuickJSContext;
 
     const resolved = await resolveMaybePromiseHandle(
@@ -50,7 +49,6 @@ describe("resolveMaybePromiseHandle", () => {
         value: snapshot as unknown as QuickJSHandle,
       }),
       resolvePromise: async () => ({ value: output as unknown as QuickJSHandle }),
-      unwrapResult: (result: { value: QuickJSHandle }) => result.value,
     } as unknown as QuickJSContext;
 
     const resolved = await resolveMaybePromiseHandle(
@@ -63,24 +61,26 @@ describe("resolveMaybePromiseHandle", () => {
     expect(input.disposed).toBe(true);
   });
 
-  it("disposes rejected promise snapshots and input handles on unwrap errors", async () => {
+  it("disposes rejected promise handles and input handles", async () => {
     const input = createHandle();
     const snapshotError = createHandle();
+    const rejectedError = createHandle();
     const context = {
       getPromiseState: () => ({
         type: "rejected",
         error: snapshotError as unknown as QuickJSHandle,
       }),
-      resolvePromise: async () => ({ value: createHandle() as unknown as QuickJSHandle }),
-      unwrapResult: () => {
-        throw new Error("unwrap failed");
-      },
+      resolvePromise: async () => ({
+        error: rejectedError as unknown as QuickJSHandle,
+      }),
+      dump: () => "boom",
     } as unknown as QuickJSContext;
 
     await expect(
       resolveMaybePromiseHandle(context, input as unknown as QuickJSHandle),
-    ).rejects.toThrow("unwrap failed");
+    ).rejects.toThrow("QuickJS promise rejected: boom");
     expect(snapshotError.disposed).toBe(true);
+    expect(rejectedError.disposed).toBe(true);
     expect(input.disposed).toBe(true);
   });
 
@@ -94,7 +94,6 @@ describe("resolveMaybePromiseHandle", () => {
       resolvePromise: async () => {
         throw new Error("resolve failed");
       },
-      unwrapResult: (result: unknown) => result,
     } as unknown as QuickJSContext;
 
     await expect(

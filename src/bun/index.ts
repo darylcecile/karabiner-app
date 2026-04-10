@@ -63,6 +63,7 @@ void dataLayerReady
   });
 
 const rpc = BrowserView.defineRPC<AppRPC>({
+  maxRequestTime: 120_000,
   handlers: {
     requests: {
       getAppInfo: () => ({
@@ -144,6 +145,37 @@ const rpc = BrowserView.defineRPC<AppRPC>({
         return {
           ...extension,
           installed: true,
+        };
+      },
+      uninstallOfficialExtension: async ({ id }) => {
+        await extensionRuntimeReady;
+        if (!extensionRuntimeHost) {
+          throw new Error("Extension runtime host is unavailable.");
+        }
+        await extensionRuntimeHost.uninstallExtension(id);
+        let extension: Awaited<ReturnType<typeof readOfficialExtension>>;
+        try {
+          extension = await readOfficialExtension(id);
+        } catch (error: unknown) {
+          console.error(
+            `[bun] uninstalled official extension "${id}" but failed to load readme metadata`,
+            error,
+          );
+          const summary = (await listOfficialExtensions()).find(
+            (candidate) => candidate.id === id,
+          );
+          return {
+            id,
+            name: summary?.name ?? id,
+            description: summary?.description,
+            version: summary?.version ?? "0.0.0",
+            installed: false,
+            readme: "",
+          };
+        }
+        return {
+          ...extension,
+          installed: false,
         };
       },
       listExtensionInlineEditorBlocks: async () => {
