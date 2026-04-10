@@ -129,25 +129,31 @@ export class ExtensionRuntimeHost {
   }
 
   hasInstalledExtension(extensionId: string): boolean {
-    return this.extensionRegistry.getById(extensionId) !== undefined;
+    return this.activeRuntimes.has(extensionId);
   }
 
   async installOfficialExtension(extensionId: string): Promise<void> {
+    if (this.activeRuntimes.has(extensionId)) {
+      return;
+    }
+
     await mkdir(EXTENSIONS_DIRECTORY, { recursive: true });
     const extensionRoot = await installOfficialExtensionBundle(
       EXTENSIONS_DIRECTORY,
       extensionId,
     );
-    const installedExtension =
-      (await this.registerExtensionFromRoot(extensionRoot)) ??
-      this.extensionRegistry.getById(extensionId);
+    const installedExtension = await this.registerExtensionFromRoot(extensionRoot);
     if (!installedExtension) {
+      this.extensionRegistry.remove(extensionId);
       throw new Error(`Failed to register extension "${extensionId}" after install.`);
     }
-    if (this.activeRuntimes.has(extensionId)) {
-      return;
+
+    try {
+      await this.activateExtension(installedExtension);
+    } catch (error: unknown) {
+      this.extensionRegistry.remove(extensionId);
+      throw error;
     }
-    await this.activateExtension(installedExtension);
   }
 
   listContributedAIProviders(): AIProviderDefinition[] {

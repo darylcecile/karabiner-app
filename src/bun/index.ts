@@ -92,20 +92,15 @@ const rpc = BrowserView.defineRPC<AppRPC>({
       },
       listOfficialExtensions: async () => {
         await extensionRuntimeReady;
-        const installedIds = new Set(
-          extensionRegistry.list().map((extension) => extension.manifest.id),
-        );
         return listOfficialExtensions().map((extension) => ({
           ...extension,
-          installed: installedIds.has(extension.id),
+          installed: extensionRuntimeHost?.hasInstalledExtension(extension.id) ?? false,
         }));
       },
       readOfficialExtensionReadme: async ({ id }) => {
         await extensionRuntimeReady;
         const extension = readOfficialExtension(id);
-        const installed =
-          extensionRuntimeHost?.hasInstalledExtension(id) ??
-          (extensionRegistry.getById(id) !== undefined);
+        const installed = extensionRuntimeHost?.hasInstalledExtension(id) ?? false;
         return {
           ...extension,
           installed,
@@ -117,6 +112,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
           throw new Error("Extension runtime host is unavailable.");
         }
         await extensionRuntimeHost.installOfficialExtension(id);
+        if (!extensionRuntimeHost.hasInstalledExtension(id)) {
+          throw new Error(`Extension "${id}" failed to activate after installation.`);
+        }
         const extension = readOfficialExtension(id);
         return {
           ...extension,
