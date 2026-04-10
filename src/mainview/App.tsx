@@ -23,6 +23,7 @@ import {
 } from "@blocknote/react";
 import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote/react";
 import { FileTree } from "@pierre/trees/react";
+import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
