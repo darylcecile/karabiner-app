@@ -29,18 +29,25 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { BlockNoteSchema, createCodeBlockSpec, defaultBlockSpecs } from "@blocknote/core";
 import { createHighlighter } from "shiki";
 import type { PartialBlock } from "@blocknote/core";
-import { filterSuggestionItems } from "@blocknote/core/extensions";
+import { filterSuggestionItems, SideMenuExtension } from "@blocknote/core/extensions";
 import {
+  DragHandleMenu,
   FormattingToolbarController,
   getDefaultReactSlashMenuItems,
+  RemoveBlockItem,
+  SideMenu,
+  SideMenuController,
   SuggestionMenuController,
   useBlockNoteEditor,
+  useComponentsContext,
   useCreateBlockNote,
   useEditorState,
+  useExtensionState,
 } from "@blocknote/react";
 import type {
   DefaultReactSuggestionItem,
   FormattingToolbarProps,
+  SideMenuProps,
   SuggestionMenuProps,
 } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
@@ -306,6 +313,69 @@ function getPermissionRisk(permission: ExtensionPermission): "Low" | "Medium" | 
   return "Low";
 }
 
+// ── Custom drag-handle menu (Notion-style block actions) ──────────────────
+
+function CustomDragHandleMenu() {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor<any, any, any>();
+  const block = useExtensionState(SideMenuExtension, {
+    editor,
+    selector: (state) => state?.block,
+  });
+
+  if (!block) return null;
+
+  const currentPreset = getBlockPresetValue(block as any);
+
+  const handleTurnInto = (value: BlockPresetValue) => {
+    editor.updateBlock(block as any, getBlockUpdate(value));
+    editor.focus();
+  };
+
+  const handleDuplicate = () => {
+    const { id: _, ...blockCopy } = block as any;
+    editor.insertBlocks([blockCopy], block as any, "after");
+    editor.focus();
+  };
+
+  return (
+    <DragHandleMenu>
+      <Components.Generic.Menu.Root position="right" sub={true}>
+        <Components.Generic.Menu.Trigger sub={true}>
+          <Components.Generic.Menu.Item className="bn-menu-item" subTrigger={true}>
+            Turn into
+          </Components.Generic.Menu.Item>
+        </Components.Generic.Menu.Trigger>
+        <Components.Generic.Menu.Dropdown sub={true} className="bn-menu-dropdown">
+          {BLOCK_PRESETS.map((preset) => (
+            <Components.Generic.Menu.Item
+              key={preset.value}
+              className="bn-menu-item"
+              checked={currentPreset === preset.value}
+              onClick={() => handleTurnInto(preset.value)}
+            >
+              {preset.label}
+            </Components.Generic.Menu.Item>
+          ))}
+        </Components.Generic.Menu.Dropdown>
+      </Components.Generic.Menu.Root>
+      <Components.Generic.Menu.Item className="bn-menu-item" onClick={handleDuplicate}>
+        Duplicate
+      </Components.Generic.Menu.Item>
+      <Components.Generic.Menu.Divider />
+      <RemoveBlockItem>Delete</RemoveBlockItem>
+    </DragHandleMenu>
+  );
+}
+
+// ── Custom side menu (drag handle + add block button) ─────────────────────
+
+function CustomSideMenu(_props: SideMenuProps) {
+  return <SideMenu dragHandleMenu={CustomDragHandleMenu} />;
+}
+
+// ── Slash command menu ────────────────────────────────────────────────────
+
 function SlashMenu({
   items,
   selectedIndex,
@@ -324,34 +394,65 @@ function SlashMenu({
     );
   }
 
+  // Group items while preserving insertion order and flat indices for selectedIndex
+  const groups: Array<{
+    name: string;
+    itemsWithIndex: Array<{ item: DefaultReactSuggestionItem; flatIndex: number }>;
+  }> = [];
+  const groupMap = new Map<string, (typeof groups)[0]>();
+  items.forEach((item, flatIndex) => {
+    const groupName = item.group ?? "Actions";
+    if (!groupMap.has(groupName)) {
+      const group: (typeof groups)[0] = { name: groupName, itemsWithIndex: [] };
+      groups.push(group);
+      groupMap.set(groupName, group);
+    }
+    groupMap.get(groupName)!.itemsWithIndex.push({ item, flatIndex });
+  });
+
   return (
     <div className="mx-auto mt-2 w-full max-w-[760px] rounded-md border border-black/10 bg-white p-1.5 shadow-lg dark:border-white/[0.14] dark:bg-neutral-950">
       <div className="max-h-[min(24rem,45vh)] overflow-y-auto overscroll-contain">
-        {items.map((item, index) => {
-          const isSelected = index === selectedIndex;
-          return (
-            <button
-              key={`${item.title}-${index}`}
-              type="button"
-              onClick={() => onItemClick?.(item)}
-              className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors ${
-                isSelected
-                  ? "bg-neutral-100 text-neutral-900 dark:bg-white/10 dark:text-white"
-                  : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.06]"
+        {groups.map((group, gi) => (
+          <div key={group.name}>
+            <div
+              className={`px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 ${
+                gi === 0 ? "pt-1" : "pt-3"
               }`}
             >
-              {item.icon ? <span className="mt-0.5 shrink-0">{item.icon}</span> : null}
-              <span className="min-w-0">
-                <span className="block truncate">{item.title}</span>
-                {item.subtext ? (
-                  <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
-                    {item.subtext}
+              {group.name}
+            </div>
+            {group.itemsWithIndex.map(({ item, flatIndex }) => {
+              const isSelected = flatIndex === selectedIndex;
+              return (
+                <button
+                  key={`${item.title}-${flatIndex}`}
+                  type="button"
+                  onClick={() => onItemClick?.(item)}
+                  className={`flex w-full items-start gap-2.5 rounded px-2 py-1.5 text-left text-sm transition-colors ${
+                    isSelected
+                      ? "bg-neutral-100 text-neutral-900 dark:bg-white/10 dark:text-white"
+                      : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {item.icon ? (
+                    <span className="mt-0.5 shrink-0 rounded bg-neutral-100 p-1 dark:bg-white/[0.08]">
+                      {item.icon}
+                    </span>
+                  ) : null}
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{item.title}</span>
+                    {item.subtext ? (
+                      <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
+                        {item.subtext}
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
-              </span>
-            </button>
-          );
-        })}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2632,6 +2733,7 @@ export function App() {
                     formattingToolbar={CustomFormattingToolbar}
                     floatingUIOptions={{ elementProps: { style: { zIndex: 1100 } } }}
                   />
+                  <SideMenuController sideMenu={CustomSideMenu} />
                   <SuggestionMenuController
                     triggerCharacter="/"
                     getItems={async (query) =>

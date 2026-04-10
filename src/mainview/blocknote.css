@@ -161,11 +161,32 @@
   min-width: 20px;
   padding: 0;
   border-radius: 6px;
+  color: rgb(200 200 200);
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.kb-blocknote .bn-block-outer:hover > .bn-block-group > .bn-block-outer:first-child > .bn-block > .bn-side-menu .bn-button,
+.kb-blocknote .bn-block-outer:hover > .bn-block > .bn-side-menu .bn-button,
+.kb-blocknote .bn-side-menu .bn-button:focus-visible {
+  opacity: 1;
+}
+
+.kb-blocknote .bn-side-menu .bn-button:hover {
+  opacity: 1;
+  background: rgb(255 255 255 / 0.08);
 }
 
 .kb-blocknote .bn-side-menu .bn-button svg {
   width: 16px !important;
   height: 16px !important;
+}
+
+/* Drag-handle menu divider */
+.kb-blocknote .bn-menu-dropdown [data-slot="dropdown-menu-separator"],
+.kb-blocknote .bn-menu-dropdown hr {
+  border-color: rgb(255 255 255 / 0.08);
+  margin: 4px 0;
 }
 
 /* ── Tooltips ────────────────────────────────────────────────────────────── */
