@@ -27,7 +27,8 @@
     "quickjs-emscripten": "^0.32.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "shiki": "^4.0.2"
+    "shiki": "^4.0.2",
+    "tldraw": "^4.5.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",

@@ -9,7 +9,7 @@ export type NoteDocument = NoteSummary & {
   markdown: string;
 };
 
-export type WorkspaceItemKind = "note" | "image";
+export type WorkspaceItemKind = "note" | "image" | "file";
 
 export type WorkspaceItem = {
   kind: WorkspaceItemKind;

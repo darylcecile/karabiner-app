@@ -45,6 +45,8 @@ export type ExtensionRuntime = {
   ): void;
   registerAIProvider(definition: ExtensionAIProviderDefinition): void;
   registerBlockNotePlugin(definition: ExtensionBlockNotePlugin): void;
+  registerInlineEditorBlock(definition: ExtensionInlineEditorBlockDefinition): void;
+  registerFilePreviewHandler(definition: ExtensionFilePreviewHandlerDefinition): void;
   registerEventHook(
     event: ExtensionRuntimeEvent,
     handler: ExtensionEventHandler,
@@ -105,6 +107,40 @@ export type ExtensionAIProviderDefinition = {
 export type ExtensionBlockNotePlugin = {
   id: string;
   setup(editor: BlockNoteEditorAdapter): MaybePromise<void>;
+};
+
+export type ExtensionInlineEditorBlockDefinition = {
+  id: string;
+  title: string;
+  description?: string;
+  run(context: ExtensionExecutionContext): MaybePromise<ExtensionInlineEditorBlockResult>;
+};
+
+export type ExtensionInlineEditorBlockResult = {
+  markdown: string;
+};
+
+export type ExtensionFilePreviewHandlerDefinition = {
+  id: string;
+  title: string;
+  description?: string;
+  fileExtensions: string[];
+  render(
+    input: ExtensionFilePreviewInput,
+    context: ExtensionExecutionContext,
+  ): MaybePromise<ExtensionFilePreviewResult>;
+};
+
+export type ExtensionFilePreviewInput = {
+  path: string;
+  extension: string;
+  fileName: string;
+};
+
+export type ExtensionFilePreviewResult = {
+  title?: string;
+  contentType?: "text" | "markdown" | "json" | "tldraw";
+  content: string;
 };
 
 export type BlockNoteEditorAdapter = {

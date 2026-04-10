@@ -20,13 +20,19 @@ import { FileTree } from "@pierre/trees/react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Tldraw, parseTldrawJsonFile } from "tldraw";
 import {
   electroview,
   onWorkspaceFolderSelected,
   registerActiveEditorBridge,
 } from "./rpc";
 import type { AIProviderDefinition } from "../shared/contracts/ai";
+import type {
+  ExtensionInlineEditorBlockContribution,
+  ExtensionResolvedFilePreview,
+} from "../shared/contracts/extensions";
 import type { WorkspaceItem } from "../shared/contracts/notes";
+import "tldraw/tldraw.css";
 
 type SidebarSection = "files" | "extensions" | "kai" | "settings";
 
@@ -47,7 +53,60 @@ type ImageTab = {
   dataUrl: string;
 };
 
-type AppTab = EditorTab | ImageTab;
+type ExtensionPreviewTab = {
+  id: string;
+  type: "preview";
+  title: string;
+  path: string;
+  handlerTitle: string;
+  contentType: ExtensionResolvedFilePreview["contentType"];
+  content: string;
+};
+
+type AppTab = EditorTab | ImageTab | ExtensionPreviewTab;
+
+function TldrawPreview({
+  content,
+  path,
+  borderTone,
+  mutedTextTone,
+}: {
+  content: string;
+  path: string;
+  borderTone: string;
+  mutedTextTone: string;
+}) {
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  return (
+    <div className="mt-4">
+      {loadError ? (
+        <p className={`mb-2 text-xs ${mutedTextTone}`}>{loadError}</p>
+      ) : null}
+      <div className={`h-[68vh] min-h-[360px] overflow-hidden rounded-md border ${borderTone}`}>
+        <Tldraw
+          key={path}
+          hideUi
+          inferDarkMode
+          onMount={(drawingEditor) => {
+            drawingEditor.updateInstanceState({ isReadonly: true });
+            const parsed = parseTldrawJsonFile({
+              json: content,
+              schema: drawingEditor.store.schema,
+            });
+            if (!parsed.ok) {
+              setLoadError("This file could not be loaded as a valid .tldraw document.");
+              return;
+            }
+            drawingEditor.loadSnapshot(parsed.value.getStoreSnapshot());
+            drawingEditor.clearHistory();
+            setLoadError(null);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function getFileNameFromPath(path: string): string {
   const normalized = path.replace(/\\/g, "/");
@@ -155,6 +214,9 @@ export function App() {
   const [noteTitle, setNoteTitle] = useState("");
   const [statusMessage, setStatusMessage] = useState("Select a folder to start.");
   const [aiProviders, setAiProviders] = useState<AIProviderDefinition[]>([]);
+  const [inlineEditorBlocks, setInlineEditorBlocks] = useState<
+    ExtensionInlineEditorBlockContribution[]
+  >([]);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("files");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomedImageTabIds, setZoomedImageTabIds] = useState<Record<string, boolean>>({});
@@ -308,6 +370,33 @@ export function App() {
     setStatusMessage(`Viewing ${item.path}`);
   }
 
+  async function openFilePreviewTab(item: WorkspaceItem): Promise<void> {
+    const tabId = `preview:${item.path}`;
+    if (!tabs.some((tab) => tab.id === tabId)) {
+      const preview = await electroview.rpc!.request.renderExtensionFilePreview({
+        path: item.path,
+      });
+      if (!preview) {
+        setStatusMessage(`No preview handler is registered for ${item.path}.`);
+        return;
+      }
+      setTabs((currentTabs) => [
+        ...currentTabs,
+        {
+          id: tabId,
+          type: "preview",
+          title: preview.title,
+          path: item.path,
+          handlerTitle: preview.handlerTitle,
+          contentType: preview.contentType,
+          content: preview.content,
+        },
+      ]);
+    }
+    setActiveTabId(tabId);
+    setStatusMessage(`Previewing ${item.path}`);
+  }
+
   async function openWorkspaceItem(path: string): Promise<void> {
     try {
       const item = itemByPath.get(path);
@@ -318,9 +407,34 @@ export function App() {
         await openNoteTab(item);
         return;
       }
-      await openImageTab(item);
+      if (item.kind === "image") {
+        await openImageTab(item);
+        return;
+      }
+      await openFilePreviewTab(item);
     } catch (error: unknown) {
       reportError("Unable to open item", error);
+    }
+  }
+
+  async function insertInlineEditorBlock(
+    block: ExtensionInlineEditorBlockContribution,
+  ): Promise<void> {
+    if (!activeEditorTab) {
+      setStatusMessage(`Open a note before inserting "${block.title}".`);
+      return;
+    }
+    try {
+      const response = await electroview.rpc!.request.invokeExtensionInlineEditorBlock({
+        blockId: block.id,
+      });
+      if (response.markdown.trim().length === 0) {
+        throw new Error("Inline block returned empty markdown.");
+      }
+      editor.pasteMarkdown(response.markdown);
+      setStatusMessage(`Inserted ${block.title}.`);
+    } catch (error: unknown) {
+      reportError(`Unable to insert ${block.title}`, error);
     }
   }
 
@@ -460,12 +574,14 @@ export function App() {
 
     void (async () => {
       try {
-        const [workspace, providers] = await Promise.all([
+        const [workspace, providers, blocks] = await Promise.all([
           electroview.rpc!.request.getWorkspaceRoot({}),
           electroview.rpc!.request.listAIProviders({}),
+          electroview.rpc!.request.listExtensionInlineEditorBlocks({}),
         ]);
         setWorkspaceRoot(workspace.path);
         setAiProviders(providers);
+        setInlineEditorBlocks(blocks);
         if (!workspace.path) {
           setStatusMessage("Select a folder to get started.");
         }
@@ -716,6 +832,39 @@ export function App() {
                 <div className={`mt-4 rounded-md border px-3 py-2.5 text-xs ${borderTone} ${mutedTextTone}`}>
                   Official extensions will appear in this panel.
                 </div>
+                <div className={`mt-4 rounded-md border ${borderTone}`}>
+                  <div className={`border-b px-3 py-2 text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
+                    Inline editor blocks
+                  </div>
+                  <div className="space-y-2 px-3 py-2.5">
+                    {inlineEditorBlocks.length === 0 && (
+                      <p className={`text-xs ${mutedTextTone}`}>No inline blocks registered.</p>
+                    )}
+                    {inlineEditorBlocks.map((block) => (
+                      <div key={block.id} className="rounded-md border border-transparent px-1 py-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-medium">{block.title}</p>
+                            <p className={`truncate text-[11px] ${subtleTextTone}`}>
+                              {block.description ?? block.id}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void insertInlineEditorBlock(block)}
+                            className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors ${borderTone} ${
+                              prefersDarkMode
+                                ? "hover:border-white/20 hover:bg-white/5"
+                                : "hover:border-neutral-300 hover:bg-black/[0.03]"
+                            }`}
+                          >
+                            Insert
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </Tabs.Content>
 
               <Tabs.Content value="kai" className="h-full p-4 data-[state=inactive]:hidden">
@@ -768,7 +917,13 @@ export function App() {
                 title={tab.path}
               >
                 <HugeiconsIcon
-                  icon={tab.type === "editor" ? File01Icon : Image01Icon}
+                  icon={
+                    tab.type === "editor"
+                      ? File01Icon
+                      : tab.type === "image"
+                        ? Image01Icon
+                        : File01Icon
+                  }
                   size={13}
                 />
                 <span className="max-w-[120px] truncate">{tab.title}</span>
@@ -798,7 +953,7 @@ export function App() {
             <HugeiconsIcon icon={File01Icon} size={28} className={emptyIconTone} />
             <p className={`text-xs ${mutedTextTone}`}>No file open</p>
             <p className={`text-[11px] ${subtleTextTone}`}>
-              Select a note or image from the sidebar
+              Select a file from the sidebar
             </p>
           </div>
         )}
@@ -864,6 +1019,33 @@ export function App() {
                   }`}
                 />
               </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab?.type === "preview" && (
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
+            <div className={`mx-auto max-w-[860px] rounded-md border p-4 ${borderTone} ${panelBg}`}>
+              <p className={`text-[11px] uppercase tracking-widest ${sectionLabelTone}`}>
+                Preview · {activeTab.handlerTitle}
+              </p>
+              <p className={`mt-1 text-xs ${mutedTextTone}`}>{activeTab.path}</p>
+              {activeTab.contentType === "tldraw" ? (
+                <TldrawPreview
+                  content={activeTab.content}
+                  path={activeTab.path}
+                  borderTone={borderTone}
+                  mutedTextTone={mutedTextTone}
+                />
+              ) : (
+                <pre
+                  className={`mt-4 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs ${borderTone} ${
+                    prefersDarkMode ? "bg-black/30 text-neutral-200" : "bg-neutral-50 text-neutral-800"
+                  }`}
+                >
+                  {activeTab.content}
+                </pre>
+              )}
             </div>
           </div>
         )}

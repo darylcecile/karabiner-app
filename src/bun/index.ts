@@ -86,6 +86,24 @@ const rpc = BrowserView.defineRPC<AppRPC>({
           extensionRuntimeHost?.listContributedAIProviders() ?? [],
         );
       },
+      listExtensionInlineEditorBlocks: async () => {
+        await extensionRuntimeReady;
+        return extensionRuntimeHost?.listContributedInlineEditorBlocks() ?? [];
+      },
+      invokeExtensionInlineEditorBlock: async ({ blockId }) => {
+        await extensionRuntimeReady;
+        if (!extensionRuntimeHost) {
+          throw new Error("Extension runtime host is unavailable.");
+        }
+        return extensionRuntimeHost.invokeInlineEditorBlock(blockId);
+      },
+      renderExtensionFilePreview: async ({ path }) => {
+        await extensionRuntimeReady;
+        if (!extensionRuntimeHost) {
+          return null;
+        }
+        return extensionRuntimeHost.renderFilePreview(path);
+      },
     },
     messages: {
       log: ({ message }) => console.log("[webview]", message),

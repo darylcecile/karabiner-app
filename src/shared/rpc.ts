@@ -2,6 +2,11 @@ import { RPCSchema } from "electrobun/bun";
 import type { AIProviderDefinition } from "./contracts/ai";
 import type { CorePerformanceBudget } from "./contracts/app";
 import type {
+  ExtensionInlineEditorBlockContribution,
+  ExtensionInlineEditorBlockResult,
+  ExtensionResolvedFilePreview,
+} from "./contracts/extensions";
+import type {
   ImageAsset,
   NoteDocument,
   NoteSummary,
@@ -54,6 +59,18 @@ export type AppRPC = {
       listAIProviders: {
         params: Record<string, never>;
         response: AIProviderDefinition[];
+      };
+      listExtensionInlineEditorBlocks: {
+        params: Record<string, never>;
+        response: ExtensionInlineEditorBlockContribution[];
+      };
+      invokeExtensionInlineEditorBlock: {
+        params: { blockId: string };
+        response: ExtensionInlineEditorBlockResult;
+      };
+      renderExtensionFilePreview: {
+        params: { path: string };
+        response: ExtensionResolvedFilePreview | null;
       };
       listWorkspaceItems: {
         params: Record<string, never>;

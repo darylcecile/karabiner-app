@@ -108,6 +108,20 @@ Core fields:
         "id": "acme.summarize",
         "description": "Summarize selected note blocks."
       }
+    ],
+    "inlineEditorBlocks": [
+      {
+        "id": "acme.draw.inline",
+        "title": "Insert drawing block",
+        "description": "Insert a drawing embed marker in the current note."
+      }
+    ],
+    "filePreviewHandlers": [
+      {
+        "id": "acme.draw.preview",
+        "title": "tldraw preview",
+        "fileExtensions": [".tldraw"]
+      }
     ]
   }
 }
@@ -168,6 +182,8 @@ Current static permission IDs:
 | `network` | Outbound network access | `allowlist[]` |
 | `ai.provider` | Access model/provider integrations | `providerIds[]` |
 | `cli.exec` | Execute local CLI commands | `commands[]` |
+
+For `filesystem.read` / `filesystem.write`, roots can include `"$workspace"` to scope access to the currently opened workspace folder.
 
 ### Approval model (required behavior)
 
@@ -235,6 +251,8 @@ Extensions can contribute capabilities to app surfaces.
 - `contributes.aiProviders[]`
 - `contributes.commands[]`
 - `contributes.tools[]`
+- `contributes.inlineEditorBlocks[]`
+- `contributes.filePreviewHandlers[]`
 
 ### Editor (BlockNote) contributions
 

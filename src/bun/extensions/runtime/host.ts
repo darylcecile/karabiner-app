@@ -1,9 +1,25 @@
 import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  normalize,
+  resolve,
+  sep,
+} from "node:path";
 import { Utils } from "electrobun/bun";
 import { newAsyncContext, type QuickJSAsyncContext, type QuickJSHandle } from "quickjs-emscripten";
 import type { AIProviderDefinition } from "../../../shared/contracts/ai";
-import type { InstalledExtension } from "../../../shared/contracts/extensions";
+import type {
+  ExtensionFilePreviewHandlerContribution,
+  ExtensionFilePreviewRenderResult,
+  ExtensionInlineEditorBlockContribution,
+  ExtensionInlineEditorBlockResult,
+  ExtensionResolvedFilePreview,
+  InstalledExtension,
+} from "../../../shared/contracts/extensions";
 import { listAllProviders } from "../../ai/providers";
 import {
   getWorkspaceRoot,
@@ -12,6 +28,7 @@ import {
   saveNote,
 } from "../../notes/storage";
 import { createInstalledExtensionRecord, loadExtensionManifest } from "../manifest";
+import { installOfficialExtensions } from "../official/extensions";
 import { ExtensionPermissionGate } from "../permissions";
 import { ExtensionRegistry } from "../registry";
 import { prepareExtensionRuntimeEntrypoint } from "./compiler";
@@ -26,6 +43,8 @@ const QUICKJS_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 const QUICKJS_MAX_STACK_BYTES = 512 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 const MAX_NETWORK_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_INLINE_BLOCK_MARKDOWN_BYTES = 256 * 1024;
+const MAX_FILE_PREVIEW_CONTENT_BYTES = 2 * 1024 * 1024;
 
 type ExtensionRuntimeEvent =
   | "workspace.opened"
@@ -53,6 +72,21 @@ type RegisteredBlockNotePlugin = {
   setupHandler: QuickJSHandle;
 };
 
+type RegisteredInlineEditorBlock = {
+  id: string;
+  title: string;
+  description?: string;
+  runHandler: QuickJSHandle;
+};
+
+type RegisteredFilePreviewHandler = {
+  id: string;
+  title: string;
+  description?: string;
+  fileExtensions: string[];
+  renderHandler: QuickJSHandle;
+};
+
 type ActiveExtensionRuntime = {
   extension: InstalledExtension;
   gate: ExtensionPermissionGate;
@@ -66,6 +100,8 @@ type ActiveExtensionRuntime = {
   tools: Map<string, RegisteredTool>;
   aiProviders: Map<string, AIProviderDefinition>;
   blockNotePlugins: Map<string, RegisteredBlockNotePlugin>;
+  inlineEditorBlocks: Map<string, RegisteredInlineEditorBlock>;
+  filePreviewHandlers: Map<string, RegisteredFilePreviewHandler>;
 };
 
 type ExtensionRuntimeHostOptions = {
@@ -88,6 +124,7 @@ export class ExtensionRuntimeHost {
 
   async initialize(): Promise<void> {
     await mkdir(EXTENSIONS_DIRECTORY, { recursive: true });
+    await installOfficialExtensions(EXTENSIONS_DIRECTORY);
     await this.discoverInstalledExtensions();
     await this.activateRegisteredExtensions();
   }
@@ -101,6 +138,39 @@ export class ExtensionRuntimeHost {
     }
     return [...providers.values()].sort((left, right) =>
       left.displayName.localeCompare(right.displayName),
+    );
+  }
+
+  listContributedInlineEditorBlocks(): ExtensionInlineEditorBlockContribution[] {
+    const blocks = new Map<string, ExtensionInlineEditorBlockContribution>();
+    for (const runtime of this.activeRuntimes.values()) {
+      for (const block of runtime.inlineEditorBlocks.values()) {
+        blocks.set(block.id, {
+          id: block.id,
+          title: block.title,
+          description: block.description,
+        });
+      }
+    }
+    return [...blocks.values()].sort((left, right) =>
+      left.title.localeCompare(right.title),
+    );
+  }
+
+  listContributedFilePreviewHandlers(): ExtensionFilePreviewHandlerContribution[] {
+    const handlers = new Map<string, ExtensionFilePreviewHandlerContribution>();
+    for (const runtime of this.activeRuntimes.values()) {
+      for (const handler of runtime.filePreviewHandlers.values()) {
+        handlers.set(handler.id, {
+          id: handler.id,
+          title: handler.title,
+          description: handler.description,
+          fileExtensions: [...handler.fileExtensions],
+        });
+      }
+    }
+    return [...handlers.values()].sort((left, right) =>
+      left.title.localeCompare(right.title),
     );
   }
 
@@ -154,6 +224,73 @@ export class ExtensionRuntimeHost {
       return result;
     } finally {
       payloadHandle.dispose();
+      executionContextHandle.dispose();
+    }
+  }
+
+  async invokeInlineEditorBlock(
+    blockId: string,
+  ): Promise<ExtensionInlineEditorBlockResult> {
+    const registration = this.findInlineEditorBlockRegistration(blockId);
+    if (!registration) {
+      throw new Error(`No active inline editor block found for "${blockId}".`);
+    }
+    registration.runtime.gate.require(
+      "notes.write",
+      "runtime.invokeInlineEditorBlock",
+    );
+
+    const executionContextHandle = this.createExecutionContextHandle(
+      registration.runtime,
+    );
+    try {
+      const resultHandle = await this.callExtensionFunction(
+        registration.runtime.context,
+        registration.block.runHandler,
+        registration.runtime.context.undefined,
+        [executionContextHandle],
+      );
+      const result = this.normalizeInlineEditorBlockResult(
+        registration.runtime.context.dump(resultHandle),
+      );
+      resultHandle.dispose();
+      return result;
+    } finally {
+      executionContextHandle.dispose();
+    }
+  }
+
+  async renderFilePreview(path: string): Promise<ExtensionResolvedFilePreview | null> {
+    const registration = this.findFilePreviewHandlerRegistration(path);
+    if (!registration) {
+      return null;
+    }
+    const context = registration.runtime.context;
+    const extension = extname(path).toLowerCase();
+    const inputHandle = this.toQuickJSHandle(context, {
+      path,
+      extension,
+      fileName: basename(path),
+    });
+    const executionContextHandle = this.createExecutionContextHandle(
+      registration.runtime,
+    );
+    try {
+      const resultHandle = await this.callExtensionFunction(
+        context,
+        registration.handler.renderHandler,
+        context.undefined,
+        [inputHandle, executionContextHandle],
+      );
+      const result = this.normalizeFilePreviewRenderResult(
+        path,
+        registration.handler,
+        context.dump(resultHandle),
+      );
+      resultHandle.dispose();
+      return result;
+    } finally {
+      inputHandle.dispose();
       executionContextHandle.dispose();
     }
   }
@@ -241,6 +378,8 @@ export class ExtensionRuntimeHost {
       tools: new Map(),
       aiProviders: new Map(),
       blockNotePlugins: new Map(),
+      inlineEditorBlocks: new Map(),
+      filePreviewHandlers: new Map(),
     };
 
     runtimeState.runtimeApiHandle.dispose();
@@ -310,6 +449,12 @@ export class ExtensionRuntimeHost {
     }
     for (const plugin of runtime.blockNotePlugins.values()) {
       plugin.setupHandler.dispose();
+    }
+    for (const block of runtime.inlineEditorBlocks.values()) {
+      block.runHandler.dispose();
+    }
+    for (const handler of runtime.filePreviewHandlers.values()) {
+      handler.renderHandler.dispose();
     }
     for (const handlers of runtime.eventHandlers.values()) {
       for (const handler of handlers) {
@@ -443,6 +588,38 @@ export class ExtensionRuntimeHost {
     );
     registerBlockNotePluginHandle.dispose();
 
+    const registerInlineEditorBlockHandle = context.newFunction(
+      "registerInlineEditorBlock",
+      (definitionHandle) => {
+        const block = this.readInlineEditorBlockDefinition(runtime, definitionHandle);
+        const existing = runtime.inlineEditorBlocks.get(block.id);
+        existing?.runHandler.dispose();
+        runtime.inlineEditorBlocks.set(block.id, block);
+      },
+    );
+    context.setProp(
+      runtimeHandle,
+      "registerInlineEditorBlock",
+      registerInlineEditorBlockHandle,
+    );
+    registerInlineEditorBlockHandle.dispose();
+
+    const registerFilePreviewHandlerHandle = context.newFunction(
+      "registerFilePreviewHandler",
+      (definitionHandle) => {
+        const handler = this.readFilePreviewHandlerDefinition(runtime, definitionHandle);
+        const existing = runtime.filePreviewHandlers.get(handler.id);
+        existing?.renderHandler.dispose();
+        runtime.filePreviewHandlers.set(handler.id, handler);
+      },
+    );
+    context.setProp(
+      runtimeHandle,
+      "registerFilePreviewHandler",
+      registerFilePreviewHandlerHandle,
+    );
+    registerFilePreviewHandlerHandle.dispose();
+
     const registerEventHookHandle = context.newFunction(
       "registerEventHook",
       (eventHandle, handlerHandle) => {
@@ -511,6 +688,56 @@ export class ExtensionRuntimeHost {
     return { id, setupHandler };
   }
 
+  private readInlineEditorBlockDefinition(
+    runtime: ActiveExtensionRuntime,
+    definitionHandle: QuickJSHandle,
+  ): RegisteredInlineEditorBlock {
+    const id = this.readRequiredStringProperty(runtime, definitionHandle, "id");
+    const title = this.readRequiredStringProperty(runtime, definitionHandle, "title");
+    const description = this.readOptionalStringProperty(
+      runtime,
+      definitionHandle,
+      "description",
+    );
+    const runHandler = this.readRequiredFunctionProperty(
+      runtime,
+      definitionHandle,
+      "run",
+    );
+    return { id, title, description, runHandler };
+  }
+
+  private readFilePreviewHandlerDefinition(
+    runtime: ActiveExtensionRuntime,
+    definitionHandle: QuickJSHandle,
+  ): RegisteredFilePreviewHandler {
+    const id = this.readRequiredStringProperty(runtime, definitionHandle, "id");
+    const title = this.readRequiredStringProperty(runtime, definitionHandle, "title");
+    const description = this.readOptionalStringProperty(
+      runtime,
+      definitionHandle,
+      "description",
+    );
+    const fileExtensions = this.readRequiredStringArrayProperty(
+      runtime,
+      definitionHandle,
+      "fileExtensions",
+    )
+      .map((fileExtension) => normalizeFileExtension(fileExtension))
+      .filter((fileExtension, index, all) => all.indexOf(fileExtension) === index);
+    if (fileExtensions.length === 0) {
+      throw new Error(
+        'registerFilePreviewHandler requires at least one "fileExtensions" entry.',
+      );
+    }
+    const renderHandler = this.readRequiredFunctionProperty(
+      runtime,
+      definitionHandle,
+      "render",
+    );
+    return { id, title, description, fileExtensions, renderHandler };
+  }
+
   private readAIProviderDefinition(
     runtime: ActiveExtensionRuntime,
     definitionHandle: QuickJSHandle,
@@ -564,6 +791,23 @@ export class ExtensionRuntimeHost {
         return undefined;
       }
       return this.readHandleAsString(runtime.context, valueHandle, property);
+    } finally {
+      valueHandle.dispose();
+    }
+  }
+
+  private readRequiredStringArrayProperty(
+    runtime: ActiveExtensionRuntime,
+    objectHandle: QuickJSHandle,
+    property: string,
+  ): string[] {
+    const valueHandle = runtime.context.getProp(objectHandle, property);
+    try {
+      const dumped = runtime.context.dump(valueHandle);
+      if (!Array.isArray(dumped) || dumped.some((item) => typeof item !== "string")) {
+        throw new Error(`Expected "${property}" to be an array of strings.`);
+      }
+      return dumped as string[];
     } finally {
       valueHandle.dispose();
     }
@@ -1128,6 +1372,88 @@ export class ExtensionRuntimeHost {
     return null;
   }
 
+  private findInlineEditorBlockRegistration(blockId: string): {
+    runtime: ActiveExtensionRuntime;
+    block: RegisteredInlineEditorBlock;
+  } | null {
+    for (const runtime of this.activeRuntimes.values()) {
+      const block = runtime.inlineEditorBlocks.get(blockId);
+      if (block) {
+        return { runtime, block };
+      }
+    }
+    return null;
+  }
+
+  private findFilePreviewHandlerRegistration(path: string): {
+    runtime: ActiveExtensionRuntime;
+    handler: RegisteredFilePreviewHandler;
+  } | null {
+    const fileExtension = extname(path).toLowerCase();
+    if (!fileExtension) {
+      return null;
+    }
+    for (const runtime of this.activeRuntimes.values()) {
+      for (const handler of runtime.filePreviewHandlers.values()) {
+        if (handler.fileExtensions.includes(fileExtension)) {
+          return { runtime, handler };
+        }
+      }
+    }
+    return null;
+  }
+
+  private normalizeInlineEditorBlockResult(
+    value: unknown,
+  ): ExtensionInlineEditorBlockResult {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("Inline editor block handler must return an object.");
+    }
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate.markdown !== "string") {
+      throw new Error('Inline editor block handler must return a string "markdown".');
+    }
+    if (candidate.markdown.length > MAX_INLINE_BLOCK_MARKDOWN_BYTES) {
+      throw new Error(
+        `Inline editor block markdown exceeded ${MAX_INLINE_BLOCK_MARKDOWN_BYTES} bytes.`,
+      );
+    }
+    return { markdown: candidate.markdown };
+  }
+
+  private normalizeFilePreviewRenderResult(
+    path: string,
+    handler: RegisteredFilePreviewHandler,
+    value: unknown,
+  ): ExtensionResolvedFilePreview {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("File preview handler must return an object.");
+    }
+    const candidate = value as ExtensionFilePreviewRenderResult;
+    if (typeof candidate.content !== "string") {
+      throw new Error('File preview handler must return a string "content".');
+    }
+    if (candidate.content.length > MAX_FILE_PREVIEW_CONTENT_BYTES) {
+      throw new Error(
+        `File preview content exceeded ${MAX_FILE_PREVIEW_CONTENT_BYTES} bytes.`,
+      );
+    }
+    const contentType = resolvePreviewContentType(candidate.contentType);
+    const fallbackTitle = basename(path);
+    const title =
+      typeof candidate.title === "string" && candidate.title.trim().length > 0
+        ? candidate.title
+        : fallbackTitle;
+    return {
+      handlerId: handler.id,
+      handlerTitle: handler.title,
+      path,
+      title,
+      contentType,
+      content: candidate.content,
+    };
+  }
+
   private async callExtensionFunction(
     context: QuickJSAsyncContext,
     functionHandle: QuickJSHandle,
@@ -1284,16 +1610,9 @@ export class ExtensionRuntimeHost {
         : await this.resolvePathForWriteCheck(absoluteCandidate);
 
     const resolvedRoots = await Promise.all(
-      roots.map(async (root) => {
-        const absoluteRoot = isAbsolute(root)
-          ? resolve(root)
-          : resolve(runtime.extension.rootDir, root);
-        try {
-          return await realpath(absoluteRoot);
-        } catch {
-          return normalize(absoluteRoot);
-        }
-      }),
+      roots.map((root) =>
+        this.resolvePermissionRoot(runtime, root, workspaceRoot, mode),
+      ),
     );
 
     const allowed = resolvedRoots.some((root) =>
@@ -1306,6 +1625,35 @@ export class ExtensionRuntimeHost {
     }
 
     return absoluteCandidate;
+  }
+
+  private async resolvePermissionRoot(
+    runtime: ActiveExtensionRuntime,
+    root: string,
+    workspaceRoot: string | null,
+    mode: "read" | "write",
+  ): Promise<string> {
+    if (root === "$workspace") {
+      if (!workspaceRoot) {
+        throw new Error(
+          `Permission root "$workspace" requires an open workspace for ${mode} access.`,
+        );
+      }
+      try {
+        return await realpath(workspaceRoot);
+      } catch {
+        return normalize(resolve(workspaceRoot));
+      }
+    }
+
+    const absoluteRoot = isAbsolute(root)
+      ? resolve(root)
+      : resolve(runtime.extension.rootDir, root);
+    try {
+      return await realpath(absoluteRoot);
+    } catch {
+      return normalize(absoluteRoot);
+    }
   }
 
   private async resolvePathForWriteCheck(pathToWrite: string): Promise<string> {
@@ -1414,6 +1762,35 @@ function isAIProviderDefinition(value: unknown): value is AIProviderDefinition {
       capability === "tool-use" ||
       capability === "vision" ||
       capability === "streaming",
+  );
+}
+
+function normalizeFileExtension(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized.length < 2 ||
+    !normalized.startsWith(".") ||
+    normalized.includes("/") ||
+    normalized.includes("\\")
+  ) {
+    throw new Error(
+      `Invalid file extension "${value}". Expected values like ".tldraw".`,
+    );
+  }
+  return normalized;
+}
+
+function resolvePreviewContentType(
+  value: unknown,
+): ExtensionResolvedFilePreview["contentType"] {
+  if (value === undefined || value === "text") {
+    return "text";
+  }
+  if (value === "markdown" || value === "json" || value === "tldraw") {
+    return value;
+  }
+  throw new Error(
+    'File preview contentType must be "text", "markdown", "json", or "tldraw".',
   );
 }
 

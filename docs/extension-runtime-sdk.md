@@ -64,6 +64,8 @@ Extensions provide functionality by registering contributions through runtime me
 | `registerTool(...)` | Add callable tools for app/Kai workflows |
 | `registerAIProvider(...)` | Contribute model/provider integrations |
 | `registerBlockNotePlugin(...)` | Contribute editor capabilities |
+| `registerInlineEditorBlock(...)` | Contribute inline editor blocks |
+| `registerFilePreviewHandler(...)` | Contribute file preview tabs by extension |
 | `registerEventHook(...)` | Subscribe to runtime/app events |
 
 Example:
@@ -158,6 +160,34 @@ runtime.registerBlockNotePlugin({
           { type: "paragraph", content: "- [ ] Done" },
         ]),
     });
+  },
+});
+```
+
+---
+
+## Inline blocks and file preview handlers
+
+Extensions can contribute inline editor blocks and file preview renderers:
+
+```ts
+runtime.registerInlineEditorBlock({
+  id: "acme.draw.inline",
+  title: "Insert drawing block",
+  run: async () => ({ markdown: "![Drawing](./diagram.tldraw)" }),
+});
+
+runtime.registerFilePreviewHandler({
+  id: "acme.draw.preview",
+  title: "tldraw preview",
+  fileExtensions: [".tldraw"],
+  render: async ({ path }, ctx) => {
+    const json = await ctx.fs.readFile(path);
+    return {
+      title: path,
+      contentType: "tldraw",
+      content: json,
+    };
   },
 });
 ```
