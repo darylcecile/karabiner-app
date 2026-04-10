@@ -23,6 +23,7 @@ import {
 } from "@blocknote/react";
 import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote/react";
 import { FileTree } from "@pierre/trees/react";
+import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -86,6 +87,16 @@ type ExtensionReadmeTab = {
 };
 
 type AppTab = EditorTab | ImageTab | ExtensionPreviewTab | ExtensionReadmeTab;
+
+type ExtensionActionPrompt =
+  | {
+      kind: "install";
+      plan: OfficialExtensionInstallPlan;
+    }
+  | {
+      kind: "uninstall";
+      extension: OfficialExtensionReadme;
+    };
 
 function TldrawPreview({
   content,
@@ -153,22 +164,33 @@ function formatPermissionScope(permission: ExtensionPermission): string {
   return "n/a";
 }
 
-function createInstallApprovalPrompt(plan: OfficialExtensionInstallPlan): string {
-  const permissionLines =
-    plan.permissions.length === 0
-      ? ["- (none)"]
-      : plan.permissions.map((permission) => {
-          const scope = formatPermissionScope(permission);
-          return `- ${permission.id}\n  reason: ${permission.reason}\n  scope: ${scope}`;
-        });
-  return [
-    `Install "${plan.name}" v${plan.version}?`,
-    "",
-    "The extension requests these permissions:",
-    ...permissionLines,
-    "",
-    "You can only proceed if you trust this extension.",
-  ].join("\n");
+function describePermissionImpact(permission: ExtensionPermission): string {
+  if (permission.id === "filesystem.write") {
+    return "Can modify files in the listed paths.";
+  }
+  if (permission.id === "filesystem.read") {
+    return "Can read files in the listed paths.";
+  }
+  if (permission.id === "network") {
+    return "Can send network requests to the allowed hosts.";
+  }
+  if (permission.id === "cli.exec") {
+    return "Can run the listed system commands.";
+  }
+  if (permission.id === "ai.provider") {
+    return "Can call the listed AI providers.";
+  }
+  return "Review this permission before installing.";
+}
+
+function getPermissionRisk(permission: ExtensionPermission): "Low" | "Medium" | "High" {
+  if (permission.id === "filesystem.write" || permission.id === "network" || permission.id === "cli.exec") {
+    return "High";
+  }
+  if (permission.id === "filesystem.read" || permission.id === "ai.provider") {
+    return "Medium";
+  }
+  return "Low";
 }
 
 function SlashMenu({
@@ -280,6 +302,10 @@ export function App() {
   const [uninstallingExtensionIds, setUninstallingExtensionIds] = useState<
     Record<string, boolean>
   >({});
+  const [extensionActionPrompt, setExtensionActionPrompt] =
+    useState<ExtensionActionPrompt | null>(null);
+  const [isApplyingExtensionActionPrompt, setIsApplyingExtensionActionPrompt] =
+    useState(false);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("files");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomedImageTabIds, setZoomedImageTabIds] = useState<Record<string, boolean>>({});
@@ -516,41 +542,15 @@ export function App() {
     if (tab.installed || installingExtensionIds[tab.id]) {
       return;
     }
-    setStatusMessage(`Installing ${tab.name}...`);
-    setInstallingExtensionIds((current) => ({ ...current, [tab.id]: true }));
+    setStatusMessage(`Preparing install for ${tab.name}...`);
     try {
       const installPlan = await electroview.rpc!.request.prepareOfficialExtensionInstall({
         id: tab.id,
       });
-      const approved = window.confirm(createInstallApprovalPrompt(installPlan));
-      if (!approved) {
-        setStatusMessage(`Install canceled for ${installPlan.name}.`);
-        return;
-      }
-      const installed = await electroview.rpc!.request.installOfficialExtension({
-        id: tab.id,
-        installToken: installPlan.installToken,
-      });
-      await Promise.all([refreshOfficialExtensions(), refreshRuntimeContributions()]);
-      setTabs((currentTabs) =>
-        currentTabs.map((currentTab) =>
-          currentTab.type === "extension" && currentTab.extensionId === installed.id
-            ? {
-                ...currentTab,
-                installed: true,
-              }
-            : currentTab,
-        ),
-      );
-      setStatusMessage(`Installed ${installed.name}.`);
+      setExtensionActionPrompt({ kind: "install", plan: installPlan });
+      setStatusMessage(`Review install permissions for ${installPlan.name}.`);
     } catch (error: unknown) {
       reportError("Unable to install extension", error);
-    } finally {
-      setInstallingExtensionIds((current) => {
-        const next = { ...current };
-        delete next[tab.id];
-        return next;
-      });
     }
   }
 
@@ -558,32 +558,93 @@ export function App() {
     if (!tab.installed || uninstallingExtensionIds[tab.id]) {
       return;
     }
-    setStatusMessage(`Uninstalling ${tab.name}...`);
-    setUninstallingExtensionIds((current) => ({ ...current, [tab.id]: true }));
+    setExtensionActionPrompt({
+      kind: "uninstall",
+      extension: tab,
+    });
+    setStatusMessage(`Review uninstall for ${tab.name}.`);
+  }
+
+  function cancelExtensionActionPrompt(): void {
+    if (!extensionActionPrompt || isApplyingExtensionActionPrompt) {
+      return;
+    }
+    if (extensionActionPrompt.kind === "install") {
+      setStatusMessage(`Install canceled for ${extensionActionPrompt.plan.name}.`);
+    } else {
+      setStatusMessage(`Uninstall canceled for ${extensionActionPrompt.extension.name}.`);
+    }
+    setExtensionActionPrompt(null);
+  }
+
+  async function confirmExtensionActionPrompt(): Promise<void> {
+    if (!extensionActionPrompt || isApplyingExtensionActionPrompt) {
+      return;
+    }
+    setIsApplyingExtensionActionPrompt(true);
     try {
-      const uninstalled = await electroview.rpc!.request.uninstallOfficialExtension({
-        id: tab.id,
-      });
-      await Promise.all([refreshOfficialExtensions(), refreshRuntimeContributions()]);
-      setTabs((currentTabs) =>
-        currentTabs.map((currentTab) =>
-          currentTab.type === "extension" && currentTab.extensionId === uninstalled.id
-            ? {
-                ...currentTab,
-                installed: false,
-              }
-            : currentTab,
-        ),
-      );
-      setStatusMessage(`Uninstalled ${uninstalled.name}.`);
+      if (extensionActionPrompt.kind === "install") {
+        const { plan } = extensionActionPrompt;
+        setStatusMessage(`Installing ${plan.name}...`);
+        setInstallingExtensionIds((current) => ({ ...current, [plan.id]: true }));
+        const installed = await electroview.rpc!.request.installOfficialExtension({
+          id: plan.id,
+          installToken: plan.installToken,
+        });
+        await Promise.all([refreshOfficialExtensions(), refreshRuntimeContributions()]);
+        setTabs((currentTabs) =>
+          currentTabs.map((currentTab) =>
+            currentTab.type === "extension" && currentTab.extensionId === installed.id
+              ? {
+                  ...currentTab,
+                  installed: true,
+                }
+              : currentTab,
+          ),
+        );
+        setStatusMessage(`Installed ${installed.name}.`);
+      } else {
+        const { extension } = extensionActionPrompt;
+        setStatusMessage(`Uninstalling ${extension.name}...`);
+        setUninstallingExtensionIds((current) => ({ ...current, [extension.id]: true }));
+        const uninstalled = await electroview.rpc!.request.uninstallOfficialExtension({
+          id: extension.id,
+        });
+        await Promise.all([refreshOfficialExtensions(), refreshRuntimeContributions()]);
+        setTabs((currentTabs) =>
+          currentTabs.map((currentTab) =>
+            currentTab.type === "extension" && currentTab.extensionId === uninstalled.id
+              ? {
+                  ...currentTab,
+                  installed: false,
+                }
+              : currentTab,
+          ),
+        );
+        setStatusMessage(`Uninstalled ${uninstalled.name}.`);
+      }
+      setExtensionActionPrompt(null);
     } catch (error: unknown) {
-      reportError("Unable to uninstall extension", error);
+      if (extensionActionPrompt.kind === "install") {
+        reportError("Unable to install extension", error);
+      } else {
+        reportError("Unable to uninstall extension", error);
+      }
     } finally {
-      setUninstallingExtensionIds((current) => {
-        const next = { ...current };
-        delete next[tab.id];
-        return next;
-      });
+      if (extensionActionPrompt.kind === "install") {
+        setInstallingExtensionIds((current) => {
+          const next = { ...current };
+          delete next[extensionActionPrompt.plan.id];
+          return next;
+        });
+      } else {
+        setUninstallingExtensionIds((current) => {
+          const next = { ...current };
+          delete next[extensionActionPrompt.extension.id];
+          return next;
+        });
+      }
+      setIsApplyingExtensionActionPrompt(false);
     }
   }
 
@@ -824,6 +885,41 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceRoot]);
 
+  const promptActionLabel =
+    extensionActionPrompt?.kind === "install" ? "Install" : "Uninstall";
+  const promptTitle =
+    extensionActionPrompt?.kind === "install"
+      ? `Install ${extensionActionPrompt.plan.name}?`
+      : extensionActionPrompt?.kind === "uninstall"
+        ? `Uninstall ${extensionActionPrompt.extension.name}?`
+        : "";
+  const promptDescription =
+    extensionActionPrompt?.kind === "install"
+      ? `Version ${extensionActionPrompt.plan.version} requests the permissions below.`
+      : extensionActionPrompt?.kind === "uninstall"
+        ? "This removes the extension from your local extensions folder."
+        : "";
+  const promptPermissions =
+    extensionActionPrompt?.kind === "install"
+      ? extensionActionPrompt.plan.permissions
+      : [];
+  const promptName =
+    extensionActionPrompt?.kind === "install"
+      ? extensionActionPrompt.plan.name
+      : extensionActionPrompt?.kind === "uninstall"
+        ? extensionActionPrompt.extension.name
+        : "";
+  const promptOverlayTone = prefersDarkMode ? "bg-black/75" : "bg-black/50";
+  const promptCardTone = prefersDarkMode
+    ? "border-white/15 bg-[#0f1117] text-neutral-100"
+    : "border-neutral-200 bg-white text-neutral-900";
+  const promptAccentTone = prefersDarkMode
+    ? "bg-indigo-500/15 text-indigo-300 border-indigo-400/30"
+    : "bg-indigo-50 text-indigo-700 border-indigo-200";
+  const promptWarningTone = prefersDarkMode
+    ? "border-amber-400/25 bg-amber-500/10 text-amber-200"
+    : "border-amber-300 bg-amber-50 text-amber-800";
+
   if (isBootstrapping) {
     return (
       <div className={`flex h-screen items-center justify-center text-xs ${appBg} ${subtleTextTone}`}>
@@ -863,11 +959,19 @@ export function App() {
   }
 
   return (
-    <div
-      className={`flex h-screen overflow-hidden ${appBg} ${
-        prefersDarkMode ? "text-neutral-100" : "text-neutral-900"
-      }`}
+    <Dialog.Root
+      open={Boolean(extensionActionPrompt)}
+      onOpenChange={(open) => {
+        if (!open) {
+          cancelExtensionActionPrompt();
+        }
+      }}
     >
+      <div
+        className={`flex h-screen overflow-hidden ${appBg} ${
+          prefersDarkMode ? "text-neutral-100" : "text-neutral-900"
+        }`}
+      >
       <Tabs.Root
         value={sidebarSection}
         onValueChange={(value) => {
@@ -1383,6 +1487,93 @@ export function App() {
           </div>
         )}
       </main>
+      <Dialog.Portal>
+        <Dialog.Overlay className={`fixed inset-0 ${promptOverlayTone}`} />
+        <Dialog.Content
+          className={`fixed left-1/2 top-1/2 z-50 w-[min(92vw,560px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border p-4 shadow-2xl ${promptCardTone}`}
+        >
+          <div className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] font-medium ${promptAccentTone}`}>
+            <HugeiconsIcon icon={PuzzleIcon} size={14} />
+            Extension permissions
+          </div>
+          <Dialog.Title className="mt-3 text-base font-semibold">{promptTitle}</Dialog.Title>
+          <Dialog.Description className={`mt-1 text-xs leading-relaxed ${mutedTextTone}`}>
+            {promptDescription}
+          </Dialog.Description>
+          {promptPermissions.length > 0 && (
+            <div className={`mt-3 max-h-56 overflow-auto rounded-md border p-2 ${borderTone}`}>
+              <p className={`mb-2 text-[11px] font-semibold uppercase tracking-widest ${sectionLabelTone}`}>
+                Requested permissions
+              </p>
+              <div className="space-y-2">
+                {promptPermissions.map((permission) => (
+                  <div key={permission.id} className={`rounded-md border p-2 ${borderTone}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium">{permission.id}</p>
+                      <span
+                        className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                          getPermissionRisk(permission) === "High"
+                            ? prefersDarkMode
+                              ? "border-rose-400/40 text-rose-300"
+                              : "border-rose-300 text-rose-700"
+                            : getPermissionRisk(permission) === "Medium"
+                              ? prefersDarkMode
+                                ? "border-amber-400/40 text-amber-300"
+                                : "border-amber-300 text-amber-700"
+                              : prefersDarkMode
+                                ? "border-emerald-400/40 text-emerald-300"
+                                : "border-emerald-300 text-emerald-700"
+                        }`}
+                      >
+                        {getPermissionRisk(permission)}
+                      </span>
+                    </div>
+                    <p className={`mt-1 text-[11px] ${mutedTextTone}`}>reason: {permission.reason}</p>
+                    <p className={`mt-1 text-[11px] ${subtleTextTone}`}>
+                      scope: {formatPermissionScope(permission)}
+                    </p>
+                    <p className={`mt-1 text-[11px] ${subtleTextTone}`}>
+                      impact: {describePermissionImpact(permission)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {extensionActionPrompt?.kind === "install" && (
+            <div className={`mt-3 rounded-md border px-2.5 py-2 text-[11px] leading-relaxed ${promptWarningTone}`}>
+              Only install extensions you trust. Permissions grant real access to local files,
+              commands, and network resources.
+            </div>
+          )}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={isApplyingExtensionActionPrompt}
+              onClick={cancelExtensionActionPrompt}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${borderTone} ${
+                prefersDarkMode
+                  ? "hover:border-white/25 hover:bg-white/5"
+                  : "hover:border-neutral-300 hover:bg-black/[0.03]"
+              }`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isApplyingExtensionActionPrompt}
+              onClick={() => void confirmExtensionActionPrompt()}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-60 ${
+                prefersDarkMode ? "bg-neutral-100 text-neutral-900" : "bg-neutral-900 text-white"
+              }`}
+            >
+              {isApplyingExtensionActionPrompt ? `${promptActionLabel}ing...` : promptActionLabel}
+            </button>
+          </div>
+          <p className={`mt-2 text-[11px] ${subtleTextTone}`}>{promptName}</p>
+        </Dialog.Content>
+      </Dialog.Portal>
     </div>
+    </Dialog.Root>
   );
 }

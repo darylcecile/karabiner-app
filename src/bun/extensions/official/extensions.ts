@@ -96,6 +96,39 @@ export type OfficialExtensionReadme = OfficialExtensionMetadata & {
 let cachedRegistry: { value: OfficialRegistry; expiresAt: number } | null = null;
 const preparedInstalls = new Map<string, PreparedOfficialInstall>();
 
+export const __officialExtensionsTestUtils = {
+  resetCachedRegistry(): void {
+    cachedRegistry = null;
+  },
+  setPreparedInstall(install: {
+    token: string;
+    entry: {
+      id: string;
+      slug: string;
+      name: string;
+      description?: string;
+      version: string;
+    };
+    manifest: ExtensionManifest;
+    readme: string;
+    extractedExtensionDirectory: string;
+    tempDirectory: string;
+    expiresAt: number;
+  }): void {
+    preparedInstalls.set(install.token, install as PreparedOfficialInstall);
+  },
+  hasPreparedInstall(token: string): boolean {
+    return preparedInstalls.has(token);
+  },
+  async clearPreparedInstalls(): Promise<void> {
+    const installs = [...preparedInstalls.values()];
+    preparedInstalls.clear();
+    for (const install of installs) {
+      await rm(install.tempDirectory, { recursive: true, force: true });
+    }
+  },
+};
+
 export async function listOfficialExtensions(): Promise<OfficialExtensionMetadata[]> {
   let registry: OfficialRegistry;
   try {

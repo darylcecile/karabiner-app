@@ -14,7 +14,6 @@ import {
   join,
   normalize,
   resolve,
-  sep,
 } from "node:path";
 import { Utils } from "electrobun/bun";
 import {
@@ -44,6 +43,12 @@ import { installPreparedOfficialExtension } from "../official/extensions";
 import { ExtensionPermissionGate } from "../permissions";
 import { ExtensionRegistry } from "../registry";
 import { prepareExtensionRuntimeEntrypoint } from "./compiler";
+import {
+  isWithinPathBoundary,
+  matchesNetworkAllowlist,
+  normalizeFileExtension,
+  resolvePreviewContentType,
+} from "./host-utils";
 import { resolveMaybePromiseHandle } from "./quickjs-handles";
 import {
   KARABINER_SDK_MODULE_SOURCE,
@@ -1976,35 +1981,6 @@ function isAIProviderDefinition(value: unknown): value is AIProviderDefinition {
   );
 }
 
-function normalizeFileExtension(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  if (
-    normalized.length < 2 ||
-    !normalized.startsWith(".") ||
-    normalized.includes("/") ||
-    normalized.includes("\\")
-  ) {
-    throw new Error(
-      `Invalid file extension "${value}". Expected values like ".tldraw".`,
-    );
-  }
-  return normalized;
-}
-
-function resolvePreviewContentType(
-  value: unknown,
-): ExtensionResolvedFilePreview["contentType"] {
-  if (value === undefined || value === "text") {
-    return "text";
-  }
-  if (value === "markdown" || value === "json" || value === "tldraw") {
-    return value;
-  }
-  throw new Error(
-    'File preview contentType must be "text", "markdown", "json", or "tldraw".',
-  );
-}
-
 function readRequiredRecordString(
   value: Record<string, unknown>,
   key: string,
@@ -2063,37 +2039,6 @@ function defaultPortForProtocol(protocol: string): number {
     return 443;
   }
   return 80;
-}
-
-function matchesNetworkAllowlist(
-  entry: string,
-  host: string,
-  port: number,
-): boolean {
-  const normalizedEntry = entry.trim().toLowerCase();
-  if (normalizedEntry.length === 0) {
-    return false;
-  }
-
-  const [entryHost, entryPort] = normalizedEntry.split(":");
-  if (entryPort && Number(entryPort) !== port) {
-    return false;
-  }
-
-  if (entryHost.startsWith("*.")) {
-    const suffix = entryHost.slice(1);
-    return host.endsWith(suffix);
-  }
-  return host === entryHost;
-}
-
-function isWithinPathBoundary(candidate: string, root: string): boolean {
-  const normalizedCandidate = normalize(candidate);
-  const normalizedRoot = normalize(root);
-  if (normalizedCandidate === normalizedRoot) {
-    return true;
-  }
-  return normalizedCandidate.startsWith(`${normalizedRoot}${sep}`);
 }
 
 function isNotFoundError(error: unknown): error is { code: string } {
