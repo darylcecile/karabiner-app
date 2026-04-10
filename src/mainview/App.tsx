@@ -13,16 +13,25 @@ import {
   Settings02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { BlockNoteSchema, createCodeBlockSpec, defaultBlockSpecs } from "@blocknote/core";
 import type { PartialBlock } from "@blocknote/core";
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 import {
-  BlockNoteViewRaw,
+  FormattingToolbarController,
   getDefaultReactSlashMenuItems,
   SuggestionMenuController,
+  useActiveStyles,
+  useBlockNoteEditor,
   useCreateBlockNote,
 } from "@blocknote/react";
-import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote/react";
+import type {
+  DefaultReactSuggestionItem,
+  FormattingToolbarProps,
+  SuggestionMenuProps,
+} from "@blocknote/react";
+import { BlockNoteView } from "@blocknote/shadcn";
 import { FileTree } from "@pierre/trees/react";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -43,6 +52,7 @@ import type {
 } from "../shared/contracts/extensions";
 import type { WorkspaceItem } from "../shared/contracts/notes";
 import type { ExtensionPermission } from "../shared/contracts/permissions";
+import "@blocknote/shadcn/style.css";
 import "tldraw/tldraw.css";
 
 type SidebarSection = "files" | "extensions" | "kai" | "settings";
@@ -99,6 +109,33 @@ type ExtensionActionPrompt =
       extension: OfficialExtensionReadme;
     };
 
+const CODE_BLOCK_LANGUAGES: Record<string, { name: string; aliases?: string[] }> = {
+  text: { name: "Plain Text", aliases: ["txt", "plaintext"] },
+  javascript: { name: "JavaScript", aliases: ["js"] },
+  typescript: { name: "TypeScript", aliases: ["ts"] },
+  jsx: { name: "JSX" },
+  tsx: { name: "TSX" },
+  json: { name: "JSON" },
+  markdown: { name: "Markdown", aliases: ["md"] },
+  bash: { name: "Bash", aliases: ["sh", "shell"] },
+  html: { name: "HTML" },
+  css: { name: "CSS" },
+  yaml: { name: "YAML", aliases: ["yml"] },
+  python: { name: "Python", aliases: ["py"] },
+  go: { name: "Go" },
+  rust: { name: "Rust", aliases: ["rs"] },
+};
+
+const blockNoteSchema = BlockNoteSchema.create({
+  blockSpecs: {
+    ...defaultBlockSpecs,
+    codeBlock: createCodeBlockSpec({
+      defaultLanguage: "typescript",
+      supportedLanguages: CODE_BLOCK_LANGUAGES,
+    }),
+  },
+});
+
 function TldrawPreview({
   content,
   path,
@@ -147,6 +184,59 @@ function getFileNameFromPath(path: string): string {
   const segments = normalized.split("/").filter(Boolean);
   const fileName = segments[segments.length - 1];
   return fileName && fileName.length > 0 ? fileName : path;
+}
+
+function getParentPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const slashIndex = normalized.lastIndexOf("/");
+  if (slashIndex < 0) {
+    return "";
+  }
+  return normalized.slice(0, slashIndex);
+}
+
+function joinWorkspacePath(parent: string, child: string): string {
+  const normalizedParent = parent.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const normalizedChild = child.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!normalizedParent) {
+    return normalizedChild;
+  }
+  if (!normalizedChild) {
+    return normalizedParent;
+  }
+  return `${normalizedParent}/${normalizedChild}`;
+}
+
+function toNoteIdFromPath(path: string): string {
+  return path.toLowerCase().endsWith(".md") ? path.slice(0, -3) : path;
+}
+
+function isPathWithin(path: string, parentPath: string): boolean {
+  return path === parentPath || path.startsWith(`${parentPath}/`);
+}
+
+function replacePathPrefix(path: string, fromPath: string, toPath: string): string {
+  if (!isPathWithin(path, fromPath)) {
+    return path;
+  }
+  return `${toPath}${path.slice(fromPath.length)}`;
+}
+
+function resolveSingleFileTreeMove(previous: string[], next: string[]): {
+  fromPath: string;
+  toPath: string;
+} | null {
+  const previousSet = new Set(previous);
+  const nextSet = new Set(next);
+  const removed = previous.filter((path) => !nextSet.has(path));
+  const added = next.filter((path) => !previousSet.has(path));
+  if (removed.length === 1 && added.length === 1) {
+    return {
+      fromPath: removed[0],
+      toPath: added[0],
+    };
+  }
+  return null;
 }
 
 function formatPermissionScope(permission: ExtensionPermission): string {
@@ -214,28 +304,77 @@ function SlashMenu({
 
   return (
     <div className="mx-auto mt-2 w-full max-w-[760px] rounded-md border border-black/10 bg-white p-1.5 shadow-lg dark:border-white/[0.14] dark:bg-neutral-950">
-      {items.map((item, index) => {
-        const isSelected = index === selectedIndex;
+      <div className="max-h-[min(24rem,45vh)] overflow-y-auto overscroll-contain">
+        {items.map((item, index) => {
+          const isSelected = index === selectedIndex;
+          return (
+            <button
+              key={`${item.title}-${index}`}
+              type="button"
+              onClick={() => onItemClick?.(item)}
+              className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors ${
+                isSelected
+                  ? "bg-neutral-100 text-neutral-900 dark:bg-white/10 dark:text-white"
+                  : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.06]"
+              }`}
+            >
+              {item.icon ? <span className="mt-0.5 shrink-0">{item.icon}</span> : null}
+              <span className="min-w-0">
+                <span className="block truncate">{item.title}</span>
+                {item.subtext ? (
+                  <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    {item.subtext}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Custom formatting toolbar ──────────────────────────────────────────────
+
+type StyleKey = "bold" | "italic" | "strike" | "underline" | "code";
+
+const TOOLBAR_BUTTONS: {
+  key: StyleKey;
+  label: string;
+  title: string;
+}[] = [
+  { key: "bold", label: "B", title: "Bold" },
+  { key: "italic", label: "I", title: "Italic" },
+  { key: "underline", label: "U", title: "Underline" },
+  { key: "strike", label: "S", title: "Strikethrough" },
+  { key: "code", label: "</>", title: "Inline code" },
+];
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function CustomFormattingToolbar(_props: FormattingToolbarProps) {
+  const editor = useBlockNoteEditor();
+  const activeStyles = useActiveStyles(editor);
+
+  return (
+    <div className="kb-custom-toolbar" role="toolbar" aria-label="Text formatting">
+      {TOOLBAR_BUTTONS.map(({ key, label, title }) => {
+        const isActive = Boolean((activeStyles as Record<string, unknown>)[key]);
         return (
           <button
-            key={`${item.title}-${index}`}
+            key={key}
             type="button"
-            onClick={() => onItemClick?.(item)}
-            className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors ${
-              isSelected
-                ? "bg-neutral-100 text-neutral-900 dark:bg-white/10 dark:text-white"
-                : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.06]"
-            }`}
+            title={title}
+            aria-label={title}
+            aria-pressed={isActive}
+            className={`kb-toolbar-btn${isActive ? " kb-toolbar-btn--active" : ""}`}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              editor.focus();
+              editor.toggleStyles({ [key]: true } as Record<StyleKey, true>);
+            }}
           >
-            {item.icon ? <span className="mt-0.5 shrink-0">{item.icon}</span> : null}
-            <span className="min-w-0">
-              <span className="block truncate">{item.title}</span>
-              {item.subtext ? (
-                <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
-                  {item.subtext}
-                </span>
-              ) : null}
-            </span>
+            {label}
           </button>
         );
       })}
@@ -274,6 +413,7 @@ function createFallbackBlocks(markdown: string): PartialBlock[] {
 
 export function App() {
   const editor = useCreateBlockNote({
+    schema: blockNoteSchema,
     // Keep paste behavior explicit and predictable:
     // prefer markdown-rich pastes when available, and parse plain text as markdown.
     pasteHandler: ({ defaultPasteHandler }) =>
@@ -309,8 +449,29 @@ export function App() {
     useState(false);
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("files");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const [selectedTreeItems, setSelectedTreeItems] = useState<
+    Array<{ path: string; isFolder: boolean }>
+  >([]);
+  const [fileTreeContextTarget, setFileTreeContextTarget] = useState<{
+    path: string;
+    isFolder: boolean;
+  } | null>(null);
+  const [draftMarkdownByTabId, setDraftMarkdownByTabId] = useState<Record<string, string>>({});
+  const [savedMarkdownByTabId, setSavedMarkdownByTabId] = useState<Record<string, string>>({});
+  const [isApplyingTreeMove, setIsApplyingTreeMove] = useState(false);
   const [zoomedImageTabIds, setZoomedImageTabIds] = useState<Record<string, boolean>>({});
   const activeTabRef = useRef<AppTab | null>(null);
+  const draftMarkdownByTabIdRef = useRef<Record<string, string>>({});
+  const selectedTreeItemsRef = useRef<Array<{ path: string; isFolder: boolean }>>([]);
+  const syncEditorChangeRef = useRef(false);
+  const contextMenuSelectionResetTimerRef = useRef<number | null>(null);
+  const suppressNextTreeSelectionOpenRef = useRef(false);
+  const sidebarResizeStateRef = useRef<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const borderTone = prefersDarkMode ? "border-white/[0.07]" : "border-neutral-200";
   const appBg = prefersDarkMode ? "bg-[#0a0a0f]" : "bg-[#f6f8fc]";
@@ -348,10 +509,48 @@ export function App() {
     () => workspaceItems.map((item) => item.path),
     [workspaceItems],
   );
+  const dirtyTabIds = useMemo(() => {
+    const dirtyIds: Record<string, boolean> = {};
+    for (const tab of tabs) {
+      if (tab.type !== "editor") {
+        continue;
+      }
+      const draft = draftMarkdownByTabId[tab.id];
+      const saved = savedMarkdownByTabId[tab.id];
+      if (draft !== undefined && saved !== undefined && draft !== saved) {
+        dirtyIds[tab.id] = true;
+      }
+    }
+    return dirtyIds;
+  }, [draftMarkdownByTabId, savedMarkdownByTabId, tabs]);
+  const fileTreeGitStatus = useMemo(
+    () =>
+      tabs
+        .filter((tab): tab is EditorTab => tab.type === "editor")
+        .filter((tab) => dirtyTabIds[tab.id])
+        .map((tab) => ({ path: tab.path, status: "modified" as const })),
+    [dirtyTabIds, tabs],
+  );
 
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  useEffect(() => {
+    draftMarkdownByTabIdRef.current = draftMarkdownByTabId;
+  }, [draftMarkdownByTabId]);
+
+  useEffect(() => {
+    selectedTreeItemsRef.current = selectedTreeItems;
+  }, [selectedTreeItems]);
+
+  useEffect(() => {
+    return () => {
+      if (contextMenuSelectionResetTimerRef.current !== null) {
+        window.clearTimeout(contextMenuSelectionResetTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return registerActiveEditorBridge({
@@ -422,15 +621,30 @@ export function App() {
     );
   }
 
-  async function loadNoteIntoEditor(noteId: string): Promise<void> {
+  function applyEditorMarkdownWithoutTracking(markdown: string, path: string): void {
+    syncEditorChangeRef.current = true;
+    applyEditorMarkdown(markdown, path);
+    window.setTimeout(() => {
+      syncEditorChangeRef.current = false;
+    }, 0);
+  }
+
+  async function loadNoteIntoEditor(noteId: string, tabId: string): Promise<void> {
     const note = await electroview.rpc!.request.readNote({ id: noteId });
-    applyEditorMarkdown(note.markdown, note.path);
+    const draft = draftMarkdownByTabIdRef.current[tabId];
+    const nextMarkdown = draft ?? note.markdown;
+
+    setSavedMarkdownByTabId((current) => ({ ...current, [tabId]: note.markdown }));
+    setDraftMarkdownByTabId((current) =>
+      current[tabId] === nextMarkdown ? current : { ...current, [tabId]: nextMarkdown },
+    );
     setNoteTitle(note.title);
     setTabs((currentTabs) =>
       currentTabs.map((tab) =>
-        tab.type === "editor" && tab.source === "note" && tab.sourceId === noteId
+        tab.id === tabId && tab.type === "editor"
           ? {
               ...tab,
+              source: "note",
               sourceId: note.id,
               title: getFileNameFromPath(note.path),
               path: note.path,
@@ -438,18 +652,26 @@ export function App() {
           : tab,
       ),
     );
+    applyEditorMarkdownWithoutTracking(nextMarkdown, note.path);
     setStatusMessage(`Opened ${note.path}`);
   }
 
-  async function loadTextFileIntoEditor(path: string): Promise<void> {
+  async function loadTextFileIntoEditor(path: string, tabId: string): Promise<void> {
     const file = await electroview.rpc!.request.readWorkspaceTextFile({ path });
-    applyEditorMarkdown(file.content, file.path);
+    const draft = draftMarkdownByTabIdRef.current[tabId];
+    const nextMarkdown = draft ?? file.content;
+
+    setSavedMarkdownByTabId((current) => ({ ...current, [tabId]: file.content }));
+    setDraftMarkdownByTabId((current) =>
+      current[tabId] === nextMarkdown ? current : { ...current, [tabId]: nextMarkdown },
+    );
     setNoteTitle(file.title);
     setTabs((currentTabs) =>
       currentTabs.map((tab) =>
-        tab.type === "editor" && tab.source === "text-file" && tab.sourceId === path
+        tab.id === tabId && tab.type === "editor"
           ? {
               ...tab,
+              source: "text-file",
               sourceId: file.path,
               title: getFileNameFromPath(file.path),
               path: file.path,
@@ -457,51 +679,56 @@ export function App() {
           : tab,
       ),
     );
+    applyEditorMarkdownWithoutTracking(nextMarkdown, file.path);
     setStatusMessage(`Opened ${file.path}`);
   }
 
   async function openNoteTab(item: WorkspaceItem): Promise<void> {
     const tabId = `note:${item.id}`;
-    setTabs((currentTabs) => {
-      if (currentTabs.some((tab) => tab.id === tabId)) {
-        return currentTabs;
-      }
-      return [
-        ...currentTabs,
-        {
-          id: tabId,
-          type: "editor",
-          source: "note",
-          sourceId: item.id,
-          title: getFileNameFromPath(item.path),
-          path: item.path,
-        },
-      ];
-    });
+    const existingTab = tabs.find(
+      (tab) => tab.type === "editor" && tab.source === "note" && tab.sourceId === item.id,
+    );
+    if (existingTab) {
+      await activateTab(existingTab);
+      return;
+    }
+    setTabs((currentTabs) => [
+      ...currentTabs,
+      {
+        id: tabId,
+        type: "editor",
+        source: "note",
+        sourceId: item.id,
+        title: getFileNameFromPath(item.path),
+        path: item.path,
+      },
+    ]);
     setActiveTabId(tabId);
-    await loadNoteIntoEditor(item.id);
+    await loadNoteIntoEditor(item.id, tabId);
   }
 
   async function openTextFileTab(item: WorkspaceItem): Promise<void> {
     const tabId = `text:${item.path}`;
-    setTabs((currentTabs) => {
-      if (currentTabs.some((tab) => tab.id === tabId)) {
-        return currentTabs;
-      }
-      return [
-        ...currentTabs,
-        {
-          id: tabId,
-          type: "editor",
-          source: "text-file",
-          sourceId: item.path,
-          title: getFileNameFromPath(item.path),
-          path: item.path,
-        },
-      ];
-    });
+    const existingTab = tabs.find(
+      (tab) => tab.type === "editor" && tab.source === "text-file" && tab.sourceId === item.path,
+    );
+    if (existingTab) {
+      await activateTab(existingTab);
+      return;
+    }
+    setTabs((currentTabs) => [
+      ...currentTabs,
+      {
+        id: tabId,
+        type: "editor",
+        source: "text-file",
+        sourceId: item.path,
+        title: getFileNameFromPath(item.path),
+        path: item.path,
+      },
+    ]);
     setActiveTabId(tabId);
-    await loadTextFileIntoEditor(item.path);
+    await loadTextFileIntoEditor(item.path, tabId);
   }
 
   async function openImageTab(item: WorkspaceItem): Promise<void> {
@@ -797,11 +1024,10 @@ export function App() {
         await refreshWorkspaceItems();
         setTabs((currentTabs) =>
           currentTabs.map((tab) =>
-            tab.type === "editor" &&
-            tab.source === "note" &&
-            tab.sourceId === saved.id
+            tab.id === activeEditorTab.id && tab.type === "editor"
               ? {
                   ...tab,
+                  source: "note",
                   sourceId: saved.id,
                   title: getFileNameFromPath(saved.path),
                   path: saved.path,
@@ -809,6 +1035,8 @@ export function App() {
               : tab,
           ),
         );
+        setSavedMarkdownByTabId((current) => ({ ...current, [activeEditorTab.id]: markdown }));
+        setDraftMarkdownByTabId((current) => ({ ...current, [activeEditorTab.id]: markdown }));
         setNoteTitle(saved.title);
         setStatusMessage(`Saved ${saved.path}`);
         return;
@@ -821,11 +1049,10 @@ export function App() {
       await refreshWorkspaceItems();
       setTabs((currentTabs) =>
         currentTabs.map((tab) =>
-          tab.type === "editor" &&
-          tab.source === "text-file" &&
-          tab.sourceId === saved.path
+          tab.id === activeEditorTab.id && tab.type === "editor"
             ? {
                 ...tab,
+                source: "text-file",
                 sourceId: saved.path,
                 title: getFileNameFromPath(saved.path),
                 path: saved.path,
@@ -833,6 +1060,8 @@ export function App() {
             : tab,
         ),
       );
+      setSavedMarkdownByTabId((current) => ({ ...current, [activeEditorTab.id]: markdown }));
+      setDraftMarkdownByTabId((current) => ({ ...current, [activeEditorTab.id]: markdown }));
       setNoteTitle(saved.title);
       setStatusMessage(`Saved ${saved.path}`);
     } catch (error: unknown) {
@@ -863,6 +1092,18 @@ export function App() {
           return nextValue;
         });
       }
+      if (removedTab.type === "editor") {
+        setSavedMarkdownByTabId((current) => {
+          const next = { ...current };
+          delete next[removedTab.id];
+          return next;
+        });
+        setDraftMarkdownByTabId((current) => {
+          const next = { ...current };
+          delete next[removedTab.id];
+          return next;
+        });
+      }
       return nextTabs;
     });
   }
@@ -879,9 +1120,9 @@ export function App() {
     if (tab.type === "editor") {
       try {
         if (tab.source === "note") {
-          await loadNoteIntoEditor(tab.sourceId);
+          await loadNoteIntoEditor(tab.sourceId, tab.id);
         } else {
-          await loadTextFileIntoEditor(tab.sourceId);
+          await loadTextFileIntoEditor(tab.sourceId, tab.id);
         }
       } catch (error: unknown) {
         reportError("Unable to load tab", error);
@@ -902,6 +1143,260 @@ export function App() {
     setIsOpeningFolder(true);
     setStatusMessage("Choose a folder to open...");
     electroview.rpc?.send.requestOpenWorkspaceFolder({});
+  }
+
+  function applyMovedPathToTabs(fromPath: string, toPath: string): void {
+    setTabs((currentTabs) =>
+      currentTabs.map((tab) => {
+        if (!isPathWithin(tab.path, fromPath)) {
+          return tab;
+        }
+        const nextPath = replacePathPrefix(tab.path, fromPath, toPath);
+        if (tab.type !== "editor") {
+          return {
+            ...tab,
+            path: nextPath,
+            title: getFileNameFromPath(nextPath),
+          };
+        }
+        if (tab.source === "note") {
+          return {
+            ...tab,
+            path: nextPath,
+            sourceId: toNoteIdFromPath(nextPath),
+            title: getFileNameFromPath(nextPath),
+          };
+        }
+        return {
+          ...tab,
+          path: nextPath,
+          sourceId: replacePathPrefix(tab.sourceId, fromPath, toPath),
+          title: getFileNameFromPath(nextPath),
+        };
+      }),
+    );
+  }
+
+  function closeTabsAtPath(path: string): void {
+    setTabs((currentTabs) => {
+      const closingIds = currentTabs
+        .filter((tab) => isPathWithin(tab.path, path))
+        .map((tab) => tab.id);
+      if (closingIds.length === 0) {
+        return currentTabs;
+      }
+
+      setSavedMarkdownByTabId((current) => {
+        const next = { ...current };
+        for (const id of closingIds) {
+          delete next[id];
+        }
+        return next;
+      });
+      setDraftMarkdownByTabId((current) => {
+        const next = { ...current };
+        for (const id of closingIds) {
+          delete next[id];
+        }
+        return next;
+      });
+      setZoomedImageTabIds((current) => {
+        const next = { ...current };
+        for (const id of closingIds) {
+          delete next[id];
+        }
+        return next;
+      });
+
+      const nextTabs = currentTabs.filter((tab) => !closingIds.includes(tab.id));
+      setActiveTabId((currentActiveTabId) => {
+        if (!currentActiveTabId || !closingIds.includes(currentActiveTabId)) {
+          return currentActiveTabId;
+        }
+        return nextTabs[0]?.id ?? null;
+      });
+      return nextTabs;
+    });
+  }
+
+  function getContextMenuBaseDirectory(): string {
+    if (!fileTreeContextTarget) {
+      return "";
+    }
+    if (fileTreeContextTarget.isFolder) {
+      return fileTreeContextTarget.path;
+    }
+    return getParentPath(fileTreeContextTarget.path);
+  }
+
+  async function createFileFromContextMenu(): Promise<void> {
+    const baseDirectory = getContextMenuBaseDirectory();
+    const suggestedName = "untitled.md";
+    const input = window.prompt("New file name", suggestedName);
+    if (!input) {
+      return;
+    }
+    const trimmed = input.trim();
+    if (trimmed.length === 0) {
+      setStatusMessage("File name cannot be empty.");
+      return;
+    }
+    const fileName = trimmed.includes(".") ? trimmed : `${trimmed}.md`;
+    const filePath = joinWorkspacePath(baseDirectory, fileName);
+    try {
+      await electroview.rpc!.request.createWorkspaceTextFile({
+        path: filePath,
+        content: fileName.toLowerCase().endsWith(".md") ? "# Untitled note\n\n" : "",
+      });
+      await refreshWorkspaceItems();
+      setSidebarSection("files");
+      setIsSidebarCollapsed(false);
+      await openWorkspaceItem(filePath);
+      setStatusMessage(`Created ${filePath}`);
+    } catch (error: unknown) {
+      reportError("Unable to create file", error);
+    }
+  }
+
+  async function createFolderFromContextMenu(): Promise<void> {
+    const baseDirectory = getContextMenuBaseDirectory();
+    const input = window.prompt("New folder name", "new-folder");
+    if (!input) {
+      return;
+    }
+    const folderName = input.trim();
+    if (folderName.length === 0) {
+      setStatusMessage("Folder name cannot be empty.");
+      return;
+    }
+    const folderPath = joinWorkspacePath(baseDirectory, folderName);
+    try {
+      await electroview.rpc!.request.createWorkspaceFolder({ path: folderPath });
+      await refreshWorkspaceItems();
+      setStatusMessage(`Created ${folderPath}`);
+    } catch (error: unknown) {
+      reportError("Unable to create folder", error);
+    }
+  }
+
+  async function renameContextMenuTarget(): Promise<void> {
+    if (!fileTreeContextTarget) {
+      return;
+    }
+    const currentName = getFileNameFromPath(fileTreeContextTarget.path);
+    const input = window.prompt("Rename item", currentName);
+    if (!input) {
+      return;
+    }
+    const nextName = input.trim();
+    if (nextName.length === 0) {
+      setStatusMessage("Name cannot be empty.");
+      return;
+    }
+
+    const parentPath = getParentPath(fileTreeContextTarget.path);
+    const nextPath = joinWorkspacePath(parentPath, nextName);
+    if (nextPath === fileTreeContextTarget.path) {
+      return;
+    }
+    try {
+      await electroview.rpc!.request.moveWorkspaceItem({
+        fromPath: fileTreeContextTarget.path,
+        toPath: nextPath,
+      });
+      applyMovedPathToTabs(fileTreeContextTarget.path, nextPath);
+      await refreshWorkspaceItems();
+      setStatusMessage(`Renamed to ${nextPath}`);
+    } catch (error: unknown) {
+      reportError("Unable to rename item", error);
+    }
+  }
+
+  async function deleteContextMenuTarget(): Promise<void> {
+    if (!fileTreeContextTarget) {
+      return;
+    }
+    const confirmed = window.confirm(`Delete ${fileTreeContextTarget.path}?`);
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await electroview.rpc!.request.deleteWorkspaceItem({ path: fileTreeContextTarget.path });
+      closeTabsAtPath(fileTreeContextTarget.path);
+      await refreshWorkspaceItems();
+      setStatusMessage(`Deleted ${fileTreeContextTarget.path}`);
+    } catch (error: unknown) {
+      reportError("Unable to delete item", error);
+    }
+  }
+
+  async function handleFileTreeFilesChange(nextFiles: string[]): Promise<void> {
+    if (isApplyingTreeMove) {
+      return;
+    }
+    const move = resolveSingleFileTreeMove(treeFiles, nextFiles);
+    if (!move) {
+      setStatusMessage("Drag and drop currently supports moving one file at a time.");
+      return;
+    }
+    try {
+      setIsApplyingTreeMove(true);
+      await electroview.rpc!.request.moveWorkspaceItem({
+        fromPath: move.fromPath,
+        toPath: move.toPath,
+      });
+      applyMovedPathToTabs(move.fromPath, move.toPath);
+      await refreshWorkspaceItems();
+      setStatusMessage(`Moved ${move.fromPath} → ${move.toPath}`);
+    } catch (error: unknown) {
+      reportError("Unable to move file", error);
+    } finally {
+      setIsApplyingTreeMove(false);
+    }
+  }
+
+  function handleFileTreeContextMenuCapture(): void {
+    suppressNextTreeSelectionOpenRef.current = true;
+    if (contextMenuSelectionResetTimerRef.current !== null) {
+      window.clearTimeout(contextMenuSelectionResetTimerRef.current);
+    }
+    contextMenuSelectionResetTimerRef.current = window.setTimeout(() => {
+      suppressNextTreeSelectionOpenRef.current = false;
+      contextMenuSelectionResetTimerRef.current = null;
+    }, 0);
+
+    const selectedItem = selectedTreeItemsRef.current[0];
+    setFileTreeContextTarget(selectedItem ?? null);
+  }
+
+  function startSidebarResize(clientX: number): void {
+    sidebarResizeStateRef.current = {
+      startX: clientX,
+      startWidth: sidebarWidth,
+    };
+    setIsResizingSidebar(true);
+    const minWidth = 180;
+    const maxWidth = 420;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const resizeState = sidebarResizeStateRef.current;
+      if (!resizeState) {
+        return;
+      }
+      const delta = event.clientX - resizeState.startX;
+      const nextWidth = Math.min(maxWidth, Math.max(minWidth, resizeState.startWidth + delta));
+      setSidebarWidth(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      sidebarResizeStateRef.current = null;
+      setIsResizingSidebar(false);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
   }
 
   useEffect(() => {
@@ -957,6 +1452,10 @@ export function App() {
       setTabs([]);
       setActiveTabId(null);
       setNoteTitle("");
+      setDraftMarkdownByTabId({});
+      setSavedMarkdownByTabId({});
+      setSelectedTreeItems([]);
+      setFileTreeContextTarget(null);
       return;
     }
 
@@ -1062,7 +1561,7 @@ export function App() {
       <div
         className={`flex h-screen overflow-hidden ${appBg} ${
           prefersDarkMode ? "text-neutral-100" : "text-neutral-900"
-        }`}
+        } ${isResizingSidebar ? "cursor-col-resize select-none" : ""}`}
       >
       <Tabs.Root
         value={sidebarSection}
@@ -1140,12 +1639,12 @@ export function App() {
           {!isSidebarCollapsed && (
             <motion.div
               initial={prefersReducedMotion ? false : { width: 0, opacity: 0 }}
-              animate={{ width: 240, opacity: 1 }}
+              animate={{ width: sidebarWidth, opacity: 1 }}
               exit={prefersReducedMotion ? { opacity: 0 } : { width: 0, opacity: 0 }}
               transition={
                 prefersReducedMotion ? { duration: 0 } : { duration: 0.12, ease: "easeOut" }
               }
-              className={`flex h-full flex-col overflow-hidden border-r ${borderTone} ${panelBg}`}
+              className={`relative flex h-full flex-col overflow-hidden border-r ${borderTone} ${panelBg}`}
             >
               <Tabs.Content value="files" className="flex h-full flex-col data-[state=inactive]:hidden">
                 <header className={`flex shrink-0 items-center justify-between border-b px-3 py-2.5 ${borderTone}`}>
@@ -1189,24 +1688,107 @@ export function App() {
                   </div>
                 </header>
                 <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
-                  <FileTree
-                    className="h-full"
-                    options={{
-                      flattenEmptyDirectories: true,
-                      search: true,
-                      sort: true,
-                      virtualize: { threshold: 120 },
-                    }}
-                    files={treeFiles}
-                    selectedItems={activeTab ? [activeTab.path] : []}
-                    onSelection={(items) => {
-                      const selectedFile = items.find((item) => !item.isFolder);
-                      if (!selectedFile) {
-                        return;
+                  <ContextMenu.Root
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setFileTreeContextTarget(null);
                       }
-                      void openWorkspaceItem(selectedFile.path);
                     }}
-                  />
+                  >
+                    <ContextMenu.Trigger asChild>
+                      <div onContextMenuCapture={handleFileTreeContextMenuCapture}>
+                        <FileTree
+                          className="h-full"
+                          options={{
+                            dragAndDrop: true,
+                            flattenEmptyDirectories: true,
+                            search: true,
+                            sort: true,
+                            virtualize: { threshold: 120 },
+                          }}
+                          files={treeFiles}
+                          gitStatus={fileTreeGitStatus}
+                          selectedItems={activeTab ? [activeTab.path] : []}
+                          onFilesChange={(nextFiles) => {
+                            void handleFileTreeFilesChange(nextFiles);
+                          }}
+                          onSelection={(items) => {
+                            setSelectedTreeItems(items);
+                            if (suppressNextTreeSelectionOpenRef.current) {
+                              return;
+                            }
+                            const selectedFile = items.find((item) => !item.isFolder);
+                            if (!selectedFile) {
+                              return;
+                            }
+                            void openWorkspaceItem(selectedFile.path);
+                          }}
+                        />
+                      </div>
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Portal>
+                      <ContextMenu.Content
+                        className={`z-50 min-w-[180px] rounded-md border p-1 text-xs shadow-xl ${borderTone} ${
+                          prefersDarkMode
+                            ? "bg-[#11141b] text-neutral-200"
+                            : "bg-white text-neutral-800"
+                        }`}
+                        collisionPadding={8}
+                      >
+                        <ContextMenu.Item
+                          onSelect={() => {
+                            void createFileFromContextMenu();
+                          }}
+                          className={`rounded px-2 py-1.5 outline-none transition-colors ${
+                            prefersDarkMode
+                              ? "focus:bg-white/10 focus:text-white"
+                              : "focus:bg-black/[0.06] focus:text-black"
+                          }`}
+                        >
+                          New file
+                        </ContextMenu.Item>
+                        <ContextMenu.Item
+                          onSelect={() => {
+                            void createFolderFromContextMenu();
+                          }}
+                          className={`rounded px-2 py-1.5 outline-none transition-colors ${
+                            prefersDarkMode
+                              ? "focus:bg-white/10 focus:text-white"
+                              : "focus:bg-black/[0.06] focus:text-black"
+                          }`}
+                        >
+                          New folder
+                        </ContextMenu.Item>
+                        <ContextMenu.Separator className={`my-1 h-px ${borderTone}`} />
+                        <ContextMenu.Item
+                          disabled={!fileTreeContextTarget}
+                          onSelect={() => {
+                            void renameContextMenuTarget();
+                          }}
+                          className={`rounded px-2 py-1.5 outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-40 ${
+                            prefersDarkMode
+                              ? "focus:bg-white/10 focus:text-white"
+                              : "focus:bg-black/[0.06] focus:text-black"
+                          }`}
+                        >
+                          Rename
+                        </ContextMenu.Item>
+                        <ContextMenu.Item
+                          disabled={!fileTreeContextTarget}
+                          onSelect={() => {
+                            void deleteContextMenuTarget();
+                          }}
+                          className={`rounded px-2 py-1.5 outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-40 ${
+                            prefersDarkMode
+                              ? "focus:bg-rose-500/15 focus:text-rose-200"
+                              : "focus:bg-rose-500/10 focus:text-rose-700"
+                          }`}
+                        >
+                          Delete
+                        </ContextMenu.Item>
+                      </ContextMenu.Content>
+                    </ContextMenu.Portal>
+                  </ContextMenu.Root>
                 </div>
                 <footer className={`shrink-0 border-t px-3 py-2.5 ${borderTone}`}>
                   <p className={`truncate text-[11px] ${mutedTextTone}`} title={statusMessage}>
@@ -1326,6 +1908,21 @@ export function App() {
                   Motion and layout preferences will be configured here.
                 </div>
               </Tabs.Content>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize sidebar"
+                onMouseDown={(event) => {
+                  if (event.button !== 0) {
+                    return;
+                  }
+                  event.preventDefault();
+                  startSidebarResize(event.clientX);
+                }}
+                className={`absolute inset-y-0 right-0 w-1.5 cursor-col-resize transition-colors ${
+                  prefersDarkMode ? "hover:bg-white/10" : "hover:bg-black/[0.08]"
+                }`}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -1334,51 +1931,65 @@ export function App() {
       <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${mainPanelBg}`}>
         {/* Tab strip */}
         <div className={`kb-scrollbar-hidden flex shrink-0 items-end overflow-x-auto border-b px-1 ${borderTone} ${panelBg}`}>
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={`group flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${
-                tab.id === activeTabId
-                  ? prefersDarkMode
-                    ? "border-indigo-400/70 text-neutral-100"
-                    : "border-indigo-600/80 text-neutral-900"
-                  : prefersDarkMode
-                    ? "border-transparent text-neutral-500 hover:text-neutral-300"
-                    : "border-transparent text-neutral-500 hover:text-neutral-700"
-              }`}
-            >
-              <button
-                onClick={() => void activateTab(tab)}
-                className="flex items-center gap-1.5 truncate text-left"
-                title={tab.path}
-              >
-                <HugeiconsIcon
-                  icon={
-                    tab.type === "editor"
-                      ? File01Icon
-                      : tab.type === "image"
-                        ? Image01Icon
-                        : tab.type === "extension"
-                          ? PuzzleIcon
-                          : File01Icon
-                  }
-                  size={13}
-                />
-                <span className="max-w-[120px] truncate">{tab.title}</span>
-              </button>
-              <button
-                onClick={() => closeTab(tab.id)}
-                className={`ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 transition-all group-hover:opacity-100 ${
-                  prefersDarkMode
-                    ? "text-neutral-700 hover:bg-white/[0.1] hover:text-neutral-300"
-                    : "text-neutral-500 hover:bg-black/[0.07] hover:text-neutral-700"
+          {tabs.map((tab) => {
+            const isDirty = Boolean(dirtyTabIds[tab.id]);
+            return (
+              <div
+                key={tab.id}
+                className={`group flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${
+                  tab.id === activeTabId
+                    ? prefersDarkMode
+                      ? "border-indigo-400/70 text-neutral-100"
+                      : "border-indigo-600/80 text-neutral-900"
+                    : prefersDarkMode
+                      ? "border-transparent text-neutral-500 hover:text-neutral-300"
+                      : "border-transparent text-neutral-500 hover:text-neutral-700"
                 }`}
-                aria-label="Close tab"
               >
-                <HugeiconsIcon icon={Cancel01Icon} size={9} />
-              </button>
-            </div>
-          ))}
+                <button
+                  onClick={() => void activateTab(tab)}
+                  className="flex items-center gap-1.5 truncate text-left"
+                  title={tab.path}
+                >
+                  <HugeiconsIcon
+                    icon={
+                      tab.type === "editor"
+                        ? File01Icon
+                        : tab.type === "image"
+                          ? Image01Icon
+                          : tab.type === "extension"
+                            ? PuzzleIcon
+                            : File01Icon
+                    }
+                    size={13}
+                  />
+                  <span className="max-w-[120px] truncate">{tab.title}</span>
+                  {isDirty ? (
+                    <span
+                      className={
+                        prefersDarkMode ? "text-amber-300" : "text-amber-600"
+                      }
+                      aria-label="Unsaved changes"
+                      title="Unsaved changes"
+                    >
+                      •
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  onClick={() => closeTab(tab.id)}
+                  className={`ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 transition-all group-hover:opacity-100 ${
+                    prefersDarkMode
+                      ? "text-neutral-700 hover:bg-white/[0.1] hover:text-neutral-300"
+                      : "text-neutral-500 hover:bg-black/[0.07] hover:text-neutral-700"
+                  }`}
+                  aria-label="Close tab"
+                >
+                  <HugeiconsIcon icon={Cancel01Icon} size={9} />
+                </button>
+              </div>
+            );
+          })}
           {tabs.length === 0 && (
             <span className={`px-4 py-2 text-[11px] ${subtleTextTone}`}>
               Open a file from the sidebar to start writing.
@@ -1400,17 +2011,30 @@ export function App() {
           <div className="min-h-0 min-w-0 flex-1 overflow-auto">
             <div className="mx-auto w-full max-w-[760px] px-12 pb-20 pt-10">
               <div className="kb-blocknote">
-                <BlockNoteViewRaw
+                <BlockNoteView
                   editor={editor}
+                  onChange={() => {
+                    if (syncEditorChangeRef.current || !activeEditorTab) {
+                      return;
+                    }
+                    const markdown = editor.blocksToMarkdownLossy(editor.document);
+                    setDraftMarkdownByTabId((current) =>
+                      current[activeEditorTab.id] === markdown
+                        ? current
+                        : { ...current, [activeEditorTab.id]: markdown },
+                    );
+                  }}
                   formattingToolbar={false}
                   linkToolbar={false}
                   slashMenu={false}
                   emojiPicker={false}
-                  sideMenu={false}
                   filePanel={false}
                   tableHandles={false}
                   comments={false}
                 >
+                  <FormattingToolbarController
+                    formattingToolbar={CustomFormattingToolbar}
+                  />
                   <SuggestionMenuController
                     triggerCharacter="/"
                     getItems={async (query) =>
@@ -1436,7 +2060,7 @@ export function App() {
                     }
                     suggestionMenuComponent={SlashMenu}
                   />
-                </BlockNoteViewRaw>
+                </BlockNoteView>
               </div>
             </div>
           </div>

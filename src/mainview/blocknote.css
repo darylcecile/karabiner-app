@@ -104,11 +104,34 @@
   font-size: 0.8125rem;
   line-height: 1.65;
   border: 1px solid rgb(255 255 255 / 0.08);
-  border-radius: 6px;
+  border-radius: 8px;
   background: rgb(10 12 16 / 0.88);
-  padding: 0.75rem 1rem;
-  margin: 0.2rem 0;
+  padding: 0 !important;
+  margin: 0.35rem 0;
   overflow-x: auto;
+}
+
+.kb-blocknote .bn-editor [data-content-type="codeBlock"] > div {
+  padding: 0.45rem 0.75rem 0;
+}
+
+.kb-blocknote .bn-editor [data-content-type="codeBlock"] > div > select {
+  position: static !important;
+  opacity: 1 !important;
+  transition: none !important;
+  appearance: none;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(230 230 230);
+  font-size: 0.7rem;
+  letter-spacing: 0.01em;
+  padding: 0.12rem 0.5rem;
+}
+
+.kb-blocknote .bn-editor [data-content-type="codeBlock"] > pre {
+  margin: 0;
+  padding: 0.5rem 0.9rem 0.85rem;
 }
 
 /* ── Blockquote ────────────────────────────────────────────────────────── */
@@ -126,14 +149,141 @@
   background: rgb(99 102 241 / 0.28);
 }
 
-/* ── Formatting toolbar ────────────────────────────────────────────────── */
+/* ── Side menu drag handles ─────────────────────────────────────────────── */
 
-.kb-blocknote .bn-toolbar,
-.kb-blocknote [class*="formatting-toolbar"] {
-  background: rgb(22 24 28);
-  border: 1px solid rgb(255 255 255 / 0.1);
+.kb-blocknote .bn-side-menu {
+  height: 26px;
+}
+
+.kb-blocknote .bn-side-menu .bn-button {
+  min-height: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.kb-blocknote .bn-side-menu .bn-button svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* ── Tooltips ────────────────────────────────────────────────────────────── */
+
+.kb-blocknote [data-slot="tooltip-content"] {
+  z-index: 1300;
+  color: rgb(230 230 230) !important;
+  background: rgb(22 24 28) !important;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+.kb-blocknote [data-slot="tooltip-content"] > svg:last-child,
+[data-slot="tooltip-content"] > svg:last-child,
+[data-slot="tooltip-content"] > [class*="rotate-45"],
+[data-slot="tooltip-content"] svg[class*="rotate-45"][viewBox="0 0 30 10"][preserveAspectRatio="none"],
+svg[class*="rotate-45"][viewBox="0 0 30 10"][preserveAspectRatio="none"] {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* ── Menus/dropdowns ─────────────────────────────────────────────────────── */
+
+.kb-blocknote .bn-menu-dropdown,
+.kb-blocknote .bn-color-picker-dropdown {
+  position: relative;
+  z-index: 1200 !important;
+  color: rgb(230 230 230);
+  background: rgb(22 24 28) !important;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+.kb-blocknote .bn-menu-dropdown [data-slot="dropdown-menu-item"]:hover,
+.kb-blocknote .bn-menu-dropdown [data-slot="dropdown-menu-sub-trigger"]:hover,
+.kb-blocknote .bn-menu-dropdown [data-slot="dropdown-menu-sub-trigger"][data-state="open"] {
+  background: rgb(255 255 255 / 0.08);
+}
+
+/* ── Formatting toolbar (replaced by custom toolbar below) ──────────────── */
+
+/* ── Custom selection toolbar ────────────────────────────────────────────── */
+
+.kb-custom-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 4px;
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgb(0 0 0 / 0.45);
+  background: rgb(22 24 28);
+  border: 1px solid rgb(255 255 255 / 0.11);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+.kb-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: rgb(185 190 200);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.kb-toolbar-btn:hover {
+  background: rgb(255 255 255 / 0.09);
+  color: rgb(230 233 240);
+}
+
+.kb-toolbar-btn--active {
+  background: rgb(255 255 255 / 0.13);
+  color: rgb(248 250 255);
+  font-weight: 600;
+}
+
+.kb-toolbar-btn--active:hover {
+  background: rgb(255 255 255 / 0.17);
+  color: rgb(255 255 255);
+}
+
+@media (prefers-color-scheme: light) {
+  .kb-custom-toolbar {
+    background: rgb(255 255 255);
+    border: 1px solid rgb(148 163 184 / 0.35);
+    box-shadow: 0 4px 16px rgb(15 23 42 / 0.12), 0 1px 3px rgb(15 23 42 / 0.08);
+  }
+
+  .kb-toolbar-btn {
+    color: rgb(71 85 105);
+  }
+
+  .kb-toolbar-btn:hover {
+    background: rgb(15 23 42 / 0.06);
+    color: rgb(30 41 59);
+  }
+
+  .kb-toolbar-btn--active {
+    background: rgb(15 23 42 / 0.09);
+    color: rgb(15 23 42);
+    font-weight: 600;
+  }
+
+  .kb-toolbar-btn--active:hover {
+    background: rgb(15 23 42 / 0.13);
+    color: rgb(0 0 0);
+  }
 }
 
 @media (prefers-color-scheme: light) {
@@ -167,6 +317,12 @@
     color: rgb(17 24 39);
   }
 
+  .kb-blocknote .bn-editor [data-content-type="codeBlock"] > div > select {
+    border: 1px solid rgb(148 163 184 / 0.5);
+    background: rgb(255 255 255 / 0.85);
+    color: rgb(30 41 59);
+  }
+
   .kb-blocknote .bn-editor [data-content-type="blockquote"] {
     border-left-color: rgb(148 163 184 / 0.6);
     color: rgb(71 85 105);
@@ -176,10 +332,24 @@
     background: rgb(59 130 246 / 0.22);
   }
 
-  .kb-blocknote .bn-toolbar,
-  .kb-blocknote [class*="formatting-toolbar"] {
-    background: rgb(255 255 255);
-    border: 1px solid rgb(148 163 184 / 0.35);
+  .kb-blocknote [data-slot="tooltip-content"] {
+    color: rgb(30 41 59) !important;
+    background: rgb(255 255 255) !important;
+    border: 1px solid rgb(148 163 184 / 0.45);
     box-shadow: 0 8px 24px rgb(15 23 42 / 0.1);
+  }
+
+  .kb-blocknote .bn-menu-dropdown,
+  .kb-blocknote .bn-color-picker-dropdown {
+    color: rgb(30 41 59);
+    background: rgb(255 255 255) !important;
+    border: 1px solid rgb(148 163 184 / 0.45);
+    box-shadow: 0 8px 24px rgb(15 23 42 / 0.1);
+  }
+
+  .kb-blocknote .bn-menu-dropdown [data-slot="dropdown-menu-item"]:hover,
+  .kb-blocknote .bn-menu-dropdown [data-slot="dropdown-menu-sub-trigger"]:hover,
+  .kb-blocknote .bn-menu-dropdown [data-slot="dropdown-menu-sub-trigger"][data-state="open"] {
+    background: rgb(15 23 42 / 0.06);
   }
 }
