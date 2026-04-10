@@ -751,29 +751,54 @@ export class ExtensionRuntimeHost {
     context.setProp(notesHandle, "update", updateHandle);
     updateHandle.dispose();
 
+    const getActiveEditorHandle = context.newAsyncifiedFunction(
+      "getActiveEditor",
+      async () => {
+        return this.createActiveEditorApiHandle(runtime);
+      },
+    );
+    context.setProp(notesHandle, "getActiveEditor", getActiveEditorHandle);
+    getActiveEditorHandle.dispose();
+
+    return notesHandle;
+  }
+
+  private createActiveEditorApiHandle(runtime: ActiveExtensionRuntime): QuickJSHandle {
+    const context = runtime.context;
+    const activeEditorHandle = context.newObject();
+
     const selectionHandle = context.newAsyncifiedFunction(
       "getSelectionAsMarkdown",
       async () => {
+        runtime.gate.require(
+          "notes.read",
+          "ctx.notes.getActiveEditor().getSelectionAsMarkdown",
+        );
         throw new Error(
-          "notes.getSelectionAsMarkdown is not available in the Bun extension host yet.",
+          "Active editor selection is not available in the Bun extension host yet.",
         );
       },
     );
-    context.setProp(notesHandle, "getSelectionAsMarkdown", selectionHandle);
+    context.setProp(activeEditorHandle, "getSelectionAsMarkdown", selectionHandle);
     selectionHandle.dispose();
 
     const insertAtCursorHandle = context.newAsyncifiedFunction(
       "insertAtCursor",
-      async () => {
+      async (markdownHandle) => {
+        runtime.gate.require(
+          "notes.write",
+          "ctx.notes.getActiveEditor().insertAtCursor",
+        );
+        this.readHandleAsString(context, markdownHandle, "markdown");
         throw new Error(
-          "notes.insertAtCursor is not available in the Bun extension host yet.",
+          "Active editor cursor insertion is not available in the Bun extension host yet.",
         );
       },
     );
-    context.setProp(notesHandle, "insertAtCursor", insertAtCursorHandle);
+    context.setProp(activeEditorHandle, "insertAtCursor", insertAtCursorHandle);
     insertAtCursorHandle.dispose();
 
-    return notesHandle;
+    return activeEditorHandle;
   }
 
   private createWorkspaceApiHandle(runtime: ActiveExtensionRuntime): QuickJSHandle {

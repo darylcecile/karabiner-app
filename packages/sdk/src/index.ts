@@ -132,6 +132,10 @@ export type ExtensionNotesAPI = {
     noteId: string,
     input: { title?: string; markdown?: string },
   ): Promise<ExtensionNoteDocument>;
+  getActiveEditor(): Promise<ExtensionActiveEditorAPI>;
+};
+
+export type ExtensionActiveEditorAPI = {
   getSelectionAsMarkdown(): Promise<string>;
   insertAtCursor(markdown: string): Promise<void>;
 };

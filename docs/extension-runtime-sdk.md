@@ -73,7 +73,8 @@ runtime.registerTool({
   id: "acme.summarizeSelection",
   description: "Summarize selected editor blocks",
   run: async (input, ctx) => {
-    const markdown = await ctx.notes.getSelectionAsMarkdown();
+    const editor = await ctx.notes.getActiveEditor();
+    const markdown = await editor.getSelectionAsMarkdown();
     return ctx.ai.summarize(markdown, { style: input.style ?? "concise" });
   },
 });
@@ -91,6 +92,8 @@ Handler functions receive a `ctx` object with scoped APIs.
 - `ctx.notes.read(noteId)`
 - `ctx.notes.create(...)`
 - `ctx.notes.update(...)`
+- `ctx.notes.getActiveEditor().getSelectionAsMarkdown()`
+- `ctx.notes.getActiveEditor().insertAtCursor(markdown)`
 - `ctx.workspace.root()`
 
 ### AI integration
@@ -178,7 +181,8 @@ export default registerExtension((runtime) => {
     id: "acme.parseOutline",
     description: "Parse markdown headings with a WASM parser",
     run: async (_input, ctx) => {
-      const markdown = await ctx.notes.getSelectionAsMarkdown();
+      const editor = await ctx.notes.getActiveEditor();
+      const markdown = await editor.getSelectionAsMarkdown();
       return parseMarkdown(markdown);
     },
   });

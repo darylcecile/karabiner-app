@@ -125,7 +125,8 @@ export default registerExtension((runtime) => {
     id: "acme.insertTemplate",
     title: "Insert ACME template",
     run: async (ctx) => {
-      await ctx.notes.insertAtCursor("# Project template\n\n");
+      const editor = await ctx.notes.getActiveEditor();
+      await editor.insertAtCursor("# Project template\n\n");
     },
   });
 
