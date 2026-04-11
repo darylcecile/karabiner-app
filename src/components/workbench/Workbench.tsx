@@ -1,5 +1,6 @@
-import { createContext, Dispatch, PropsWithChildren, SetStateAction, use, useRef, useState } from "react";
+import { createContext, Dispatch, PropsWithChildren, SetStateAction, use, useState } from "react";
 import { useColorScheme } from '../../hooks/useColorScheme';
+import { Workspace } from "../../utils/workspace";
 
 export const WORKBENCH_SIDEBAR_DEFAULT_WIDTH = 280;
 export const WORKBENCH_SIDEBAR_COLLAPSE_WIDTH = 120;
@@ -20,8 +21,15 @@ interface WorkbenchContextValue {
 		pushToHistory: (path: string) => void;
 		goBack?: () => void;
 		goForward?: () => void;
+	},
+	fs: {
+		workspace: Workspace | null;
+		openWorkspace: (path: string) => Promise<void>;
+		closeWorkspace: () => void;
 	}
 }
+
+// context
 
 const WorkbenchContext = createContext<WorkbenchContextValue>({} as WorkbenchContextValue);
 
@@ -36,6 +44,7 @@ export function Workbench(props: PropsWithChildren) {
 		visitedPaths: [],
 		currentIndex: -1,
 	});
+	const [workspace, setWorkspace] = useState<Workspace | null>(null);
 
 	function pushToHistory(path: string) {
 		setHistory(prev => {
@@ -82,6 +91,11 @@ export function Workbench(props: PropsWithChildren) {
 					pushToHistory,
 					goBack: history.currentIndex > 0 ? goBack : undefined,
 					goForward: history.currentIndex < history.visitedPaths.length - 1 ? goForward : undefined,
+				},
+				fs: {
+					workspace,
+					openWorkspace: async (path: string) => setWorkspace(await Workspace.from(path)),
+					closeWorkspace: () => setWorkspace(null),
 				},
 			}}
 		>

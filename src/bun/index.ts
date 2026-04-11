@@ -1,15 +1,22 @@
-import { ApplicationMenu, BrowserWindow, Updater, Utils } from "electrobun/bun";
+import { ApplicationMenu, BrowserView, BrowserWindow, Updater, Utils } from "electrobun/bun";
 import { dlopen, FFIType } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { USE_NATIVE_MAC_DRAG_REGION } from "../shared/window-effects";
+import { readFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
+import { RPCType } from "./type";
+import { mkdir } from "node:fs/promises";
+import { rmdir } from "node:fs/promises";
+import { unlink } from "node:fs/promises";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
-const MAC_TRAFFIC_LIGHTS_X = 16;
-const MAC_TRAFFIC_LIGHTS_Y = 14;
-const MAC_NATIVE_DRAG_REGION_X = 116;
-const MAC_NATIVE_DRAG_REGION_HEIGHT = 32;
+const MAC_TRAFFIC_LIGHTS_X = 9;
+const MAC_TRAFFIC_LIGHTS_Y = 8;
+const MAC_NATIVE_DRAG_REGION_X = 100;
+const MAC_NATIVE_DRAG_REGION_HEIGHT = 28;
 
 async function getMainViewUrl(): Promise<string> {
 	const channel = await Updater.localInfo.channel();
@@ -89,7 +96,6 @@ function applyMacOSWindowEffects(mainWindow: BrowserWindow) {
 		}, 120);
 
 		mainWindow.on("resize", () => {
-			alignButtons();
 			if (USE_NATIVE_MAC_DRAG_REGION) {
 				alignNativeDragRegion();
 			}
@@ -134,6 +140,7 @@ function setupMacOSMenu(mainWindow: BrowserWindow) {
 	});
 }
 
+
 const mainWindow = new BrowserWindow({
 	title: "Karabiner",
 	url,
@@ -143,17 +150,41 @@ const mainWindow = new BrowserWindow({
 		x: 200,
 		y: 200,
 	},
-	...(isMacOS
-		? {
-				titleBarStyle: "hiddenInset" as const,
-				transparent: true,
-			}
-		: {
-				titleBarStyle: "hiddenInset" as const,
-				styleMask: {
-					UnifiedTitleAndToolbar: true,
+	titleBarStyle: "hiddenInset" as const,
+	rpc: BrowserView.defineRPC<RPCType>({
+		handlers: {
+			requests: {
+				listDirectory: async ([path]) => {
+					const items = await readdir(path, { withFileTypes: true });
+					return items.map((item) => ({
+						name: item.name,
+						isDirectory: item.isDirectory(),
+					}));
 				},
-			}),
+				readFile: async ([path, type]) => {
+					return readFile(path, type);
+				},
+				writeFile: async ([path, data, options]) => {
+					return writeFile(path, data, options);
+				},
+				readdir: async ([path, options]) => {
+					return readdir(path, options);
+				},
+				getHomeDirectory: async () => {
+					return Utils.paths.home;
+				},
+				mkdir: async ([path, options]) => {
+					return mkdir(path, options);
+				},
+				rmdir: async ([path]) => {
+					return rmdir(path);
+				},
+				unlink: async ([path]) => {
+					return unlink(path);
+				}
+			}
+		}
+	})
 });
 
 if (isMacOS) {

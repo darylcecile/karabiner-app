@@ -1,9 +1,12 @@
 #import <Cocoa/Cocoa.h>
+#import <objc/runtime.h>
 
 static NSString *const kElectrobunVibrancyViewIdentifier =
 	@"ElectrobunVibrancyView";
 static NSString *const kElectrobunNativeDragViewIdentifier =
 	@"ElectrobunNativeDragView";
+static const void *kElectrobunTrafficLightControllerKey =
+	&kElectrobunTrafficLightControllerKey;
 
 @interface ElectrobunNativeDragView : NSView
 @end
@@ -82,6 +85,106 @@ static void normalizeWindowButtonAppearance(NSArray<NSButton *> *buttons) {
 		[button setNeedsDisplay:YES];
 	}
 }
+
+static BOOL applyTrafficLightLayout(NSWindow *window, CGFloat x, CGFloat yFromTop) {
+	NSButton *closeButton = [window standardWindowButton:NSWindowCloseButton];
+	NSButton *minimizeButton =
+		[window standardWindowButton:NSWindowMiniaturizeButton];
+	NSButton *zoomButton = [window standardWindowButton:NSWindowZoomButton];
+
+	if (closeButton == nil || minimizeButton == nil || zoomButton == nil) {
+		return NO;
+	}
+
+	NSView *buttonContainer = [closeButton superview];
+	if (buttonContainer == nil) {
+		return NO;
+	}
+
+	NSView *containerParent = [buttonContainer superview];
+	if (containerParent == nil) {
+		return NO;
+	}
+
+	NSRect closeFrameInParent =
+		[buttonContainer convertRect:[closeButton frame] toView:containerParent];
+	BOOL flipped = [containerParent isFlipped];
+	CGFloat targetY = yFromTop;
+	if (!flipped) {
+		targetY = containerParent.frame.size.height - yFromTop -
+				  closeButton.frame.size.height;
+	}
+	targetY = MAX(0.0, targetY);
+
+	NSArray<NSButton *> *buttons = @[ closeButton, minimizeButton, zoomButton ];
+	normalizeWindowButtonAppearance(buttons);
+
+	NSRect containerFrame = [buttonContainer frame];
+	containerFrame.origin.x += x - NSMinX(closeFrameInParent);
+	containerFrame.origin.y += targetY - NSMinY(closeFrameInParent);
+	[buttonContainer setFrame:containerFrame];
+
+	refreshWindowButtonInteraction(window, buttons, buttonContainer);
+	[window invalidateShadow];
+	return YES;
+}
+
+@interface ElectrobunTrafficLightController : NSObject
+@property(nonatomic, weak) NSWindow *window;
+@property(nonatomic) CGFloat x;
+@property(nonatomic) CGFloat yFromTop;
+- (instancetype)initWithWindow:(NSWindow *)window;
+- (void)updateWithX:(CGFloat)x yFromTop:(CGFloat)yFromTop;
+- (BOOL)applyLayout;
+@end
+
+@implementation ElectrobunTrafficLightController
+- (instancetype)initWithWindow:(NSWindow *)window {
+	self = [super init];
+	if (self == nil) {
+		return nil;
+	}
+
+	_window = window;
+	NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+	[center addObserver:self
+			   selector:@selector(handleWindowLayoutChange:)
+				   name:NSWindowDidResizeNotification
+				 object:window];
+	[center addObserver:self
+			   selector:@selector(handleWindowLayoutChange:)
+				   name:NSWindowDidEndLiveResizeNotification
+				 object:window];
+	[center addObserver:self
+			   selector:@selector(handleWindowLayoutChange:)
+				   name:NSWindowDidBecomeKeyNotification
+				 object:window];
+	return self;
+}
+
+- (void)dealloc {
+	[[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)updateWithX:(CGFloat)x yFromTop:(CGFloat)yFromTop {
+	self.x = x;
+	self.yFromTop = yFromTop;
+}
+
+- (void)handleWindowLayoutChange:(NSNotification *)notification {
+	(void)notification;
+	[self applyLayout];
+}
+
+- (BOOL)applyLayout {
+	NSWindow *window = self.window;
+	if (window == nil) {
+		return NO;
+	}
+
+	return applyTrafficLightLayout(window, self.x, self.yFromTop);
+}
+@end
 
 extern "C" bool enableWindowVibrancy(void *windowPtr) {
 	if (windowPtr == nullptr) {
@@ -174,46 +277,20 @@ extern "C" bool setWindowTrafficLightsPosition(void *windowPtr, double x,
 			return;
 		}
 
-		NSButton *closeButton =
-			[window standardWindowButton:NSWindowCloseButton];
-		NSButton *minimizeButton =
-			[window standardWindowButton:NSWindowMiniaturizeButton];
-		NSButton *zoomButton = [window standardWindowButton:NSWindowZoomButton];
-
-		if (closeButton == nil || minimizeButton == nil || zoomButton == nil) {
-			return;
+		ElectrobunTrafficLightController *controller =
+			objc_getAssociatedObject(window, kElectrobunTrafficLightControllerKey);
+		if (controller == nil) {
+			controller = [[ElectrobunTrafficLightController alloc] initWithWindow:window];
+			objc_setAssociatedObject(
+				window,
+				kElectrobunTrafficLightControllerKey,
+				controller,
+				OBJC_ASSOCIATION_RETAIN_NONATOMIC
+			);
 		}
 
-		NSView *buttonContainer = [closeButton superview];
-		if (buttonContainer == nil) {
-			return;
-		}
-
-		NSView *containerParent = [buttonContainer superview];
-		if (containerParent == nil) {
-			return;
-		}
-
-		NSRect closeFrameInParent =
-			[buttonContainer convertRect:[closeButton frame] toView:containerParent];
-		BOOL flipped = [containerParent isFlipped];
-		CGFloat targetY = yFromTop;
-		if (!flipped) {
-			targetY = containerParent.frame.size.height - yFromTop -
-					  closeButton.frame.size.height;
-		}
-		targetY = MAX(0.0, targetY);
-
-		NSArray<NSButton *> *buttons = @[ closeButton, minimizeButton, zoomButton ];
-		normalizeWindowButtonAppearance(buttons);
-		NSRect containerFrame = [buttonContainer frame];
-		containerFrame.origin.x += x - NSMinX(closeFrameInParent);
-		containerFrame.origin.y += targetY - NSMinY(closeFrameInParent);
-		[buttonContainer setFrame:containerFrame];
-
-		refreshWindowButtonInteraction(window, buttons, buttonContainer);
-		[window invalidateShadow];
-		success = YES;
+		[controller updateWithX:x yFromTop:yFromTop];
+		success = [controller applyLayout];
 	});
 
 	return success;

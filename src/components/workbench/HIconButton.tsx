@@ -19,7 +19,7 @@ export function HIconButton(props: HIconButtonProps) {
 	return (
 		<button
 			className={cn(
-				"size-7 flex items-center justify-center rounded-lg transition-colors",
+				"size-6 flex items-center justify-center rounded-lg transition-colors",
 				theme === 'light' ? 'hover:bg-black/10' : 'hover:bg-white/10',
 				props.className,
 				props.disabled && 'pointer-events-none opacity-50'
@@ -28,8 +28,8 @@ export function HIconButton(props: HIconButtonProps) {
 		>
 			<HugeiconsIcon
 				icon={props.icon}
-				size={16}
-				strokeWidth={2}
+				size={14}
+				strokeWidth={1.5}
 				className={cn(
 					"pointer-events-none text-foreground",
 				)}
