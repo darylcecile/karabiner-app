@@ -49,6 +49,40 @@ static ElectrobunNativeDragView *findNativeDragView(NSView *contentView) {
 	return nil;
 }
 
+static void refreshWindowButtonInteraction(NSWindow *window,
+											 NSArray<NSButton *> *buttons,
+											 NSView *buttonContainer) {
+	for (NSButton *button in buttons) {
+		[button setNeedsDisplay:YES];
+		[button updateTrackingAreas];
+	}
+
+	[buttonContainer setNeedsDisplay:YES];
+	[buttonContainer setNeedsLayout:YES];
+	[buttonContainer layoutSubtreeIfNeeded];
+	[buttonContainer updateTrackingAreas];
+
+	NSView *contentView = [window contentView];
+	if (contentView != nil) {
+		[contentView setNeedsDisplay:YES];
+		[contentView updateTrackingAreas];
+		[window invalidateCursorRectsForView:contentView];
+	}
+
+	[window invalidateCursorRectsForView:buttonContainer];
+	[window displayIfNeeded];
+}
+
+static void normalizeWindowButtonAppearance(NSArray<NSButton *> *buttons) {
+	for (NSButton *button in buttons) {
+		NSButtonCell *cell = [button cell];
+		if (cell != nil) {
+			[cell setControlSize:NSControlSizeRegular];
+		}
+		[button setNeedsDisplay:YES];
+	}
+}
+
 extern "C" bool enableWindowVibrancy(void *windowPtr) {
 	if (windowPtr == nullptr) {
 		return false;
@@ -155,28 +189,29 @@ extern "C" bool setWindowTrafficLightsPosition(void *windowPtr, double x,
 			return;
 		}
 
-		CGFloat spacing = NSMinX(minimizeButton.frame) - NSMinX(closeButton.frame);
-		if (spacing <= 0) {
-			spacing = closeButton.frame.size.width + 6.0;
+		NSView *containerParent = [buttonContainer superview];
+		if (containerParent == nil) {
+			return;
 		}
 
-		BOOL flipped = [buttonContainer isFlipped];
+		NSRect closeFrameInParent =
+			[buttonContainer convertRect:[closeButton frame] toView:containerParent];
+		BOOL flipped = [containerParent isFlipped];
 		CGFloat targetY = yFromTop;
 		if (!flipped) {
-			targetY = buttonContainer.frame.size.height - yFromTop -
+			targetY = containerParent.frame.size.height - yFromTop -
 					  closeButton.frame.size.height;
 		}
 		targetY = MAX(0.0, targetY);
 
-		CGFloat currentX = x;
 		NSArray<NSButton *> *buttons = @[ closeButton, minimizeButton, zoomButton ];
-		for (NSButton *button in buttons) {
-			[button setFrameOrigin:NSMakePoint(currentX, targetY)];
-			currentX += spacing;
-		}
+		normalizeWindowButtonAppearance(buttons);
+		NSRect containerFrame = [buttonContainer frame];
+		containerFrame.origin.x += x - NSMinX(closeFrameInParent);
+		containerFrame.origin.y += targetY - NSMinY(closeFrameInParent);
+		[buttonContainer setFrame:containerFrame];
 
-		[buttonContainer setNeedsLayout:YES];
-		[buttonContainer layoutSubtreeIfNeeded];
+		refreshWindowButtonInteraction(window, buttons, buttonContainer);
 		[window invalidateShadow];
 		success = YES;
 	});

@@ -5,9 +5,10 @@ import { useWindow } from '../../hooks/useWindow';
 import { minMax } from '../../utils/math';
 import { SIDENAV_SNAP_ZONE, SIDENAV_INSTANT_TRANSITION, SIDENAV_SNAP_TRANSITION, SIDENAV_DRAG_TRANSITION } from './constants';
 import { ResizeBar } from './ResizeBar';
+import { cn } from '../../utils/cn';
 
 
-export function SideNav(props:PropsWithChildren) {
+export function SideNav(props:PropsWithChildren<{className?:string}>) {
 	const { sidebar } = useWorkbench();
 	const { width } = useWindow();
 	const [dragWidth, setDragWidth] = useState<number | null>(null);
@@ -125,7 +126,7 @@ export function SideNav(props:PropsWithChildren) {
 	return (
 		<>
 			<motion.section
-				className="shrink-0 overflow-hidden"
+				className={cn("shrink-0 overflow-hidden" , props.className)}
 				initial={false}
 				animate={{
 					width: displayedWidth,

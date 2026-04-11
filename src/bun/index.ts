@@ -2,12 +2,13 @@ import { ApplicationMenu, BrowserWindow, Updater, Utils } from "electrobun/bun";
 import { dlopen, FFIType } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { USE_NATIVE_MAC_DRAG_REGION } from "../shared/window-effects";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 const MAC_TRAFFIC_LIGHTS_X = 16;
 const MAC_TRAFFIC_LIGHTS_Y = 14;
-const MAC_NATIVE_DRAG_REGION_X = 96;
+const MAC_NATIVE_DRAG_REGION_X = 116;
 const MAC_NATIVE_DRAG_REGION_HEIGHT = 32;
 
 async function getMainViewUrl(): Promise<string> {
@@ -76,16 +77,22 @@ function applyMacOSWindowEffects(mainWindow: BrowserWindow) {
 			);
 
 		const buttonsAlignedNow = alignButtons();
-		const dragRegionAlignedNow = alignNativeDragRegion();
+		const dragRegionAlignedNow = USE_NATIVE_MAC_DRAG_REGION
+			? alignNativeDragRegion()
+			: false;
 
 		setTimeout(() => {
 			alignButtons();
-			alignNativeDragRegion();
+			if (USE_NATIVE_MAC_DRAG_REGION) {
+				alignNativeDragRegion();
+			}
 		}, 120);
 
 		mainWindow.on("resize", () => {
 			alignButtons();
-			alignNativeDragRegion();
+			if (USE_NATIVE_MAC_DRAG_REGION) {
+				alignNativeDragRegion();
+			}
 		});
 
 		console.log(
