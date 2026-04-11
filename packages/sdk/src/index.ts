@@ -74,6 +74,7 @@ export type ExtensionExecutionContext = {
   network: ExtensionNetworkAPI;
   fs: ExtensionFilesystemAPI;
   cli: ExtensionCliAPI;
+  git: ExtensionGitAPI;
 };
 
 export type ExtensionLogger = {
@@ -238,4 +239,14 @@ export type ExtensionCliAPI = {
     stdout: string;
     stderr: string;
   }>;
+};
+
+
+export type ExtensionGitAPI = {
+  commitAndPush(options: {
+	message: string;
+	authorName?: string;
+	authorEmail?: string;
+	path?: string;
+  }): Promise<void>;
 };

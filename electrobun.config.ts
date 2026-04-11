@@ -10,6 +10,7 @@ export default {
     copy: {
       "dist/index.html": "views/mainview/index.html",
       "dist/assets": "views/mainview/assets",
+      "src/bun/libMacWindowEffects.dylib": "bun/libMacWindowEffects.dylib",
       "node_modules/@electric-sql/pglite/dist/vector.tar.gz": "vector.tar.gz",
       "node_modules/@electric-sql/pglite/dist/pglite.data": "bun/pglite.data",
       "node_modules/@electric-sql/pglite/dist/pglite.wasm": "bun/pglite.wasm",
@@ -30,4 +31,5 @@ export default {
       bundleCEF: false,
     },
   },
+  
 } satisfies ElectrobunConfig;
