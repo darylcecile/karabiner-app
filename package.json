@@ -1,0 +1,38 @@
+{
+  "name": "karabiner-app",
+  "version": "1.0.0",
+  "description": "Karabiner desktop app",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@blocknote/core": "^0.48.0",
+    "@blocknote/react": "^0.48.0",
+    "@blocknote/shadcn": "^0.48.0",
+    "@swc/core": "^1.15.24",
+    "@tailwindcss/vite": "^4.2.2",
+    "allotment": "^1.20.5",
+    "clsx": "^2.1.1",
+    "electron": "^41.2.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "^7.3.2"
+  }
+}

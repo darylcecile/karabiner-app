@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* Path to your installed `@blocknote/shadcn` package. */
+@source "../../node_modules/@blocknote/shadcn";
+
+:root {
+	color: #101624;
+	font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+	line-height: 1.5;
+	font-weight: 400;
+}
+
+
+#root {
+	color-scheme: light dark;
+	position: fixed;
+	z-index: 0;
+	inset: 0;
+}
+
+main {
+	z-index: 1;
+	display: flex;
+	height: 100%;
+	width: 100%;
+	background-color: light-dark(#fff, #1f1f1f);
+}
+
+/* MARK: editor */
+
+.bn-root {
+	width: 100%;
+}
+
+.bn-editor {
+	border-radius: 0;
+	height: 100%;
+
+}
