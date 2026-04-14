@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { WorkbenchLayout } from './components/layout'
-import { Editor } from './components/editor';
-import { useCreateBlockNote } from '@blocknote/react';
+import { Editor, useEditorState } from './components/editor';
 
 export default function App() {
-	const editor = useCreateBlockNote();
+	const editor = useEditorState();
 
 	return (
 		<WorkbenchLayout>

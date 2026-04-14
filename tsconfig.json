@@ -6,7 +6,18 @@
 		"jsx": "react-jsx",
 		"strict": true,
 		"skipLibCheck": true,
-		"types": ["electron-vite/node"]
+		"types": [
+			"electron-vite/node"
+		],
+		"paths": {
+			"@/*": [
+				"./electron/*"
+			]
+		}
 	},
-	"include": ["electron", "src", "electron.vite.config.ts"]
+	"include": [
+		"electron",
+		"src",
+		"electron.vite.config.ts"
+	]
 }

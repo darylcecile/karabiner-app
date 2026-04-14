@@ -1,7 +1,9 @@
 import { Allotment } from 'allotment'
 import { PropsWithChildren } from 'react'
-import { ActionBar } from './titlebar';
+import { Action, ActionBar } from './titlebar';
 import "allotment/dist/style.css";
+
+import { Notification03Icon } from '@hugeicons/core-free-icons'
 
 export function WorkbenchLayout(props: PropsWithChildren) {
 	return (
@@ -11,7 +13,10 @@ export function WorkbenchLayout(props: PropsWithChildren) {
 				<div className='text-red-500'>Left pane</div>
 			</Allotment.Pane>
 			<Allotment.Pane>
-				<ActionBar className='ml-1'/>
+				<ActionBar className='ml-1 px-1 flex items-center justify-between bg-red-200'>
+					<Action icon={Notification03Icon} />
+					<Action icon={Notification03Icon} />
+				</ActionBar>
 				<main className='pt-8.5 overflow-y-auto'>
 					{props.children}
 				</main>

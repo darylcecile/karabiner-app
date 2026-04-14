@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "radix-vega",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "electron/renderer/styles.css",
+    "baseColor": "mist",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/renderer/components",
+    "utils": "@/shared/utils",
+    "ui": "@/renderer/components/ui",
+    "lib": "@/shared",
+    "hooks": "@/renderer/hooks"
+  },
+  "iconLibrary": "huge-icons"
+}
