@@ -19,7 +19,7 @@
     "lib": "@/shared",
     "hooks": "@/renderer/hooks"
   },
-  "menuColor": "default",
+  "menuColor": "default-translucent",
   "menuAccent": "subtle",
   "registries": {}
 }

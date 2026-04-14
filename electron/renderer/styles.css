@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/manrope";
+@import "@fontsource-variable/outfit";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -19,8 +20,8 @@
 	--card-foreground: oklch(0.148 0.004 228.8);
 	--popover: oklch(1 0 0);
 	--popover-foreground: oklch(0.148 0.004 228.8);
-	--primary: oklch(0.841 0.238 128.85);
-	--primary-foreground: oklch(0.405 0.101 131.063);
+	--primary: oklch(0.52 0.105 223.128);
+	--primary-foreground: oklch(0.984 0.019 200.873);
 	--secondary: oklch(0.967 0.001 286.375);
 	--secondary-foreground: oklch(0.21 0.006 285.885);
 	--muted: oklch(0.963 0.002 197.1);
@@ -39,43 +40,16 @@
 	--radius: 0.625rem;
 	--sidebar: oklch(0.987 0.002 197.1);
 	--sidebar-foreground: oklch(0.148 0.004 228.8);
-	--sidebar-primary: oklch(0.648 0.2 131.684);
-	--sidebar-primary-foreground: oklch(0.986 0.031 120.757);
+	--sidebar-primary: oklch(0.609 0.126 221.723);
+	--sidebar-primary-foreground: oklch(0.984 0.019 200.873);
 	--sidebar-accent: oklch(0.963 0.002 197.1);
 	--sidebar-accent-foreground: oklch(0.218 0.008 223.9);
 	--sidebar-border: oklch(0.925 0.005 214.3);
 	--sidebar-ring: oklch(0.723 0.014 214.4);
 }
 
-#root {
-	color-scheme: light dark;
-	position: fixed;
-	z-index: 0;
-	inset: 0;
-}
-
-main {
-	z-index: 1;
-	display: flex;
-	height: 100%;
-	width: 100%;
-	background-color: light-dark(#fff, #1f1f1f);
-}
-
-/* MARK: editor */
-
-.bn-root {
-	width: 100%;
-}
-
-.bn-editor {
-	border-radius: 0;
-	height: 100%;
-
-}
-
 @theme inline {
-	--font-heading: var(--font-sans);
+	--font-heading: 'Outfit Variable', sans-serif;
 	--font-sans: 'Manrope Variable', sans-serif;
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-sidebar-border: var(--sidebar-border);
@@ -124,8 +98,8 @@ main {
 	--card-foreground: oklch(0.987 0.002 197.1);
 	--popover: oklch(0.218 0.008 223.9);
 	--popover-foreground: oklch(0.987 0.002 197.1);
-	--primary: oklch(0.768 0.233 130.85);
-	--primary-foreground: oklch(0.405 0.101 131.063);
+	--primary: oklch(0.45 0.085 224.283);
+	--primary-foreground: oklch(0.984 0.019 200.873);
 	--secondary: oklch(0.274 0.006 286.033);
 	--secondary-foreground: oklch(0.985 0 0);
 	--muted: oklch(0.275 0.011 216.9);
@@ -143,8 +117,8 @@ main {
 	--chart-5: oklch(0.275 0.011 216.9);
 	--sidebar: oklch(0.218 0.008 223.9);
 	--sidebar-foreground: oklch(0.987 0.002 197.1);
-	--sidebar-primary: oklch(0.768 0.233 130.85);
-	--sidebar-primary-foreground: oklch(0.274 0.072 132.109);
+	--sidebar-primary: oklch(0.715 0.143 215.221);
+	--sidebar-primary-foreground: oklch(0.302 0.056 229.695);
 	--sidebar-accent: oklch(0.275 0.011 216.9);
 	--sidebar-accent-foreground: oklch(0.987 0.002 197.1);
 	--sidebar-border: oklch(1 0 0 / 10%);
@@ -161,4 +135,38 @@ main {
   html {
     @apply font-sans;
 	}
+}
+
+#root {
+	color-scheme: light dark;
+	position: fixed;
+	z-index: 0;
+	inset: 0;
+}
+
+main {
+	z-index: 1;
+	display: flex;
+	height: 100%;
+	width: 100%;
+	background-color: light-dark(#fff, #1f1f1f);
+}
+
+/* MARK: editor */
+
+.bn-root {
+	width: 100%;
+}
+
+.bn-editor {
+	border-radius: 0;
+	height: 100%;
+}
+
+.app-drag {
+	app-region: drag;
+}
+
+.app-no-drag {
+	app-region: no-drag;
 }

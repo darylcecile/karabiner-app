@@ -2,6 +2,7 @@ import { PropsWithChildren } from "react";
 import { cn } from "../../shared/utils";
 import { usePlatform } from '../hooks/usePlatform';
 import { HugeiconsIcon } from '@hugeicons/react'
+import { Button } from "./ui/button";
 
 export function ActionBar(props: PropsWithChildren<{ className?: string }>) {
 	return (
@@ -30,14 +31,17 @@ type ActionProps = PropsWithChildren<{
 
 export function Action(props: ActionProps) {
 	return (
-		<button
+		<Button
 			className={cn(
-				"size-6.5 rounded-lg rounded-tr-xl bg-gray-200 flex items-center justify-center",
-				props.className
+				// "size-6.5 rounded-lg rounded-tr-xl bg-gray-200 flex items-center justify-center",
+				props.className,
+				'app-no-drag'
 			)}
+			size={"icon-sm"}
+			variant={"ghost"}
 		>
-			{props.icon && <HugeiconsIcon icon={props.icon} size={16} />}
+			{props.icon && <HugeiconsIcon icon={props.icon} />}
 			{props.children}
-		</button>
+		</Button>
 	)
 }
