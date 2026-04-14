@@ -37,10 +37,10 @@ export function Action(props: ActionProps) {
 				props.className,
 				'app-no-drag'
 			)}
-			size={"icon-sm"}
+			size={"icon-xs"}
 			variant={"ghost"}
 		>
-			{props.icon && <HugeiconsIcon icon={props.icon} />}
+			{props.icon && <HugeiconsIcon icon={props.icon} strokeWidth={2}/>}
 			{props.children}
 		</Button>
 	)

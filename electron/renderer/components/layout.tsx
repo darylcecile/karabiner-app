@@ -13,8 +13,9 @@ export function WorkbenchLayout(props: PropsWithChildren) {
 				<div className='text-red-500'>Left pane</div>
 			</Allotment.Pane>
 			<Allotment.Pane>
-				<ActionBar className='ml-1 px-1 flex items-center justify-between bg-red-200'>
-					<Action icon={Notification03Icon} />
+				<ActionBar className='ml-1 px-1 flex items-center justify-between'>
+					{/* <Action icon={Notification03Icon} /> */}
+					<div/>
 					<Action icon={Notification03Icon} />
 				</ActionBar>
 				<main className='pt-8.5 overflow-y-auto'>
