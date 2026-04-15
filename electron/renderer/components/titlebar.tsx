@@ -40,6 +40,7 @@ export function Action(props: ActionProps) {
 			)}
 			size={"icon-xs"}
 			variant={"ghost"}
+			onClick={props.onClick}
 		>
 			{props.icon && <HugeiconsIcon icon={props.icon} strokeWidth={2}/>}
 			{props.children}

@@ -11,7 +11,8 @@
 
 :root {
 	color: #101624;
-	font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+	/* font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif; */
+	letter-spacing: 1px;
 	line-height: 1.5;
 	font-weight: 400;
 	--background: oklch(1 0 0);

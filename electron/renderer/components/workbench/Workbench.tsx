@@ -116,6 +116,8 @@ class WorkbenchFS {
 	constructor(cwdPath: string) {
 		this.#cwdPath = WorkbenchFS.normalizePath(cwdPath);
 		this.#homeDir = window.electron.getHomeDir() || "";
+
+		void this.createDirectory(this.#cwdPath);
 	}
 
 	static normalizePath(...pathParts: string[]) {

@@ -79,7 +79,7 @@ app.whenReady().then(() => {
 		};
 	});
 	ipcMain.on('query-sync', (event, args) => {
-		if (args[0] === 'platform') {
+		if (args === 'platform') {
 			const platform = process.platform;
 			switch (platform) {
 				case 'darwin':
@@ -96,10 +96,11 @@ app.whenReady().then(() => {
 			}
 			return;
 		}
-		if (args[0] === 'homeDir') {
+		if (args === 'homeDir') {
 			event.returnValue = process.env.HOME || process.env.USERPROFILE || '';
 			return;
 		}
+		console.log('Unknown sync query:', args);
 		event.returnValue = 'unknown';
 	});
 
