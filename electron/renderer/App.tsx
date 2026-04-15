@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
-import { WorkbenchLayout } from './components/layout'
+import { RootLayout } from './components/layout'
 import { Editor, useEditorState } from './components/editor';
 
 export default function App() {
 	const editor = useEditorState();
 
 	return (
-		<WorkbenchLayout>
+		<RootLayout>
 			<Editor 
 				editor={editor} 
 			/>
-		</WorkbenchLayout>
+		</RootLayout>
 	)
 }

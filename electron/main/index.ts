@@ -25,18 +25,82 @@ const createWindow = async () => {
 
 app.whenReady().then(() => {
 	ipcMain.handle('ping', () => 'pong');
-	ipcMain.handle('getPlatform', () => {
-		const platform = process.platform;
-		switch (platform) {
-			case 'darwin':
-				return 'darwin';
-			case 'win32':
-				return 'win32';
-			case 'linux':
-				return 'linux';
-			default:
-				return 'unknown';
+
+	ipcMain.handle('fs:read', async (event, path) => {
+		const fs = await import('fs/promises');
+		return fs.readFile(path, 'utf-8');
+	});
+	ipcMain.handle('fs:readBinary', async (event, path) => {
+		const fs = await import('fs/promises');
+		return fs.readFile(path);
+	});
+	ipcMain.handle('fs:write', async (event, path, content) => {
+		const fs = await import('fs/promises');
+		await fs.writeFile(path, content, 'utf-8');
+	});
+	ipcMain.handle('fs:writeBinary', async (event, path, content) => {
+		const fs = await import('fs/promises');
+		await fs.writeFile(path, Buffer.from(content));
+	});
+	ipcMain.handle('fs:delete', async (event, path) => {
+		const fs = await import('fs/promises');
+		await fs.unlink(path);
+	});
+	ipcMain.handle('fs:exists', async (event, path) => {
+		const fs = await import('fs/promises');
+		try {
+			await fs.access(path);
+			return true;
+		} catch {
+			return false;
 		}
+	});
+	ipcMain.handle('fs:mkdir', async (event, path) => {
+		const fs = await import('fs/promises');
+		await fs.mkdir(path, { recursive: true });
+	});
+	ipcMain.handle('fs:rmdir', async (event, path) => {
+		const fs = await import('fs/promises');
+		await fs.rmdir(path);
+	});
+	ipcMain.handle('fs:readdir', async (event, path) => {
+		const fs = await import('fs/promises');
+		return fs.readdir(path);
+	});
+	ipcMain.handle('fs:stat', async (event, path) => {
+		const fs = await import('fs/promises');
+		const stats = await fs.stat(path);
+		return {
+			isFile: stats.isFile(),
+			isDirectory: stats.isDirectory(),
+			isSymbolicLink: stats.isSymbolicLink(),
+			size: stats.size,
+			mtimeMs: stats.mtimeMs,
+		};
+	});
+	ipcMain.on('query-sync', (event, args) => {
+		if (args[0] === 'platform') {
+			const platform = process.platform;
+			switch (platform) {
+				case 'darwin':
+					event.returnValue = 'darwin';
+					break;
+				case 'win32':
+					event.returnValue = 'win32';
+					break;
+				case 'linux':
+					event.returnValue = 'linux';
+					break;
+				default:
+					event.returnValue = 'unknown';
+			}
+			return;
+		}
+		if (args[0] === 'homeDir') {
+			event.returnValue = process.env.HOME || process.env.USERPROFILE || '';
+			return;
+		}
+		event.returnValue = 'unknown';
 	});
 
 

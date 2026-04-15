@@ -26,7 +26,8 @@ type ActionButtonIcon = Parameters<HugeiconsIcon>[0]['icon'];
 
 type ActionProps = PropsWithChildren<{
 	className?: string,
-	icon?: ActionButtonIcon
+	icon?: ActionButtonIcon,
+	onClick?: () => void,
 }>
 
 export function Action(props: ActionProps) {
