@@ -15,6 +15,11 @@ export default defineConfig({
 				},
 			},
 		},
+		resolve: {
+			alias: {
+				"@": resolve(__dirname, "./electron"),
+			},
+		},
 	},
 	preload: {
 		build: {
@@ -22,6 +27,11 @@ export default defineConfig({
 				input: {
 					index: resolve(rootDir, 'electron/preload/index.ts'),
 				},
+			},
+		},
+		resolve: {
+			alias: {
+				"@": resolve(__dirname, "./electron"),
 			},
 		},
 	},
