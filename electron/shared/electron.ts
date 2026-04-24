@@ -39,6 +39,7 @@ export interface FsApi {
 			size: number | null;
 			mtimeMs: number | null;
 			hasChildren?: boolean;
+			metadata?: Record<string, any>;
 		}>
 	>;
 	startScan(
@@ -72,6 +73,9 @@ export interface FsApi {
 		callback: (payload: { scanId: string; path: string; message: string }) => void,
 	): () => void;
 
+	isBinaryFile: (path: string) => Promise<boolean>;
+	readFile: (path: string, encoding?: BufferEncoding) => Promise<string | ArrayBuffer>;
+	writeFile: (path: string, content: string, encoding?: BufferEncoding) => Promise<void>;
 	createFile: (path: string) => Promise<void>;
 	createDirectory: (path: string) => Promise<void>;
 	rename: (oldPath: string, newPath: string) => Promise<void>;

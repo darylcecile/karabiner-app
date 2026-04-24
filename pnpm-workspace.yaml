@@ -1,2 +1,5 @@
 allowBuilds:
   electron: true
+
+packages:
+  - src/packages/relay

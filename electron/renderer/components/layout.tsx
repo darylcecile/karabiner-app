@@ -8,14 +8,18 @@ import { useWorkbench } from './workbench/Workbench';
 import { InputModal, useInputModalController } from './workbench/InputModal';
 import { toast } from 'sonner';
 import { FileTree } from './workbench/FileTree';
+import { TreeAccordion } from '@/renderer/components/workbench/TreeAccordion';
+import { Editor } from '@/renderer/components/editor';
 
 export function RootLayout(props: PropsWithChildren) {
 	return (
 		<Allotment proportionalLayout={false}>
 			<Allotment.Pane preferredSize={300} className='pt-8.5'>
 				<ActionBar className="mr-1" />
-				<div className="p-1">
-					<FileTree />
+				<div className="p-2">
+					<TreeAccordion label="Collections">
+						<FileTree />
+					</TreeAccordion>
 				</div>
 			</Allotment.Pane>
 			<Allotment.Pane>
@@ -25,6 +29,7 @@ export function RootLayout(props: PropsWithChildren) {
 					<RightAlignedActionBarGroup />
 				</ActionBar>
 				<main className='pt-8.5 overflow-y-auto'>
+					<Editor />
 					{props.children}
 				</main>
 			</Allotment.Pane>
@@ -42,12 +47,17 @@ function RightAlignedActionBarGroup() {
 			message: "Enter the name of the new file:",
 			messagePlaceholder: "e.g. untitled.md",
 		});
-		if (!name) {
+
+		if (name === null) {
+			return;
+		}
+
+		if (!name.trim()) {
 			toast.error("File name cannot be empty.");
 			return;
 		}
 
-		await fs.createFile(name);
+		await fs.createFile(name.trim());
 	}
 
 	return (
@@ -61,4 +71,3 @@ function RightAlignedActionBarGroup() {
 		</>
 	)
 }
-

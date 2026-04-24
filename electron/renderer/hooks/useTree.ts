@@ -45,6 +45,7 @@ export type TreeItem = {
 	id: string;
 	name: string;
 	children?: TreeItem[];
+	metadata?: Record<string, any>;
 };
 
 function getBaseName(filePath: string): string {
@@ -213,13 +214,14 @@ export function treeRecordToItems(
 		const item: TreeItem = {
 			id: node.path,
 			name: node.name,
+			metadata: node.metadata ?? node.customization,
 		};
 
 		if (node.kind === "directory") {
 			item.children = node.isExpanded
 				? node.children
-						.map((childPath) => build(childPath))
-						.filter((child): child is TreeItem => child !== null)
+					.map((childPath) => build(childPath))
+					.filter((child): child is TreeItem => child !== null)
 				: [];
 		}
 
@@ -693,6 +695,47 @@ export function useFileTree(options?: UseFileTreeOptions) {
 		});
 	}, [assertPathWithinRoot, setTreeState]);
 
+	const isBinaryFile = useCallback(async (path: string): Promise<boolean> => {
+		const normalizedPath = assertPathWithinRoot(path);
+		return window.fsApi.isBinaryFile(normalizedPath);
+	}, [assertPathWithinRoot]);
+
+	const readFile = useCallback(async (path: string, encoding?:BufferEncoding) => {
+		const parentPath = getCreateParentPath();
+		if (!parentPath) {
+			throw new Error("No parent directory is available for file read.");
+		}
+
+		const fullPath = assertPathWithinRoot(path);
+
+		setTreeState((previous) => ({
+			...previous,
+			selectedPaths: [fullPath],
+			focusedPath: fullPath,
+			lastSelectedPath: fullPath,
+		}));
+
+		return window.fsApi.readFile(fullPath, encoding);
+	}, [assertPathWithinRoot, getCreateParentPath, refreshDirectory, setTreeState]);
+
+	const writeFile = useCallback(async (path: string, content: string, encoding?:BufferEncoding) => {
+		const parentPath = getCreateParentPath();
+		if (!parentPath) {
+			throw new Error("No parent directory is available for file write.");
+		}
+
+		const fullPath = assertPathWithinRoot(path);
+		await window.fsApi.writeFile(fullPath, content, encoding);
+		await refreshDirectory(parentPath);
+
+		setTreeState((previous) => ({
+			...previous,
+			selectedPaths: [fullPath],
+			focusedPath: fullPath,
+			lastSelectedPath: fullPath,
+		}));
+	}, [assertPathWithinRoot, getCreateParentPath, refreshDirectory, setTreeState]);
+
 	const createFile = useCallback(async (name: string) => {
 		const parentPath = getCreateParentPath();
 		if (!parentPath) {
@@ -769,10 +812,10 @@ export function useFileTree(options?: UseFileTreeOptions) {
 					: null,
 				lastSelectedPath: previous.lastSelectedPath
 					? replacePathPrefix(
-							previous.lastSelectedPath,
-							normalizedOldPath,
-							normalizedNewPath,
-					  )
+						previous.lastSelectedPath,
+						normalizedOldPath,
+						normalizedNewPath,
+					)
 					: null,
 			}));
 
@@ -852,7 +895,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 						: previous.focusedPath,
 				lastSelectedPath:
 					previous.lastSelectedPath &&
-					isPathInsideDirectory(normalizedPath, previous.lastSelectedPath)
+						isPathInsideDirectory(normalizedPath, previous.lastSelectedPath)
 						? null
 						: previous.lastSelectedPath,
 			};
@@ -908,6 +951,9 @@ export function useFileTree(options?: UseFileTreeOptions) {
 		toggle,
 		refreshDirectory,
 
+		isBinaryFile,
+		readFile,
+		writeFile,
 		createFile,
 		createDirectory,
 		move,
@@ -933,6 +979,9 @@ export function useFileTree(options?: UseFileTreeOptions) {
 		collapse,
 		createDirectory,
 		createFile,
+		readFile,
+		writeFile,
+		isBinaryFile,
 		ensureSelected,
 		expand,
 		getChildren,

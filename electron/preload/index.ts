@@ -86,6 +86,9 @@ const fsApi: FsApi = {
 		return () => ipcRenderer.removeListener("fs:scanError", handler);
 	},
 
+	isBinaryFile: (path:string) => ipcRenderer.invoke("fs:isBinaryFile", path),
+	readFile: (path: string, encoding?: BufferEncoding) => ipcRenderer.invoke("fs:readFile", path, encoding),
+	writeFile: (path: string, content: string, encoding?: string) => ipcRenderer.invoke("fs:writeFile", path, content, encoding),
 	createFile: (path: string) => ipcRenderer.invoke("fs:createFile", path),
 	createDirectory: (path: string) => ipcRenderer.invoke("fs:createDirectory", path),
 	rename: (oldPath: string, newPath: string) => ipcRenderer.invoke("fs:rename", oldPath, newPath),

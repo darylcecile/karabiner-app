@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -17,12 +17,14 @@ type Payload = {
 	title?: string;
 	message: string;
 	messagePlaceholder?: string;
+	initialValue?: string;
 	confirmText?: string;
 	cancelText?: string;
 }
 
 type PayloadWithCallback = Payload & {
 	onConfirm: (inputValue: string) => void;
+	onCancel: () => void;
 }
 
 const _internalSymbol: unique symbol = Symbol("InputModalController");
@@ -31,20 +33,26 @@ export function useInputModalController() {
 	const [payload, setPayload] = useState<PayloadWithCallback | null>(null);
 
 	function prompt(opt: Payload) {
-		return new Promise<string>((resolve) => {
-			console.log("Prompting with options:", opt);
+		return new Promise<string | null>((resolve) => {
 			setPayload({
 				...opt,
 				onConfirm: (inputValue: string) => {
 					resolve(inputValue);
 					setPayload(null);
-				}
+				},
+				onCancel: () => {
+					resolve(null);
+					setPayload(null);
+				},
 			});
 		});
 	}
 
 	function close() {
-		setPayload(null);
+		setPayload((currentPayload) => {
+			currentPayload?.onCancel();
+			return null;
+		});
 	}
 
 	return {
@@ -60,6 +68,10 @@ type Controller = ReturnType<typeof useInputModalController>;
 export function InputModal(props: { controller: Controller }) {
 	const payload = props.controller[_internalSymbol];
 	const [value, setValue] = useState("");
+
+	useEffect(() => {
+		setValue(payload?.initialValue ?? "");
+	}, [payload]);
 
 	function handleConfirm() {
 		payload?.onConfirm?.(value);

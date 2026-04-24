@@ -6,13 +6,10 @@ import { Toaster } from "./components/ui/sonner"
 import { Workbench } from '@/renderer/components/workbench/Workbench';
 
 export default function App() {
-	const editor = useEditorState();
-
 	return (
 		<TooltipProvider>
 			<Workbench>
 				<RootLayout>
-					<Editor editor={editor} />
 					<Toaster />
 				</RootLayout>
 			</Workbench>

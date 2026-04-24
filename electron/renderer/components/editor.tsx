@@ -4,13 +4,29 @@ import { BlockNoteView } from "@blocknote/shadcn";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteSchema, createCodeBlockSpec } from "@blocknote/core";
 import { codeBlockOptions } from "@blocknote/code-block";
+import { useWorkbench } from "./workbench/Workbench";
+import { toast } from "sonner";
 
 type BNEditor = ReturnType<typeof useCreateBlockNote>;
 
-export function Editor(props: { editor: BNEditor }) {
+export function Editor() {
+	const { fs, workspace, editor } = useWorkbench();
+
 	return (
 		<BlockNoteView
-			editor={props.editor}
+			id={workspace.openedPath ?? 'new-document'}
+			editor={editor}
+			onChange={(bn, ctx) => {
+				const currentPath = workspace.openedPath;
+				if (!currentPath) {
+					toast.error("No file is currently opened. Unable to save.");
+					return;
+				}
+				const markdown = bn.blocksToMarkdownLossy();
+				// console.log("Saving file:", currentPath, "Content length:", markdown.length);
+				fs.writeFile(currentPath, markdown);
+			}}
+			editable={!!workspace.openedPath}
 			shadCNComponents={
 				{
 					// Pass modified ShadCN components from your project here.

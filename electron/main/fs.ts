@@ -1,8 +1,10 @@
 import path from 'node:path';
-import { readdir, lstat } from 'node:fs/promises';
+import { readdir, lstat, readFile } from 'node:fs/promises';
 import { lookup as lookupMime } from "mime-types";
 import { webContents } from 'electron';
 import { Path } from '@/shared/fsUtils';
+import { existsSync } from 'node:fs';
+import yaml from "yaml";
 
 type EntryKind = "file" | "directory" | "symlink";
 
@@ -14,6 +16,7 @@ export type DirEntry = {
 	size: number | null;
 	mtimeMs: number | null;
 	hasChildren?: boolean;
+	metadata?: Record<string, any>;
 };
 
 export type ScanOptions = {
@@ -57,6 +60,86 @@ async function getHasChildren(dirPath: string): Promise<boolean> {
 	}
 }
 
+function isRecord(value: unknown): value is Record<string, any> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function looksLikeMetadataPayload(value: unknown): value is Record<string, any> {
+	return (
+		isRecord(value) &&
+		("icon" in value || "tint" in value || "gitChanges" in value)
+	);
+}
+
+async function readMetadataFile(metadataFilePath: string): Promise<Record<string, any> | undefined> {
+	if (!existsSync(metadataFilePath)) {
+		return undefined;
+	}
+
+	const content = await readFile(metadataFilePath, "utf-8");
+	if (!content) {
+		return undefined;
+	}
+
+	try {
+		const parsed = yaml.parse(content);
+		return isRecord(parsed) ? parsed : undefined;
+	} catch {
+		// Invalid YAML should not break directory reads.
+		return undefined;
+	}
+}
+
+function extractMetadataEntry(
+	metadataMap: Record<string, any> | undefined,
+	targetPath: string,
+): Record<string, any> | undefined {
+	if (!metadataMap) {
+		return undefined;
+	}
+
+	const normalizedTargetPath = Path.normalize(targetPath);
+	const targetName = path.basename(normalizedTargetPath);
+
+	const directMatch = metadataMap[normalizedTargetPath];
+	if (isRecord(directMatch)) {
+		return directMatch;
+	}
+
+	const basenameMatch = metadataMap[targetName];
+	if (isRecord(basenameMatch)) {
+		return basenameMatch;
+	}
+
+	if (looksLikeMetadataPayload(metadataMap)) {
+		return metadataMap;
+	}
+
+	return undefined;
+}
+
+async function getMetadata(
+	targetPath: string,
+	isDirectory: boolean,
+): Promise<Record<string, any> | undefined> {
+	const normalizedTargetPath = Path.normalize(targetPath);
+	const candidateMetadataFiles = [
+		isDirectory ? path.join(normalizedTargetPath, ".metadata") : null,
+		path.join(path.dirname(normalizedTargetPath), ".metadata"),
+	].filter((candidate): candidate is string => Boolean(candidate));
+
+	for (const metadataFilePath of candidateMetadataFiles) {
+		const metadataMap = await readMetadataFile(metadataFilePath);
+		const metadata = extractMetadataEntry(metadataMap, normalizedTargetPath);
+
+		if (metadata) {
+			return metadata;
+		}
+	}
+
+	return undefined;
+}
+
 async function toDirEntry(fullPath: string, name: string): Promise<DirEntry> {
 	const stat = await lstat(Path.normalize(fullPath));
 
@@ -80,6 +163,7 @@ async function toDirEntry(fullPath: string, name: string): Promise<DirEntry> {
 			size: null,
 			mtimeMs: stat.mtimeMs,
 			hasChildren: await getHasChildren(fullPath),
+			metadata: await getMetadata(fullPath, true),
 		};
 	}
 
@@ -90,6 +174,7 @@ async function toDirEntry(fullPath: string, name: string): Promise<DirEntry> {
 		mimeType: (lookupMime(name) || null) as string | null,
 		size: stat.size,
 		mtimeMs: stat.mtimeMs,
+		metadata: await getMetadata(fullPath, false),
 	};
 }
 
