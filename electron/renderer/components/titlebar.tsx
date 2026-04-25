@@ -49,7 +49,7 @@ export function ActionBar(props: PropsWithChildren<{ className?: string, ctxProp
 				ref={containerRef}
 				className={cn(
 					"inset-x-0 top-0 h-8.5",
-					"absolute z-2",
+					"absolute z-100",
 					props.className
 				)}
 				style={{
@@ -91,7 +91,8 @@ export function Action(props: ActionProps) {
 			className={cn(
 				// "size-6.5 rounded-lg rounded-tr-xl bg-gray-200 flex items-center justify-center",
 				props.className,
-				'app-no-drag'
+				'app-no-drag',
+				"hover:bg-foreground/10! text-foreground/70! hover:text-foreground!"
 			)}
 			size={"icon-xs"}
 			variant={"ghost"}

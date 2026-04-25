@@ -11,49 +11,69 @@ import { FileTree } from './workbench/FileTree';
 import { TreeAccordion } from '@/renderer/components/workbench/TreeAccordion';
 import { Editor } from '@/renderer/components/editor';
 import { atom, useAtom } from 'jotai';
+import { ScrollArea, ScrollBar } from './ui/scroll-area';
+import { ContentScrollArea } from '@/renderer/components/workbench/ContentScrollArea';
+import { usePrefersColorScheme } from '../hooks/usePrefersColorScheme';
+import { cn } from '@/shared/utils';
 
 const sidebarCollapsedAtom = atom(false)
 
 export function RootLayout(props: PropsWithChildren) {
 	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
+	const theme = usePrefersColorScheme();
 
 	return (
-		<Allotment 
-			proportionalLayout={false} 
-			separator={!collapsed}
-			onVisibleChange={(index, visible) => {
-				if (index === 0) {
-					setCollapsed(!visible)
-				}
-			}}
+		<div
+			className={cn(
+				"contents",
+				theme === "dark" && "dark"
+			)}
 		>
-			<Allotment.Pane 
-				preferredSize={240} 
-				className='pt-8.5' 
-				snap 
-				minSize={100}
-				visible={!collapsed}
+			<Allotment
+				proportionalLayout={false}
+				separator={!collapsed}
+				onVisibleChange={(index, visible) => {
+					if (index === 0) {
+						setCollapsed(!visible)
+					}
+				}}
 			>
-				<ActionBar className="mr-1 pl-20 flex items-center absolute min-w-30 ">
-					<Action icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
-				</ActionBar>
-				<div className="p-2">
-					<TreeAccordion label="Collections">
-						<FileTree />
-					</TreeAccordion>
-				</div>
-			</Allotment.Pane>
-			<Allotment.Pane>
-				<ActionBar className='ml-1 px-1 flex items-center justify-between'>
-					<LeftAlignedActionBarGroup />
-					<RightAlignedActionBarGroup />
-				</ActionBar>
-				<main className='pt-8.5 overflow-y-auto'>
-					<Editor />
-					{props.children}
-				</main>
-			</Allotment.Pane>
-		</Allotment>
+				<Allotment.Pane
+					preferredSize={240}
+					className='pt-8.5'
+					snap
+					minSize={100}
+					visible={!collapsed}
+				>
+					<ActionBar className="mr-1 pl-20 flex items-center absolute">
+						<Action icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
+					</ActionBar>
+					<div className="p-2">
+						<TreeAccordion label="Collections">
+							<FileTree />
+						</TreeAccordion>
+					</div>
+				</Allotment.Pane>
+				<Allotment.Pane>
+					<div className="relative h-full">
+						<ContentScrollArea
+							className='pt-6 bg-background/25 dark:bg-black/20'
+							scrollbarTopOffset={32}
+							scrollbarBottomOffset={16}
+							thumbWidth={6}
+							topFadeHeight={56}
+						>
+							<Editor />
+							{props.children}
+						</ContentScrollArea>
+						<ActionBar className='ml-1 px-1 flex items-center justify-between z-100'>
+							<LeftAlignedActionBarGroup />
+							<RightAlignedActionBarGroup />
+						</ActionBar>
+					</div>
+				</Allotment.Pane>
+			</Allotment>
+		</div>
 	)
 }
 
@@ -65,10 +85,14 @@ function LeftAlignedActionBarGroup() {
 	return (
 		<>
 			<div
-				className="absolute w-full h-6 ml-auto flex flex-row items-center right-0 pl-20"
+				className="absolute w-full h-6 ml-auto flex flex-row items-center right-0 pl-20 mr-10"
 				style={{ width: window.innerWidth }}
 			>
-				<Action icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
+				<Action
+					icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon}
+					className='ml-10'
+					onClick={() => setCollapsed(p => !p)}
+				/>
 			</div>
 			<div
 				className="w-full relative h-6 ml-auto flex flex-row items-center"

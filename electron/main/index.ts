@@ -8,7 +8,8 @@ async function createWindow() {
 		width: 960,
 		height: 680,
 		titleBarStyle: 'hiddenInset',
-		vibrancy: 'under-window',
+		vibrancy: 'sidebar',
+		backgroundMaterial: 'acrylic',
 		trafficLightPosition: { x: 10, y: 10 },
 		webPreferences: {
 			preload: join(__dirname, '../preload/index.js'),

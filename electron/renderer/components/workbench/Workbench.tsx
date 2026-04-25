@@ -18,7 +18,7 @@ const WorkbenchContext = createContext({} as {
 export function Workbench(props: PropsWithChildren) {
 	const config = useConfig();
 	const [openedPath, setOpenedPath] = useState<string | undefined>(undefined);
-	const includeHidden = config.getConfigValue("showHiddenFiles") || false;
+	const includeHidden = Boolean(config.getConfigValue("showHiddenFiles")) || false;
 	const treeOptions = useMemo(() => ({
 		includeHidden,
 		scanOnOpen: true,
