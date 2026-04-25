@@ -23,8 +23,9 @@ export function Editor() {
 						toast.error("No file is currently opened. Unable to save.");
 						return;
 					}
+					// Skip the change emitted by programmatic content loads (file open).
+					if (workspace.isLoadingRef.current) return;
 					const markdown = bn.blocksToMarkdownLossy();
-					// console.log("Saving file:", currentPath, "Content length:", markdown.length);
 					fs.writeFile(currentPath, markdown);
 				}}
 				editable={!!workspace.openedPath}

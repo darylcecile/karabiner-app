@@ -93,9 +93,10 @@ export function TreeContextMenu({ x, y, onClose, children }: TreeContextMenuProp
 					}}
 					onContextMenu={(e) => e.preventDefault()}
 					className={cn(
-						'min-w-[10rem] max-w-[18rem] py-1',
-						'rounded-md border border-border/60 bg-popover text-popover-foreground',
-						'shadow-md shadow-black/20 dark:shadow-black/60',
+						'relative min-w-[10rem] max-w-[18rem] py-1',
+						'rounded-md border border-border/60 bg-popover/90 text-popover-foreground',
+						'backdrop-blur-2xl backdrop-saturate-150',
+						'shadow-md',
 						'text-[13px] leading-none',
 						'select-none focus:outline-none',
 					)}

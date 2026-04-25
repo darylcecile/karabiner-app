@@ -10,6 +10,7 @@ const WorkbenchContext = createContext({} as {
 	workspace: {
 		openInEditor: (path: string) => void,
 		openedPath?: string,
+		isLoadingRef: React.RefObject<boolean>,
 	},
 	editor: ReturnType<typeof useEditorState>,
 });
@@ -29,6 +30,7 @@ export function Workbench(props: PropsWithChildren) {
 	const fs = useFileTree(treeOptions);
 	const treeRef = useRef<unknown>(null);
 	const editor = useEditorState();
+	const isLoadingRef = useRef<boolean>(false);
 
 	useEffect(() => {
 		void fs.openRoot('~/.karabiner/vault');
@@ -51,10 +53,23 @@ export function Workbench(props: PropsWithChildren) {
 				const markdown = content.toString();
 				const newDoc = editor.tryParseMarkdownToBlocks(markdown);
 				if (newDoc) {
-					editor.replaceBlocks(editor.document, newDoc);
+					// Suppress the write-back triggered by the programmatic content load.
+					// Otherwise BlockNote's onChange fires immediately and writes the file
+					// back to disk, bumping mtime and invalidating the AI label cache.
+					isLoadingRef.current = true;
+					try {
+						editor.replaceBlocks(editor.document, newDoc);
+					} finally {
+						// ProseMirror dispatches change transactions synchronously, but
+						// React may batch onChange into a microtask. Clear after one tick.
+						queueMicrotask(() => {
+							isLoadingRef.current = false;
+						});
+					}
 				}
 			},
-			openedPath
+			openedPath,
+			isLoadingRef,
 		}
 	}, [fs, openedPath, editor]);
 
