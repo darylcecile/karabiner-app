@@ -51,6 +51,7 @@ export default defineConfig({
 				input: {
 					index: resolve(rootDir, 'electron/renderer/index.html'),
 					settings: resolve(rootDir, 'electron/renderer/settings.html'),
+					search: resolve(rootDir, 'electron/renderer/search.html'),
 				},
 				treeshake: 'smallest'
 			},

@@ -4,6 +4,7 @@ import { mainRelay } from './ipcMethods';
 import { setUpAppDir } from "./fs";
 import { closeDb } from './rag/db';
 import { bootstrap as bootstrapRag } from './rag/indexer';
+import { hideSearch, toggleSearch } from './searchWindow';
 
 if (process.env.KARABINER_DEBUG_PORT) {
 	const port = process.env.KARABINER_DEBUG_PORT;
@@ -12,6 +13,12 @@ if (process.env.KARABINER_DEBUG_PORT) {
 }
 
 let settingsWindow: BrowserWindow | null = null;
+let mainWindow: BrowserWindow | null = null;
+
+export function getMainWindow(): BrowserWindow | null {
+	if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+	return null;
+}
 
 function openSettingsWindow() {
 	if (settingsWindow && !settingsWindow.isDestroyed()) {
@@ -84,6 +91,12 @@ function buildAppMenu() {
 					},
 					{ type: 'separator' as const }]
 					: []),
+				{
+					label: 'Search',
+					accelerator: 'CmdOrCtrl+K',
+					click: () => toggleSearch(),
+				},
+				{ type: 'separator' as const },
 				isMac ? { role: 'close' as const } : { role: 'quit' as const },
 			],
 		},
@@ -146,6 +159,12 @@ async function createWindow() {
 			nodeIntegration: false,
 		},
 	})
+
+	mainWindow = window;
+	window.on('closed', () => {
+		if (mainWindow === window) mainWindow = null;
+		hideSearch();
+	});
 
 	if (process.env.ELECTRON_RENDERER_URL) {
 		await window.loadURL(process.env.ELECTRON_RENDERER_URL)

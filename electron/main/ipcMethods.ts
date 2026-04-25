@@ -10,6 +10,8 @@ import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
 import type { RagProgress } from '@/shared/ragTypes';
 import * as ragIndexer from '@/main/rag/indexer';
+import { showSearch, hideSearch, toggleSearch } from '@/main/searchWindow';
+import { getMainWindow } from '@/main/index';
 
 
 function resolvePath(p: string): string {
@@ -192,6 +194,19 @@ export const mainRelay = createMainRelay({
 		async ragSearch(query: string, opts?: { limit?: number }) {
 			const { search } = await import('@/main/rag/search');
 			return await search(query, opts);
+		},
+		searchShow: syncMethod(() => { showSearch(); }),
+		searchHide: syncMethod(() => { hideSearch(); }),
+		searchToggle: syncMethod(() => { toggleSearch(); }),
+		async searchOpenFile(absPath: string) {
+			hideSearch();
+			const mw = getMainWindow();
+			if (!mw || mw.isDestroyed()) return false;
+			if (mw.isMinimized()) mw.restore();
+			mw.show();
+			mw.focus();
+			mw.webContents.send('search:open-file', { path: absPath });
+			return true;
 		},
 	},
 });

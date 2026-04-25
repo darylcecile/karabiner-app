@@ -1,5 +1,5 @@
 import { Allotment } from 'allotment'
-import { PropsWithChildren, useState } from 'react'
+import { PropsWithChildren, useEffect, useState } from 'react'
 import { Action, ActionBar, useActionBar } from './titlebar';
 import "allotment/dist/style.css";
 
@@ -20,10 +20,18 @@ import { BlockNoteEditor } from '@blocknote/core';
 
 const sidebarCollapsedAtom = atom(false)
 
+type SearchOpenFilePayload = { path: string };
+
 export function RootLayout(props: PropsWithChildren) {
 	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
 	const theme = usePrefersColorScheme();
-	const { editor } = useWorkbench();
+	const { editor, workspace } = useWorkbench();
+
+	useEffect(() => {
+		return window.karabinerEvents.on<SearchOpenFilePayload>('search:open-file', ({ path }) => {
+			if (path) workspace.openInEditor(path);
+		});
+	}, [workspace.openInEditor]);
 
 	return (
 		<div
