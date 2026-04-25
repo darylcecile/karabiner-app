@@ -68,8 +68,16 @@ export function RootLayout(props: PropsWithChildren) {
 							footer={
 								editor ? (
 									<div
-										className="text-2xs font-medium absolute right-4 bottom-2 text-foreground/50"
-									>{getContentCounterFromEditor(editor)}</div>
+										className="text-2xs font-medium absolute right-4 left-4 bottom-2 text-foreground/50 flex items-center justify-between"
+									>
+										{/* status (e.g. 'indexing...') */}
+										<div>
+											{editor.isIndexing ? "Indexing..." : editor.isSaving ? "Saving..." : null}
+										</div>
+
+										{/* document state (counts) */}
+										<div>{getContentCounterFromEditor(editor)}</div>
+									</div>
 								) : null
 							}
 						>
