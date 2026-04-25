@@ -18,7 +18,12 @@ function runClaude(args: string[], opts: { timeoutMs?: number; input?: string } 
 		};
 
 		try {
-			const child = spawn("claude", args, { stdio: ["pipe", "pipe", "pipe"] });
+			const child = spawn("claude", args, {
+				stdio: ["pipe", "pipe", "pipe"],
+				detached: true,
+				windowsHide: true,
+			});
+			child.unref();
 			const timer = setTimeout(() => {
 				try { child.kill("SIGTERM"); } catch {}
 				finish({ stdout, stderr, code: null });

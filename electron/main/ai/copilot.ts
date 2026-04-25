@@ -69,7 +69,12 @@ export class CopilotAIProvider extends AIProvider {
 			if (home && existsSync(path.join(home, ".config", "github-copilot"))) return true;
 			return await new Promise<boolean>((resolve) => {
 				try {
-					const child = spawn("gh", ["auth", "status"], { stdio: "ignore" });
+					const child = spawn("gh", ["auth", "status"], {
+						stdio: "ignore",
+						detached: true,
+						windowsHide: true,
+					});
+					child.unref();
 					const timer = setTimeout(() => {
 						try { child.kill(); } catch {}
 						resolve(false);

@@ -107,7 +107,7 @@ function TreeRowImpl(props: TreeRowProps) {
 		left: 4,
 		right: 4,
 		top,
-		height,
+		height: height - 1,
 		paddingLeft: padLeft,
 	};
 
