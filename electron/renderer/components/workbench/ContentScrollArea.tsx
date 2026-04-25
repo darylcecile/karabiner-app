@@ -9,6 +9,8 @@ type ContentScrollAreaProps = PropsWithChildren<{
 	scrollbarBottomOffset?: number;
 	thumbWidth?: number;
 	topFadeHeight?: number;
+	bottomFadeHeight?: number;
+	footer?: React.ReactNode;
 }>;
 
 export function ContentScrollArea(props: ContentScrollAreaProps) {
@@ -19,6 +21,8 @@ export function ContentScrollArea(props: ContentScrollAreaProps) {
 		scrollbarBottomOffset = 8,
 		thumbWidth = 4,
 		topFadeHeight = 28,
+		bottomFadeHeight = 0,
+		footer,
 	} = props;
 	const viewportRef = useRef<HTMLDivElement>(null);
 	const contentRef = useRef<HTMLDivElement>(null);
@@ -29,6 +33,7 @@ export function ContentScrollArea(props: ContentScrollAreaProps) {
 	const [hasOverflow, setHasOverflow] = useState(false);
 	const [isDragging, setIsDragging] = useState(false);
 	const [topFade, setTopFade] = useState(0);
+	const [bottomFade, setBottomFade] = useState(0);
 
 	useLayoutEffect(() => {
 		const viewport = viewportRef.current;
@@ -39,13 +44,16 @@ export function ContentScrollArea(props: ContentScrollAreaProps) {
 			const { clientHeight, scrollHeight, scrollTop } = viewport;
 			const trackHeight = Math.max(clientHeight - scrollbarTopOffset - scrollbarBottomOffset, 0);
 			const nextHasOverflow = scrollHeight > clientHeight && trackHeight > 0;
+			const maxScrollTop = Math.max(scrollHeight - clientHeight, 0);
 			setHasOverflow(nextHasOverflow);
 			setTopFade(Math.min(scrollTop, topFadeHeight));
+			setBottomFade(Math.min(Math.max(maxScrollTop - scrollTop, 0), bottomFadeHeight));
 
 			if (!nextHasOverflow) {
 				setThumbHeight(0);
 				setThumbTop(scrollbarTopOffset);
 				setTopFade(0);
+				setBottomFade(0);
 				return;
 			}
 
@@ -53,7 +61,6 @@ export function ContentScrollArea(props: ContentScrollAreaProps) {
 				(clientHeight / scrollHeight) * trackHeight,
 				Math.min(MIN_THUMB_HEIGHT, trackHeight),
 			);
-			const maxScrollTop = scrollHeight - clientHeight;
 			const maxThumbTravel = trackHeight - nextThumbHeight;
 			const nextThumbTop = scrollbarTopOffset + (
 				maxScrollTop > 0 ? (scrollTop / maxScrollTop) * maxThumbTravel : 0
@@ -76,7 +83,7 @@ export function ContentScrollArea(props: ContentScrollAreaProps) {
 			viewport.removeEventListener("scroll", updateThumb);
 			resizeObserver.disconnect();
 		};
-	}, [scrollbarBottomOffset, scrollbarTopOffset, topFadeHeight]);
+	}, [bottomFadeHeight, scrollbarBottomOffset, scrollbarTopOffset, topFadeHeight]);
 
 	function handleThumbPointerDown(event: PointerEvent<HTMLDivElement>) {
 		const viewport = viewportRef.current;
@@ -119,20 +126,46 @@ export function ContentScrollArea(props: ContentScrollAreaProps) {
 		height: thumbHeight,
 		width: thumbWidth,
 	};
-	const topFadeEarlyStop = Math.max(1, topFade * 0.18);
-	const topFadeMidStop = Math.max(topFadeEarlyStop + 1, topFade * 0.5);
-	const maskGradient = `linear-gradient(to bottom,
-		rgba(0, 0, 0, 0) 0px,
-		rgba(0, 0, 0, 0) ${topFadeEarlyStop/2}px,
-		rgba(0, 0, 0, 0.12) ${topFadeEarlyStop}px,
-		rgba(0, 0, 0, 0.55) ${topFadeMidStop}px,
-		rgba(0, 0, 0, 1) ${topFade}px,
-		rgba(0, 0, 0, 1) 100%
-	)`;
-	const viewportStyle: CSSProperties = topFade > 0
+	const topFadeProgress = topFadeHeight > 0 ? Math.min(topFade / topFadeHeight, 1) : 0;
+	const bottomFadeProgress = bottomFadeHeight > 0 ? Math.min(bottomFade / bottomFadeHeight, 1) : 0;
+	const topFadeSize = topFadeHeight * topFadeProgress;
+	const bottomFadeSize = bottomFadeHeight * bottomFadeProgress;
+	const topFadeEarlyStop = Math.max(1, topFadeSize * 0.18);
+	const topFadeMidStop = Math.max(topFadeEarlyStop + 1, topFadeSize * 0.5);
+	const bottomFadeEarlyStop = Math.max(1, bottomFadeSize * 0.18);
+	const bottomFadeMidStop = Math.max(bottomFadeEarlyStop + 1, bottomFadeSize * 0.5);
+	const maskSegments = [
+		`rgba(0, 0, 0, 0) 0px`,
+	];
+
+	if (topFadeSize > 0) {
+		maskSegments.push(
+			`rgba(0, 0, 0, 0) 0px`,
+			`rgba(0, 0, 0, 0) ${topFadeEarlyStop / 2}px`,
+			`rgba(0, 0, 0, 0.12) ${topFadeEarlyStop}px`,
+			`rgba(0, 0, 0, 0.55) ${topFadeMidStop}px`,
+			`rgba(0, 0, 0, 1) ${topFadeSize}px`,
+		);
+	} else {
+		maskSegments.push(`rgba(0, 0, 0, 1) 0px`);
+	}
+
+	if (bottomFadeSize > 0) {
+		maskSegments.push(
+			`rgba(0, 0, 0, 1) calc(100% - ${bottomFadeSize}px)`,
+			`rgba(0, 0, 0, 0.55) calc(100% - ${bottomFadeMidStop}px)`,
+			`rgba(0, 0, 0, 0.12) calc(100% - ${bottomFadeEarlyStop}px)`,
+			`rgba(0, 0, 0, 0) calc(100% - ${bottomFadeEarlyStop / 2}px)`,
+			`rgba(0, 0, 0, 0) 100%`,
+		);
+	} else {
+		maskSegments.push(`rgba(0, 0, 0, 1) 100%`);
+	}
+
+	const viewportStyle: CSSProperties = topFadeSize > 0 || bottomFadeSize > 0
 		? {
-			maskImage: maskGradient,
-			WebkitMaskImage: maskGradient,
+			maskImage: `linear-gradient(to bottom, ${maskSegments.join(", ")})`,
+			WebkitMaskImage: `linear-gradient(to bottom, ${maskSegments.join(", ")})`,
 			maskRepeat: "no-repeat",
 			WebkitMaskRepeat: "no-repeat",
 		}
@@ -145,20 +178,16 @@ export function ContentScrollArea(props: ContentScrollAreaProps) {
 				className={cn("size-full overflow-y-auto overflow-x-hidden no-scrollbar", className)}
 				style={viewportStyle}
 			>
-				<div 
-					className="w-full absolute top-0 z-99"
-					style={{
-						height: Math.max((props.topFadeHeight ?? 0) * 0.8, 32),
-						backgroundColor: 'rgba(255,255,255,0)'
-					}}
-				/>
-				<div ref={contentRef} className="min-h-full isolate">
+				<div ref={contentRef} className="min-h-full">
 					{children}
 				</div>
 			</div>
 
+			{/* footer - appears on top of faded bottom */}
+			{footer}
+
 			<div
-				className="pointer-events-none absolute inset-y-0 right-0"
+				className="pointer-events-none absolute inset-y-0 right-0 z-20"
 				style={{ width: gutterWidth }}
 			>
 				<div

@@ -94,6 +94,8 @@
 
 	--color-black: #000;
 	--color-white: #fff;
+
+	--text-2xs: 0.625rem;
 }
 
 .dark {

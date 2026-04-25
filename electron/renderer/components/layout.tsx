@@ -15,12 +15,14 @@ import { ScrollArea, ScrollBar } from './ui/scroll-area';
 import { ContentScrollArea } from '@/renderer/components/workbench/ContentScrollArea';
 import { usePrefersColorScheme } from '../hooks/usePrefersColorScheme';
 import { cn } from '@/shared/utils';
+import { BlockNoteEditor } from '@blocknote/core';
 
 const sidebarCollapsedAtom = atom(false)
 
 export function RootLayout(props: PropsWithChildren) {
 	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
 	const theme = usePrefersColorScheme();
+	const { editor } = useWorkbench();
 
 	return (
 		<div
@@ -62,6 +64,14 @@ export function RootLayout(props: PropsWithChildren) {
 							scrollbarBottomOffset={16}
 							thumbWidth={6}
 							topFadeHeight={56}
+							bottomFadeHeight={40}
+							footer={
+								editor ? (
+									<div 
+										className="text-2xs font-medium absolute right-4 bottom-2 text-foreground/50"
+									>{getContentCounterFromEditor(editor)}</div>
+								) : null
+							}
 						>
 							<Editor />
 							{props.children}
@@ -138,4 +148,48 @@ function RightAlignedActionBarGroup() {
 			<InputModal controller={inputController} />
 		</>
 	)
+}
+
+
+function getContentCounterFromEditor(editor:BlockNoteEditor) {
+	function getInlineText(content: any): string {
+		if (!content) return "";
+		if (Array.isArray(content)) {
+			return content.map(getInlineText).join("");
+		}
+		if (typeof content === "string") {
+			return content;
+		}
+		if (content.type === "text") {
+			return content.text ?? "";
+		}
+		if (content.type === "link") {
+			return getInlineText(content.content);
+		}
+		if (content.type === "tableContent") {
+			return (content.rows ?? [])
+				.map((row: any) =>
+					(row.cells ?? [])
+						.map((cell: any) => getInlineText(cell.content ?? cell))
+						.join(" ")
+				)
+				.join(" ");
+		}
+		if ("content" in content) {
+			return getInlineText(content.content);
+		}
+		return "";
+	}
+
+	function getBlockText(block: any): string {
+		return [getInlineText(block.content), ...(block.children ?? []).map(getBlockText)]
+			.filter(Boolean)
+			.join(" ");
+	}
+
+	const text = editor.document.map(getBlockText).filter(Boolean).join(" ").trim();
+	const wordCount = text ? text.split(/\s+/).length : 0;
+	const charCount = text.length;
+
+	return `${wordCount} words, ${charCount} characters`;
 }
