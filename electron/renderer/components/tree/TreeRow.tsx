@@ -163,7 +163,7 @@ function TreeRowImpl(props: TreeRowProps) {
 				'rounded-md',
 				'transition-colors',
 				!selected && !dragOver && 'hover:bg-sidebar-accent/60',
-				selected && !dragOver && 'bg-sidebar-accent text-sidebar-accent-foreground',
+				selected && !dragOver && 'bg-sidebar-accent/60 text-sidebar-accent-foreground',
 				dragOver && 'bg-sidebar-accent/80 ring-1 ring-ring/40',
 				focused && !dragOver && 'ring-1 ring-ring/50',
 				'focus:outline-none',

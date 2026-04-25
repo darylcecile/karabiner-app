@@ -1,4 +1,4 @@
-import { createContext, PropsWithChildren, use, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, PropsWithChildren, use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileTree, Tree } from '@/renderer/hooks/useTree';
 import { useConfig } from '@/renderer/hooks/useConfig';
 import { Path } from '@/shared/fsUtils';
@@ -11,6 +11,10 @@ const WorkbenchContext = createContext({} as {
 		openInEditor: (path: string) => void,
 		openedPath?: string,
 		isLoadingRef: React.RefObject<boolean>,
+		goBack: () => void,
+		goForward: () => void,
+		canGoBack: boolean,
+		canGoForward: boolean,
 	},
 	editor: ReturnType<typeof useEditorState>,
 });
@@ -18,6 +22,8 @@ const WorkbenchContext = createContext({} as {
 export function Workbench(props: PropsWithChildren) {
 	const config = useConfig();
 	const [openedPath, setOpenedPath] = useState<string | undefined>(undefined);
+	const [history, setHistory] = useState<string[]>([]);
+	const [historyIndex, setHistoryIndex] = useState<number>(-1);
 	const includeHidden = Boolean(config.getConfigValue("showHiddenFiles")) || false;
 	const treeOptions = useMemo(() => ({
 		includeHidden,
@@ -36,42 +42,79 @@ export function Workbench(props: PropsWithChildren) {
 		void fs.openRoot('~/.karabiner/vault');
 	}, [fs.openRoot]);
 
-	const workspace = useMemo(() => {
-		return {
-			openInEditor: async (path: string) => {
-				path = Path.normalize(path);
-				if (fs.getNode(path).kind !== "file") {
-					return;
-				}
-				setOpenedPath(path);
-				const isBinaryFormat = await fs.isBinaryFile(path);
-
-				if (isBinaryFormat) {
-					return;
-				}
-				const content = await fs.readFile(path, "utf-8");
-				const markdown = content.toString();
-				const newDoc = editor.tryParseMarkdownToBlocks(markdown);
-				if (newDoc) {
-					// Suppress the write-back triggered by the programmatic content load.
-					// Otherwise BlockNote's onChange fires immediately and writes the file
-					// back to disk, bumping mtime and invalidating the AI label cache.
-					isLoadingRef.current = true;
-					try {
-						editor.replaceBlocks(editor.document, newDoc);
-					} finally {
-						// ProseMirror dispatches change transactions synchronously, but
-						// React may batch onChange into a microtask. Clear after one tick.
-						queueMicrotask(() => {
-							isLoadingRef.current = false;
-						});
-					}
-				}
-			},
-			openedPath,
-			isLoadingRef,
+	// Loads a file into the editor without touching history. Used by both the
+	// public openInEditor (which adds to history) and the back/forward navigators.
+	const loadIntoEditor = useCallback(async (path: string) => {
+		path = Path.normalize(path);
+		if (fs.getNode(path).kind !== "file") {
+			return false;
 		}
-	}, [fs, openedPath, editor]);
+		// Set the loading flag synchronously, before any awaits, so any onChange
+		// fired during the file-load lifecycle (focus, internal BlockNote setup,
+		// or replaceBlocks) is suppressed regardless of whether openedPath has
+		// flushed yet.
+		isLoadingRef.current = true;
+		try {
+			setOpenedPath(path);
+			const isBinaryFormat = await fs.isBinaryFile(path);
+			if (isBinaryFormat) return true;
+			const content = await fs.readFile(path, "utf-8");
+			const markdown = content.toString();
+			const newDoc = editor.tryParseMarkdownToBlocks(markdown);
+			if (newDoc) {
+				editor.replaceBlocks(editor.document, newDoc);
+			}
+			return true;
+		} finally {
+			// Clear after the current task plus a microtask so the synchronous
+			// onChange emitted by replaceBlocks is still suppressed.
+			queueMicrotask(() => {
+				isLoadingRef.current = false;
+			});
+		}
+	}, [fs, editor]);
+
+	const openInEditor = useCallback(async (path: string) => {
+		const normalized = Path.normalize(path);
+		const ok = await loadIntoEditor(normalized);
+		if (!ok) return;
+		// Push onto history, truncating any forward entries. Skip if we're
+		// re-opening the current head (avoids dupes from clicking the same row).
+		setHistory(prev => {
+			const head = prev[historyIndex];
+			if (head === normalized) return prev;
+			const trimmed = prev.slice(0, historyIndex + 1);
+			const next = [...trimmed, normalized];
+			setHistoryIndex(next.length - 1);
+			return next;
+		});
+	}, [loadIntoEditor, historyIndex]);
+
+	const goBack = useCallback(() => {
+		if (historyIndex <= 0) return;
+		const target = history[historyIndex - 1];
+		if (!target) return;
+		setHistoryIndex(historyIndex - 1);
+		void loadIntoEditor(target);
+	}, [history, historyIndex, loadIntoEditor]);
+
+	const goForward = useCallback(() => {
+		if (historyIndex >= history.length - 1) return;
+		const target = history[historyIndex + 1];
+		if (!target) return;
+		setHistoryIndex(historyIndex + 1);
+		void loadIntoEditor(target);
+	}, [history, historyIndex, loadIntoEditor]);
+
+	const workspace = useMemo(() => ({
+		openInEditor,
+		openedPath,
+		isLoadingRef,
+		goBack,
+		goForward,
+		canGoBack: historyIndex > 0,
+		canGoForward: historyIndex < history.length - 1,
+	}), [openInEditor, openedPath, goBack, goForward, history.length, historyIndex]);
 
 	return (
 		<WorkbenchContext.Provider

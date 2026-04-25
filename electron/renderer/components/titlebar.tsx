@@ -83,6 +83,7 @@ type ActionProps = PropsWithChildren<{
 	className?: string,
 	icon?: ActionButtonIcon,
 	onClick?: () => void,
+	disabled?: boolean,
 }>
 
 export function Action(props: ActionProps) {
@@ -92,10 +93,12 @@ export function Action(props: ActionProps) {
 				// "size-6.5 rounded-lg rounded-tr-xl bg-gray-200 flex items-center justify-center",
 				props.className,
 				'app-no-drag',
-				"hover:bg-foreground/10! text-foreground/70! hover:text-foreground!"
+				"hover:bg-foreground/10! text-foreground/70! hover:text-foreground!",
+				"disabled:opacity-40 disabled:pointer-events-none"
 			)}
 			size={"icon-xs"}
 			variant={"ghost"}
+			disabled={props.disabled}
 			onClick={props.onClick}
 		>
 			{props.icon && <HugeiconsIcon icon={props.icon} strokeWidth={2} />}

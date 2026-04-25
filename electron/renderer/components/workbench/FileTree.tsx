@@ -301,8 +301,21 @@ export function FileTree() {
 	}, [basenameOfRel, inputController, relToAbs]);
 
 	const renderContextMenu = useCallback((ctx: TreeContextMenuContext) => {
+		if (ctx.kind === 'root') {
+			return (
+				<>
+					<TreeMenuItem onSelect={() => { void promptCreateFile(null); }}>
+						New file
+					</TreeMenuItem>
+					<TreeMenuItem onSelect={() => { void promptCreateFolder(null); }}>
+						New folder
+					</TreeMenuItem>
+				</>
+			);
+		}
+		const path = ctx.path!;
 		const isFolder = ctx.kind === 'folder';
-		const parentRelForCreate = isFolder ? ctx.path : (ctx.path.includes('/') ? ctx.path.slice(0, ctx.path.lastIndexOf('/') + 1) : null);
+		const parentRelForCreate = isFolder ? path : (path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : null);
 		return (
 			<>
 				<TreeMenuItem onSelect={() => { void promptCreateFile(parentRelForCreate); }}>
@@ -319,13 +332,13 @@ export function FileTree() {
 						const handle = treeHandleRef.current;
 						if (!handle) return;
 						requestAnimationFrame(() => {
-							handle.startRenaming(ctx.path);
+							handle.startRenaming(path);
 						});
 					}}
 				>
 					Rename
 				</TreeMenuItem>
-				<TreeMenuItem variant="destructive" onSelect={() => { void promptDelete(ctx.path); }}>
+				<TreeMenuItem variant="destructive" onSelect={() => { void promptDelete(path); }}>
 					Delete
 				</TreeMenuItem>
 			</>

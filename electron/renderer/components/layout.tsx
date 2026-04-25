@@ -48,7 +48,7 @@ export function RootLayout(props: PropsWithChildren) {
 					visible={!collapsed}
 				>
 					<ActionBar className="mr-1 pl-20 flex items-center absolute">
-						<Action icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
+						<Action icon={!collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
 					</ActionBar>
 					<div className="p-2">
 						<TreeAccordion label="Collections">
@@ -67,7 +67,7 @@ export function RootLayout(props: PropsWithChildren) {
 							bottomFadeHeight={40}
 							footer={
 								editor ? (
-									<div 
+									<div
 										className="text-2xs font-medium absolute right-4 bottom-2 text-foreground/50"
 									>{getContentCounterFromEditor(editor)}</div>
 								) : null
@@ -77,8 +77,7 @@ export function RootLayout(props: PropsWithChildren) {
 							{props.children}
 						</ContentScrollArea>
 						<ActionBar className='ml-1 px-1 flex items-center justify-between z-100'>
-							<LeftAlignedActionBarGroup />
-							<RightAlignedActionBarGroup />
+							<MainActionBarGroup />
 						</ActionBar>
 					</div>
 				</Allotment.Pane>
@@ -87,39 +86,14 @@ export function RootLayout(props: PropsWithChildren) {
 	)
 }
 
-function LeftAlignedActionBarGroup() {
+function MainActionBarGroup() {
 	const { width } = useActionBar();
-	const maxWidth = Math.min(width, window.innerWidth - 132);
 	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
-
-	return (
-		<>
-			<div
-				className="absolute w-full h-6 ml-auto flex flex-row items-center right-0 pl-20 mr-10"
-				style={{ width: window.innerWidth }}
-			>
-				<Action
-					icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon}
-					className='ml-10'
-					onClick={() => setCollapsed(p => !p)}
-				/>
-			</div>
-			<div
-				className="w-full relative h-6 ml-auto flex flex-row items-center"
-				style={{ maxWidth }}
-			>
-				<div className='flex flex-row items-center'>
-					<Action icon={ArrowLeft02Icon} onClick={() => toast("New file")} />
-					<Action icon={ArrowRight02Icon} onClick={() => toast("New file")} />
-				</div>
-			</div>
-		</>
-	)
-}
-
-function RightAlignedActionBarGroup() {
-	const { fs } = useWorkbench();
+	const { workspace, fs } = useWorkbench();
 	const inputController = useInputModalController();
+
+	const maxWidth = window.innerWidth - 110;
+
 
 	async function handleNewFile() {
 		const name = await inputController.prompt({
@@ -140,10 +114,34 @@ function RightAlignedActionBarGroup() {
 		await fs.createFile(name.trim());
 	}
 
+	const fileName = workspace.openedPath ? workspace.openedPath.split("/").at(-1) : "Untitled";
+
 	return (
 		<>
-			<div className='flex flex-row items-center gap-2 justify-end'>
-				<Action icon={PlusSignIcon} onClick={handleNewFile} />
+			<div
+				className="absolute w-full h-6 ml-auto flex flex-row items-center right-0 pl-20"
+				style={{ width: window.innerWidth }}
+			>
+				<Action
+					icon={!collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon}
+					// className='ml-10'
+					onClick={() => setCollapsed(p => !p)}
+				/>
+			</div>
+			<div
+				className="w-full relative h-6 ml-auto flex flex-row items-center justify-between"
+				style={{ maxWidth }}
+			>
+				<div className='flex flex-row items-center'>
+					<Action icon={ArrowLeft02Icon} onClick={workspace.goBack} disabled={!workspace.canGoBack} />
+					<Action icon={ArrowRight02Icon} onClick={workspace.goForward} disabled={!workspace.canGoForward} />
+				</div>
+
+				<span className="text-2xs text-foreground/20">{fileName}</span>
+
+				<div className='flex flex-row items-center gap-2 justify-end min-w-12'>
+					<Action icon={PlusSignIcon} onClick={handleNewFile} />
+				</div>
 			</div>
 			<InputModal controller={inputController} />
 		</>
@@ -151,7 +149,7 @@ function RightAlignedActionBarGroup() {
 }
 
 
-function getContentCounterFromEditor(editor:BlockNoteEditor) {
+function getContentCounterFromEditor(editor: BlockNoteEditor) {
 	function getInlineText(content: any): string {
 		if (!content) return "";
 		if (Array.isArray(content)) {

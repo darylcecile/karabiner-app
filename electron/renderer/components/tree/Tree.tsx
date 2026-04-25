@@ -61,8 +61,8 @@ export interface TreeDragAndDropProps {
 }
 
 export interface TreeContextMenuContext {
-	path: string;
-	kind: 'file' | 'folder';
+	path: string | null;
+	kind: 'file' | 'folder' | 'root';
 	close: () => void;
 }
 
@@ -670,7 +670,7 @@ export function Tree(props: TreeProps) {
 	);
 
 	const [contextMenuState, setContextMenuState] = useState<
-		{ x: number; y: number; path: string; kind: TreeKind } | null
+		{ x: number; y: number; path: string | null; kind: TreeKind | 'root' } | null
 	>(null);
 
 	const handleContextMenu = useCallback(
@@ -680,6 +680,18 @@ export function Tree(props: TreeProps) {
 			e.stopPropagation();
 			setFocusedPath(path);
 			setContextMenuState({ x: e.clientX, y: e.clientY, path, kind });
+		},
+		[renderContextMenu],
+	);
+
+	const handleRootContextMenu = useCallback(
+		(e: React.MouseEvent) => {
+			if (!renderContextMenu) return;
+			// Ignore events that came from within a row — those are handled by handleContextMenu.
+			const target = e.target as HTMLElement | null;
+			if (target?.closest('[role="treeitem"]')) return;
+			e.preventDefault();
+			setContextMenuState({ x: e.clientX, y: e.clientY, path: null, kind: 'root' });
 		},
 		[renderContextMenu],
 	);
@@ -791,6 +803,7 @@ export function Tree(props: TreeProps) {
 			onKeyDown={onKeyDown}
 			onDragOver={dragAndDrop ? onRootDragOver : undefined}
 			onDrop={dragAndDrop ? onRootDrop : undefined}
+			onContextMenu={renderContextMenu ? handleRootContextMenu : undefined}
 			className={cn(
 				'relative w-full overflow-y-auto overflow-x-hidden',
 				'bg-transparent text-sidebar-foreground',

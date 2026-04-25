@@ -18,13 +18,15 @@ export function Editor() {
 				id={workspace.openedPath ?? 'new-document'}
 				editor={editor}
 				onChange={(bn, ctx) => {
+					// Skip the change emitted by programmatic content loads (file open).
+					// Must run BEFORE the openedPath check, since on first open the state
+					// hasn't flushed yet when this fires.
+					if (workspace.isLoadingRef.current) return;
 					const currentPath = workspace.openedPath;
 					if (!currentPath) {
 						toast.error("No file is currently opened. Unable to save.");
 						return;
 					}
-					// Skip the change emitted by programmatic content loads (file open).
-					if (workspace.isLoadingRef.current) return;
 					const markdown = bn.blocksToMarkdownLossy();
 					fs.writeFile(currentPath, markdown);
 				}}
