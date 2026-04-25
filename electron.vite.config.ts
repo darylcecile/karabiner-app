@@ -49,6 +49,7 @@ export default defineConfig({
 			rollupOptions: {
 				input: {
 					index: resolve(rootDir, 'electron/renderer/index.html'),
+					settings: resolve(rootDir, 'electron/renderer/settings.html'),
 				},
 				treeshake: 'smallest'
 			},

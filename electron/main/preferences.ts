@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { writeFile } from "node:fs/promises";
 import yaml from "yaml";
 import { z } from "zod";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync } from "node:fs";
 
 export const PreferencesPath = "~/.karabiner/config/preferences.yaml";
 
@@ -12,12 +12,16 @@ const PreferencesSchema = z.object({
 		icon: z.string().optional(),
 		tint: z.string().optional(),
 	})),
+	ai: z.object({
+		provider: z.enum(['none', 'auto', 'claude', 'copilot']).default('auto'),
+	}).default({ provider: 'auto' }),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
 
 const defaultPreferences:Preferences = {
 	customizations: [],
+	ai: { provider: 'auto' },
 };
 
 let preferencesCache: Preferences | null = null;
@@ -28,7 +32,7 @@ export function readPreferences(): Preferences {
 	if (!existsSync(absPath)) {
 		writeFileSync(absPath, yaml.stringify(defaultPreferences), "utf-8");
 	}
-	const preferences = yaml.parse(absPath);
+	const preferences = yaml.parse(readFileSync(absPath, "utf-8"));
 	preferencesCache = PreferencesSchema.parse(preferences)
 	return preferencesCache;
 }

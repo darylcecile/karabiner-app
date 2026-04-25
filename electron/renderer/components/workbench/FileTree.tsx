@@ -1,390 +1,385 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FileTree as PierreFileTree, useFileTree } from '@pierre/trees/react';
+import type {
+	ContextMenuItem as PierreContextMenuItem,
+	ContextMenuOpenContext as PierreContextMenuOpenContext,
+	FileTreeDropResult,
+	FileTreeRenameEvent,
+	FileTreeRowDecoration,
+	FileTreeRowDecorationContext,
+} from '@pierre/trees';
 import { useWorkbench } from '@/renderer/components/workbench/Workbench';
 import { InputModal, useInputModalController } from '@/renderer/components/workbench/InputModal';
-import { Tree, NodeRendererProps } from 'react-arborist';
-import { createContext, use, useCallback, useEffect, useMemo, useRef } from 'react';
-import { TreeItem, treeRecordToItems } from '@/renderer/hooks/useTree';
-import {
-	ContextMenu,
-	ContextMenuContent,
-	ContextMenuItem,
-	ContextMenuSeparator,
-	ContextMenuTrigger,
-} from '@/renderer/components/ui/context-menu';
-import { Path } from '@/shared/fsUtils';
+import { TreeNode } from '@/renderer/hooks/useTree';
+import { getCachedLabel, requestLabel, subscribeAllLabels } from '@/renderer/hooks/useFileLabel';
 import { toast } from 'sonner';
 import { cn } from '@/shared/utils';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { ChevronRight, ChevronDown, FolderAddIcon } from '@hugeicons/core-free-icons';
-import { CustomIcons } from './CustomIcons';
-import { motion } from "motion/react"
 
-function joinTreePath(parentPath: string, name: string): string {
-	if (parentPath === Path.sep) {
-		return Path.normalize(`${parentPath}${name}`);
-	}
+const TREE_SEP = '/';
 
-	return Path.normalize(`${parentPath.replace(/[\\/]$/, '')}${Path.sep}${name}`);
+function toRelative(rootPath: string, absPath: string): string {
+	if (absPath === rootPath) return '';
+	const root = rootPath.replace(/[\\/]+$/, '');
+	if (absPath.startsWith(root + '/')) return absPath.slice(root.length + 1);
+	if (absPath.startsWith(root + '\\')) return absPath.slice(root.length + 1).split('\\').join('/');
+	return absPath.split('\\').join('/');
 }
 
-function createUniqueName(existingNames: Set<string>, baseName: string): string {
-	if (!existingNames.has(baseName)) {
-		return baseName;
-	}
-
-	let suffix = 2;
-	let candidate = `${baseName} ${suffix}`;
-	while (existingNames.has(candidate)) {
-		suffix += 1;
-		candidate = `${baseName} ${suffix}`;
-	}
-
-	return candidate;
+function joinAbs(rootPath: string, rel: string): string {
+	const cleanRel = rel.replace(/[\\/]+$/, '');
+	if (!cleanRel) return rootPath;
+	const root = rootPath.replace(/[\\/]+$/, '');
+	return `${root}${TREE_SEP}${cleanRel}`;
 }
 
-function getTopLevelPaths(paths: string[]): string[] {
-	const uniquePaths = [...new Set(paths)].sort((left, right) => left.length - right.length);
-
-	return uniquePaths.filter((path, index) => {
-		return !uniquePaths.slice(0, index).some((candidate) => {
-			return path === candidate || path.startsWith(`${candidate}${Path.sep}`);
-		});
-	});
+function basename(p: string): string {
+	const cleaned = p.replace(/[\\/]+$/, '');
+	const idx = cleaned.lastIndexOf('/');
+	return idx === -1 ? cleaned : cleaned.slice(idx + 1);
 }
 
-const FileTreeActionsContext = createContext({
-	onRenameRequest: async (_id: string, _currentName: string) => { },
-});
+function dirname(p: string): string {
+	const cleaned = p.replace(/[\\/]+$/, '');
+	const idx = cleaned.lastIndexOf('/');
+	return idx === -1 ? '' : cleaned.slice(0, idx);
+}
+
+function buildPaths(nodes: Record<string, TreeNode>, rootPath: string): string[] {
+	const root = nodes[rootPath];
+	if (!root) return [];
+	const out: string[] = [];
+	const stack: string[] = [...root.children];
+	while (stack.length) {
+		const path = stack.shift()!;
+		const node = nodes[path];
+		if (!node) continue;
+		const rel = toRelative(rootPath, node.path);
+		if (!rel) continue;
+		if (node.kind === 'directory') {
+			out.push(rel + TREE_SEP);
+			for (const child of node.children) stack.push(child);
+		} else {
+			out.push(rel);
+		}
+	}
+	return out;
+}
 
 export function FileTree() {
-	const { fs, treeRef, workspace } = useWorkbench();
+	const { fs, workspace, treeRef } = useWorkbench();
 	const inputController = useInputModalController();
-	const { focusedPath, nodes, rootPath } = fs;
+	const { nodes, rootPath } = fs;
 
-	const data = useMemo(() => {
+	const fsRef = useRef(fs);
+	fsRef.current = fs;
+	const workspaceRef = useRef(workspace);
+	workspaceRef.current = workspace;
+	const inputControllerRef = useRef(inputController);
+	inputControllerRef.current = inputController;
+
+	const paths = useMemo(() => {
 		if (!rootPath) return [];
-		return treeRecordToItems(nodes, rootPath)
+		return buildPaths(nodes, rootPath);
 	}, [nodes, rootPath]);
 
-	const handleCreate = useCallback(async ({ parentId, type }: { parentId: string | null; type: 'internal' | 'leaf' }) => {
-		const parentPath = parentId ?? fs.rootPath;
-		if (!parentPath) {
-			return null;
-		}
+	const rootPathRef = useRef(rootPath);
+	rootPathRef.current = rootPath;
 
-		const siblingNames = new Set(fs.getChildren(parentPath).map((child) => child.name));
-		const name = createUniqueName(
-			siblingNames,
-			type === 'internal' ? 'untitled folder' : 'untitled',
-		);
-		const createdPath = joinTreePath(parentPath, name);
+	const relToAbs = useCallback((rel: string): string => {
+		const root = rootPathRef.current;
+		if (!root) return rel;
+		return joinAbs(root, rel);
+	}, []);
 
-		try {
-			fs.select(parentPath);
-			if (type === 'internal') {
-				await fs.createDirectory(name);
-			} else {
-				await fs.createFile(name);
-			}
-
-			return { id: createdPath };
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'Unable to create item.');
-			return null;
-		}
-	}, [fs]);
-
-	const handleRename = useCallback(async ({ id, name }: { id: string; name: string }) => {
-		const nextName = name.trim();
-		if (!nextName) {
+	const handleRename = useCallback(async (event: FileTreeRenameEvent) => {
+		const root = rootPathRef.current;
+		if (!root) return;
+		const newName = basename(event.destinationPath).trim();
+		if (!newName) {
 			toast.error('Name cannot be empty.');
 			return;
 		}
-
-		const currentNode = fs.getNode(id);
-		if (!currentNode || currentNode.name === nextName) {
-			return;
-		}
-
 		try {
-			await fs.rename(id, nextName);
+			await fsRef.current.rename(relToAbs(event.sourcePath), newName);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Unable to rename item.');
 		}
-	}, [fs]);
+	}, [relToAbs]);
 
-	const handleMove = useCallback(async ({ dragIds, parentId }: { dragIds: string[]; parentId: string | null }) => {
-		const destinationPath = parentId ?? fs.rootPath;
-		if (!destinationPath) {
-			return;
-		}
-
+	const handleDrop = useCallback(async (event: FileTreeDropResult) => {
+		const root = rootPathRef.current;
+		if (!root) return;
+		const destDirRel = event.target.directoryPath;
+		const destDirAbs = destDirRel == null ? root : relToAbs(destDirRel);
 		try {
-			for (const sourcePath of getTopLevelPaths(dragIds)) {
-				const sourceNode = fs.getNode(sourcePath);
-				if (!sourceNode || sourceNode.parentPath === destinationPath) {
-					continue;
-				}
-
-				await fs.move(sourcePath, destinationPath);
+			for (const dragged of event.draggedPaths) {
+				const srcAbs = relToAbs(dragged);
+				const srcNode = fsRef.current.getNode(srcAbs);
+				if (srcNode && srcNode.parentPath === destDirAbs) continue;
+				await fsRef.current.move(srcAbs, destDirAbs);
 			}
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Unable to move item.');
 		}
-	}, [fs]);
+	}, [relToAbs]);
 
-	const handleDelete = useCallback(async ({ ids }: { ids: string[] }) => {
+	const [selectedPaths, setSelectedPaths] = useState<readonly string[]>([]);
+
+	const { model } = useFileTree({
+		paths,
+		initialExpansion: 'closed',
+		renaming: { onRename: (event) => { void handleRename(event); } },
+		dragAndDrop: { onDropComplete: (event) => { void handleDrop(event); } },
+		onSelectionChange: (next) => { setSelectedPaths(next); },
+		renderRowDecoration: (context: FileTreeRowDecorationContext): FileTreeRowDecoration | null => {
+			if (context.row.kind !== 'file') return null;
+			const root = rootPathRef.current;
+			if (!root) return null;
+			const abs = joinAbs(root, context.item.path);
+			const entry = getCachedLabel(abs);
+			if (entry && entry !== 'pending') {
+				return { text: `${entry.emoji} ${entry.label}`, title: entry.label };
+			}
+			requestLabel(abs, false);
+			return null;
+		},
+	});
+
+	useEffect(() => {
+		treeRef.current = model;
+	}, [model, treeRef]);
+
+	const prevPathsRef = useRef<readonly string[]>(paths);
+	useEffect(() => {
+		const prev = prevPathsRef.current;
+		if (prev === paths) return;
+		if (prev.length === paths.length) {
+			let same = true;
+			for (let i = 0; i < paths.length; i++) {
+				if (prev[i] !== paths[i]) { same = false; break; }
+			}
+			if (same) {
+				prevPathsRef.current = paths;
+				return;
+			}
+		}
+		// Preserve expansion across resets so opening a file doesn't collapse
+		// the user's currently-expanded folders.
+		const expanded: string[] = [];
+		for (const p of prev) {
+			if (!p.endsWith('/')) continue;
+			const item = model.getItem(p);
+			if (item && item.isDirectory() && (item as { isExpanded(): boolean }).isExpanded()) {
+				expanded.push(p);
+			}
+		}
+		model.resetPaths(paths, expanded.length ? { initialExpandedPaths: expanded } : undefined);
+		prevPathsRef.current = paths;
+	}, [model, paths]);
+
+	// useEffect(() => {
+	// 	let frame: number | null = null;
+	// 	let count = 0;
+	// 	const trigger = () => {
+	// 		count += 1;
+	// 		if (count < 20) console.log('[FileTree] label trigger', count);
+	// 		if (frame != null) return;
+	// 		frame = window.requestAnimationFrame(() => {
+	// 			frame = null;
+	// 			try {
+	// 				model.setGitStatus([]);
+	// 			} catch {
+	// 				// best-effort re-render trigger
+	// 			}
+	// 		});
+	// 	};
+	// 	const unsub = subscribeAllLabels(trigger);
+	// 	return () => {
+	// 		unsub();
+	// 		if (frame != null) window.cancelAnimationFrame(frame);
+	// 	};
+	// }, [model]);
+
+	useEffect(() => {
+		let frame: number | null = null;
+		const trigger = () => {
+			if (frame != null) return;
+			frame = window.requestAnimationFrame(() => {
+				frame = null;
+				try {
+					model.setGitStatus([]);
+				} catch {
+					// best-effort re-render trigger
+				}
+			});
+		};
+		const unsub = subscribeAllLabels(trigger);
+		return () => {
+			unsub();
+			if (frame != null) window.cancelAnimationFrame(frame);
+		};
+	}, [model]);
+
+	useEffect(() => {
+		const fsCurrent = fsRef.current;
+		if (selectedPaths.length === 0) {
+			fsCurrent.clearSelection();
+			return;
+		}
+		if (selectedPaths.length === 1) {
+			const rel = selectedPaths[0];
+			const abs = relToAbs(rel);
+			fsCurrent.select(abs);
+			const isDir = rel.endsWith('/');
+			if (!isDir) {
+				workspaceRef.current.openInEditor(abs);
+			}
+			return;
+		}
+		const [first, ...rest] = selectedPaths;
+		fsCurrent.select(relToAbs(first));
+		for (const rel of rest) fsCurrent.toggleSelect(relToAbs(rel));
+	}, [selectedPaths, relToAbs]);
+
+	const handleCreate = useCallback(async (parentRel: string | null, type: 'file' | 'folder') => {
+		const root = rootPathRef.current;
+		if (!root) return;
+		const parentAbs = parentRel == null ? root : relToAbs(parentRel);
+		const defaultName = type === 'folder' ? 'untitled folder' : 'untitled';
+		const name = await inputControllerRef.current.prompt({
+			title: type === 'folder' ? 'New Folder' : 'New File',
+			message: 'Enter a name:',
+			messagePlaceholder: defaultName,
+			initialValue: defaultName,
+			confirmText: 'Create',
+		});
+		if (name === null) return;
+		const trimmed = name.trim();
+		if (!trimmed) {
+			toast.error('Name cannot be empty.');
+			return;
+		}
 		try {
-			for (const id of getTopLevelPaths(ids)) {
-				await fs.remove(id);
+			fsRef.current.select(parentAbs);
+			if (type === 'folder') {
+				await fsRef.current.createDirectory(trimmed);
+			} else {
+				await fsRef.current.createFile(trimmed);
 			}
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'Unable to delete item.');
+			toast.error(error instanceof Error ? error.message : 'Unable to create item.');
 		}
-	}, [fs]);
+	}, [relToAbs]);
 
-	const handleSelect = useCallback((selectedNodes: Array<{ id: string }>) => {
-		if (selectedNodes.length === 0) {
-			fs.clearSelection();
-			return;
-		}
-
-		if (selectedNodes.length === 1) {
-			fs.select(selectedNodes[0].id);
-			workspace.openInEditor(selectedNodes[0].id);
-			return;
-		}
-
-		const [firstNode, ...restNodes] = selectedNodes;
-		fs.select(firstNode.id);
-		for (const node of restNodes) {
-			fs.toggleSelect(node.id);
-		}
-	}, [fs, workspace]);
-
-	const handleFocus = useCallback((node: { id: string }) => {
-		fs.ensureSelected(node.id);
-	}, [fs]);
-
-	const handleToggle = useCallback((id: string) => {
-		void fs.toggle(id);
-	}, [fs]);
-
-	const handleRenameRequest = useCallback(async (id: string, currentName: string) => {
-		const nextName = await inputController.prompt({
+	const handleRenameRequest = useCallback(async (rel: string, currentName: string) => {
+		const next = await inputControllerRef.current.prompt({
 			title: 'Rename',
 			message: 'Enter the new name:',
 			messagePlaceholder: currentName,
 			initialValue: currentName,
 			confirmText: 'Rename',
 		});
-
-		if (nextName === null) {
-			return;
+		if (next === null) return;
+		const trimmed = next.trim();
+		if (!trimmed || trimmed === currentName) return;
+		try {
+			await fsRef.current.rename(relToAbs(rel), trimmed);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Unable to rename item.');
 		}
+	}, [relToAbs]);
 
-		await handleRename({ id, name: nextName });
-	}, [handleRename, inputController]);
+	const handleDeleteRequest = useCallback(async (rel: string) => {
+		const selectedFromModel = model.getSelectedPaths();
+		const targets = selectedFromModel.includes(rel) && selectedFromModel.length > 0
+			? Array.from(selectedFromModel)
+			: [rel];
 
-	return (
-		<FileTreeActionsContext.Provider value={{ onRenameRequest: handleRenameRequest }}>
-			<>
-				<Tree<TreeItem>
-					data={data}
-					ref={treeRef}
-					idAccessor="id"
-					childrenAccessor="children"
-					openByDefault={false}
-					selectionFollowsFocus
-					selection={focusedPath ?? undefined}
-					onCreate={handleCreate}
-					onRename={handleRename}
-					onMove={handleMove}
-					onDelete={handleDelete}
-					onSelect={handleSelect}
-					onFocus={handleFocus}
-					onToggle={handleToggle}
-					width={"auto"}
-					rowHeight={28}
-				>
-					{TreeNode}
-				</Tree>
-				<InputModal controller={inputController} />
-			</>
-		</FileTreeActionsContext.Provider>
-	)
-}
+		const sorted = [...targets].sort((a, b) => a.length - b.length);
+		const topLevel = sorted.filter((path, idx) => {
+			return !sorted.slice(0, idx).some((candidate) => {
+				const candDir = candidate.endsWith('/') ? candidate : candidate + '/';
+				return path === candidate || path.startsWith(candDir);
+			});
+		});
 
-
-function TreeNode({ node, style, dragHandle }: NodeRendererProps<TreeItem>) {
-	const inputRef = useRef<HTMLInputElement>(null);
-	const { fs, treeRef } = useWorkbench();
-	const { onRenameRequest } = use(FileTreeActionsContext);
-
-	useEffect(() => {
-		if (!node.isEditing) {
-			return;
+		try {
+			for (const target of topLevel) {
+				await fsRef.current.remove(relToAbs(target));
+			}
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Unable to delete item.');
 		}
+	}, [model, relToAbs]);
 
-		inputRef.current?.focus();
-		inputRef.current?.select();
-	}, [node.isEditing]);
+	const renderContextMenu = useCallback(
+		(item: PierreContextMenuItem, context: PierreContextMenuOpenContext) => {
+			const itemRel = item.path;
+			const isFolder = item.kind === 'directory';
+			const parentRel = isFolder
+				? itemRel.replace(/[\\/]+$/, '')
+				: dirname(itemRel);
+			const createParentRel = parentRel === '' ? null : parentRel;
+			const itemName = item.name || basename(itemRel);
 
-	const createParentId =
-		node.isLeaf && node.parent && !node.parent.isRoot
-			? node.parent.id
-			: node.isLeaf
-				? null
-				: node.id;
-	const createParentPath = createParentId ?? fs.rootPath;
-	const createIndex = createParentPath ? fs.getChildren(createParentPath).length : 0;
+			const itemClass = cn(
+				'flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-hidden select-none',
+				'hover:bg-foreground/10 focus:bg-foreground/10 text-popover-foreground',
+			);
+			const destructiveClass = cn(itemClass, 'text-destructive hover:bg-destructive/10 focus:bg-destructive/10');
 
-	const hasParent = !!node.parent && !node.parent.isRoot;
-	const sourceNode = fs.getNode(node.id);
-	const metadataSrc = sourceNode?.metadata ?? sourceNode?.customization ?? node.data.metadata;
-	const metadata = metadataSrc?.[sourceNode.path]
-
-	return (
-		<ContextMenu>
-			<ContextMenuTrigger asChild>
+			return (
 				<div
-					style={style}
-					ref={dragHandle}
-					onContextMenuCapture={() => {
-						if (node.isSelected) {
-							node.focus();
-							return;
-						}
-
-						node.select();
-					}}
+					data-slot="context-menu-content"
 					className={cn(
-						"text-sm group/item",
-						'flex flex-row items-center gap-1 rounded-sm px-1 py-1',
-						node.isSelected ? 'bg-foreground/10' : 'hover:bg-foreground/5',
-						node.isFocused && !node.isSelected && 'bg-foreground/7.5',
+						'z-50 min-w-36 overflow-hidden rounded-md p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 relative bg-popover/70',
+						'before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:rounded-[inherit] before:backdrop-blur-2xl before:backdrop-saturate-150',
 					)}
 				>
-					<span
-						onClick={(event) => {
-							event.stopPropagation();
-							if (!node.isLeaf) {
-								node.toggle();
-							}
-						}}
-						className={cn(
-							"ml-1 size-5 text-xs min-w-5 bg-foreground/5 flex relative items-center rounded-sm overflow-hidden",
-							node.isLeaf && "bg-transparent"
-						)}
+					<button
+						type="button"
+						className={itemClass}
+						onClick={() => { context.close({ restoreFocus: false }); void handleCreate(createParentRel, 'file'); }}
 					>
-						<div 
-							className={cn(
-								"h-4 min-w-8 flex items-center justify-center absolute",
-								!node.isLeaf  && "group-hover/item:-translate-x-4 transition-transform left-0",
-							)}
-						>
-							<CustomIcons icon={metadata?.icon ?? (node.isLeaf ? 'file' : 'folder')} strokeWidth={1.5} width={14} className='ml-[3px]'/>
-							<HugeiconsIcon icon={!node.isOpen ? ChevronRight : ChevronDown} strokeWidth={1.5} width={16} className='ml-[2px]' />
-						</div>
-					</span>{' '}
-					{node.isEditing ? (
-						<input
-							ref={inputRef}
-							defaultValue={node.data.name}
-							onBlur={() => node.reset()}
-							onKeyDown={(event) => {
-								if (event.key === 'Escape') {
-									node.reset();
-								}
-
-								if (event.key === 'Enter') {
-									node.submit(inputRef.current?.value || '');
-								}
-							}}
-						/>
-					) : (
-						<div
-							className="flex flex-1 items-center"
-							onDoubleClick={() => {
-								if (node.isLeaf) {
-									onRenameRequest(node.id, node.data.name);
-								} else {
-									node.toggle();
-								}
-							}}
-						>
-							<span className="text-ellipsis overflow-hidden flex-1">{node.data.name}</span>
-							{!hasParent && (
-								<button
-									className={cn(
-										"size-5 rounded hover:bg-foreground/10 flex items-center justify-center",
-										"opacity-0 group-hover/item:opacity-100 transition-opacity",
-									)}
-									onClick={() => { 
-										alert('TODO')
-									}}
-								>
-									<span className="sr-only">New</span>
-									<HugeiconsIcon icon={FolderAddIcon} strokeWidth={1} width={14} />
-								</button>
-							)}
-						</div>
-					)}
+						New File
+					</button>
+					<button
+						type="button"
+						className={itemClass}
+						onClick={() => { context.close({ restoreFocus: false }); void handleCreate(createParentRel, 'folder'); }}
+					>
+						New Folder
+					</button>
+					<div role="separator" className="my-1 h-px bg-foreground/10" />
+					<button
+						type="button"
+						className={itemClass}
+						onClick={() => { context.close({ restoreFocus: false }); void handleRenameRequest(itemRel, itemName); }}
+					>
+						Rename
+					</button>
+					<div role="separator" className="my-1 h-px bg-foreground/10" />
+					<button
+						type="button"
+						className={destructiveClass}
+						onClick={() => { context.close({ restoreFocus: false }); void handleDeleteRequest(itemRel); }}
+					>
+						Delete
+					</button>
 				</div>
-			</ContextMenuTrigger>
-			<ContextMenuContent>
-				<ContextMenuItem
-					onSelect={() => {
-						if (!createParentPath) {
-							return;
-						}
+			);
+		},
+		[handleCreate, handleRenameRequest, handleDeleteRequest],
+	);
 
-						void treeRef.current?.create({
-							type: 'leaf',
-							parentId: createParentId,
-							index: createIndex,
-						});
-					}}
-				>
-					New File
-				</ContextMenuItem>
-				<ContextMenuItem
-					onSelect={() => {
-						if (!createParentPath) {
-							return;
-						}
-
-						void treeRef.current?.create({
-							type: 'internal',
-							parentId: createParentId,
-							index: createIndex,
-						});
-					}}
-				>
-					New Folder
-				</ContextMenuItem>
-				<ContextMenuSeparator />
-				<ContextMenuItem
-					onSelect={() => {
-						void onRenameRequest(node.id, node.data.name);
-					}}
-				>
-					Rename
-				</ContextMenuItem>
-				<ContextMenuItem
-					variant="destructive"
-					onSelect={() => {
-						const selectedIds = treeRef.current
-							? Array.from(treeRef.current.selectedIds)
-							: [node.id];
-						const idsToDelete =
-							node.isSelected && selectedIds.length > 0 ? selectedIds : [node.id];
-
-						void treeRef.current?.delete(idsToDelete);
-					}}
-				>
-					Delete
-				</ContextMenuItem>
-			</ContextMenuContent>
-		</ContextMenu>
+	return (
+		<>
+			<PierreFileTree
+				model={model}
+				renderContextMenu={renderContextMenu}
+				style={{ height: 320 }}
+			/>
+			<InputModal controller={inputController} />
+		</>
 	);
 }

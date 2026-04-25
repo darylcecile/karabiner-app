@@ -1,13 +1,12 @@
 import { createContext, PropsWithChildren, use, useEffect, useMemo, useRef, useState } from 'react';
-import { useFileTree, Tree, TreeItem } from '@/renderer/hooks/useTree';
+import { useFileTree, Tree } from '@/renderer/hooks/useTree';
 import { useConfig } from '@/renderer/hooks/useConfig';
-import { TreeApi } from 'react-arborist';
 import { Path } from '@/shared/fsUtils';
 import { useEditorState } from '@/renderer/components/editor';
 
 const WorkbenchContext = createContext({} as {
 	fs: Tree;
-	treeRef: React.RefObject<TreeApi<TreeItem>>,
+	treeRef: React.RefObject<unknown>,
 	workspace: {
 		openInEditor: (path: string) => void,
 		openedPath?: string,
@@ -28,7 +27,7 @@ export function Workbench(props: PropsWithChildren) {
 		}
 	}), [includeHidden]);
 	const fs = useFileTree(treeOptions);
-	const treeRef = useRef<TreeApi<TreeItem>>(null as unknown as TreeApi<TreeItem>);
+	const treeRef = useRef<unknown>(null);
 	const editor = useEditorState();
 
 	useEffect(() => {

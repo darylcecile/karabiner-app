@@ -2,9 +2,11 @@ import crypto from "node:crypto";
 import { activeScans, readDirectoryImpl, ReadDirectoryOptions, runScan, ScanOptions } from './fs';
 import { getConfig, readConfig, setConfig } from './config';
 import { getPreferences, setPreferences } from './preferences';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isBinaryFile } from '@/main/files';
+import { getAIAvailability, getActiveProvider } from '@/main/ai/resolver';
+import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
 
 
@@ -75,6 +77,65 @@ export const mainRelay = createMainRelay({
 		async delete(targetPath: string) {
 			await rm(resolvePath(targetPath), { recursive: true, force: true });
 			return true;
+		},
+		async aiAvailability() {
+			return await getAIAvailability();
+		},
+		async getFileLabel(absPath: string) {
+			try {
+				const resolved = resolvePath(absPath);
+				let mtimeMs: number | undefined;
+				try {
+					const s = await stat(resolved);
+					mtimeMs = s.mtimeMs;
+				} catch {
+					return null;
+				}
+				const entry = await getCachedLabel(resolved, mtimeMs);
+				if (!entry) return null;
+				return { label: entry.label, emoji: entry.emoji, category: entry.category };
+			} catch (err) {
+				console.error("getFileLabel failed:", err);
+				return null;
+			}
+		},
+		async regenerateFileLabel(absPath: string) {
+			try {
+				const resolved = resolvePath(absPath);
+				let mtimeMs: number;
+				try {
+					const s = await stat(resolved);
+					mtimeMs = s.mtimeMs;
+				} catch {
+					return null;
+				}
+				if (await isBinaryFile(resolved)) return null;
+				const provider = await getActiveProvider();
+				if (!provider) return null;
+				let content: string;
+				try {
+					content = await readFile(resolved, "utf-8");
+				} catch {
+					return null;
+				}
+				const truncated = content.length > 4000 ? content.slice(0, 4000) : content;
+				const filename = path.basename(resolved);
+				const result = await provider.generateFileMetadata(truncated, filename).catch(() => null);
+				if (!result) return null;
+				await setCachedLabel(resolved, {
+					label: result.label,
+					emoji: result.emoji,
+					category: result.category,
+					mtimeMs,
+					generatedAt: Date.now(),
+				}).catch((err) => {
+					console.error("setCachedLabel failed:", err);
+				});
+				return { label: result.label, emoji: result.emoji, category: result.category };
+			} catch (err) {
+				console.error("regenerateFileLabel failed:", err);
+				return null;
+			}
 		},
 		querySync: syncMethod((propertyName: string) => {
 			if (propertyName === 'platform') {
