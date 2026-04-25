@@ -13,11 +13,13 @@ export default defineConfig({
 				input: {
 					index: resolve(rootDir, 'electron/main/index.ts'),
 				},
+				treeshake: 'smallest'
 			},
 		},
 		resolve: {
 			alias: {
 				"@": resolve(__dirname, "./electron"),
+				"@karabiner/relay": resolve(__dirname, "./src/packages/relay")
 			},
 		},
 	},
@@ -27,11 +29,13 @@ export default defineConfig({
 				input: {
 					index: resolve(rootDir, 'electron/preload/index.ts'),
 				},
+				treeshake: 'smallest'
 			},
 		},
 		resolve: {
 			alias: {
 				"@": resolve(__dirname, "./electron"),
+				"@karabiner/relay": resolve(__dirname, "./src/packages/relay")
 			},
 		},
 	},
@@ -46,11 +50,13 @@ export default defineConfig({
 				input: {
 					index: resolve(rootDir, 'electron/renderer/index.html'),
 				},
+				treeshake: 'smallest'
 			},
 		},
 		resolve: {
 			alias: {
 				"@": resolve(__dirname, "./electron"),
+				"@karabiner/relay": resolve(__dirname, "./src/packages/relay")
 			},
 		},
 		plugins: [tailwindcss() as any],

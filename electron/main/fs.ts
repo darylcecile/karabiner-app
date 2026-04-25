@@ -5,6 +5,7 @@ import { webContents } from 'electron';
 import { Path } from '@/shared/fsUtils';
 import { existsSync } from 'node:fs';
 import yaml from "yaml";
+import { FSReplay } from './vaultTemplates';
 
 type EntryKind = "file" | "directory" | "symlink";
 
@@ -267,5 +268,63 @@ export async function runScan(scanId: string, rootPath: string, options: ScanOpt
 		}
 	} finally {
 		activeScans.delete(scanId);
+	}
+}
+export async function setUpAppDir() {
+	const vaultPath = '~/.karabiner/vault';
+	const assetPath = '~/.karabiner/assets';
+
+	const absVaultPath = vaultPath.replace("~", process.env.HOME || "");
+	const absAssetPath = assetPath.replace("~", process.env.HOME || "");
+
+	if (!existsSync(absVaultPath)) {
+		const defaultActions = FSReplay.defineOperations([
+			{ type: 'createDirectory', path: absVaultPath },
+			{ type: 'createDirectory', path: path.join(absVaultPath, 'Notes') },
+			{ type: 'metadata', path: path.join(absVaultPath, 'Notes'), metadata: { icon: 'archive', tint: 'green' } },
+			{
+				type: 'createFile',
+				path: path.join(absVaultPath, 'Notes', 'welcome.md'),
+				content: '# Welcome to Karabiner\n\nThis is your vault. Start by creating a new file or folder!'
+			},
+			{
+				type: 'createFile',
+				path: path.join(absVaultPath, 'Notes', 'why-karabiner.md'),
+				content: '# Why Karabiner?\n\nKarabiner is designed to be a simple, local-first knowledge base that helps you organize your thoughts and ideas without the overhead of more complex tools. It’s perfect for:\n\n- **Personal Notes**: Jot down quick thoughts, ideas, or reminders.\n- **Project Planning**: Keep track of project details, to-dos, and resources.\n- **Learning and Research**: Collect information, links, and insights in one place.\n\nKarabiner focuses on simplicity and speed, making it easy to capture and access your information whenever you need it.'
+			},
+			{ type: 'createDirectory', path: path.join(absVaultPath, 'Projects') },
+			{ type: 'metadata', path: path.join(absVaultPath, 'Projects'), metadata: { icon: 'inbox', tint: 'purple' } },
+			{
+				type: 'createFile',
+				path: path.join(absVaultPath, 'Projects', 'example-project.md'),
+				content: '# Example Project\n\nThis is an example project file. You can use this space to outline your project goals, tasks, and resources.\n\n## Project Overview\n\nProvide a brief description of your project here.\n\n## Tasks\n\n- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3\n\n## Resources\n\n- Link to resource 1\n- Link to resource 2\n- Link to resource 3'
+			},
+			{ type: 'createDirectory', path: path.join(absVaultPath, 'Journal') },
+			{ type: 'metadata', path: path.join(absVaultPath, 'Journal'), metadata: { icon: 'calendar', tint: 'blue' } },
+			{
+				type: 'createFile',
+				path: path.join(absVaultPath, 'Journal', '2024-01-01.md'),
+				content: '# Journal Entry - January 1, 2024\n\nToday marks the beginning of a new year and a fresh start. I am excited to embark on this journey with Karabiner as my trusted knowledge base. My goals for this year include:\n\n- [ ] Organize my thoughts and ideas more effectively.\n- [ ] Keep track of my projects and their progress.\n- [ ] Capture insights and information that I come across in my daily life.\n\nI am looking forward to seeing how Karabiner helps me grow and stay organized throughout the year!'
+			},
+			{
+				type: 'createFile',
+				path: path.join(absVaultPath, 'Journal', '2024-01-02.md'),
+				content: '# Journal Entry - January 2, 2024\n\nToday I started setting up my Karabiner vault. I created a few folders and files to get things organized. I am impressed with how easy it is to create and manage my notes. I can already see the potential for this tool to help me stay organized and productive. Looking forward to filling this vault with all my thoughts and ideas!'
+			},
+			{ type: 'createDirectory', path: path.join(absVaultPath, 'Research') },
+			{ type: 'metadata', path: path.join(absVaultPath, 'Research'), metadata: { icon: 'test-tube', tint: 'orange' } },
+			{
+				type: 'createFile',
+				path: path.join(absVaultPath, 'Research', 'example-research.md'),
+				content: '# Example Research Note\n\nThis is an example research note. Use this template to capture your research findings, insights, and references.\n\n## Research Topic\n\nBriefly describe the topic of your research here.\n\n## Key Findings\n\n- Finding 1: Description and implications.\n- Finding 2: Description and implications.\n- Finding 3: Description and implications.\n\n## References\n\n- [Link to reference 1](https://example.com)\n- [Link to reference 2](https://example.com)\n- [Link to reference 3](https://example.com)'
+			}
+		]);
+		await FSReplay.applyOperations(defaultActions);
+	}
+
+	if (!existsSync(absAssetPath)) {
+		await FSReplay.applyOperations([
+			{ type: 'createDirectory', path: absAssetPath },
+		]);
 	}
 }

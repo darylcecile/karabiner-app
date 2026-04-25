@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DirEntry } from "@/main/fs";
 import { Path } from "@/shared/fsUtils";
+import { main } from '@/renderer/relay';
 
 export type NodeCustomization = {
 	tint?: string | null;
@@ -298,7 +299,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 	}, []);
 
 	const readDirectory = useCallback(async (dirPath: string) => {
-		return window.fsApi.readDirectory(dirPath, {
+		return main.readDirectory(dirPath, {
 			includeHidden: optionsRef.current?.includeHidden ?? false,
 		});
 	}, []);
@@ -697,7 +698,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 
 	const isBinaryFile = useCallback(async (path: string): Promise<boolean> => {
 		const normalizedPath = assertPathWithinRoot(path);
-		return window.fsApi.isBinaryFile(normalizedPath);
+		return main.isBinaryFile(normalizedPath);
 	}, [assertPathWithinRoot]);
 
 	const readFile = useCallback(async (path: string, encoding?:BufferEncoding) => {
@@ -715,7 +716,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 			lastSelectedPath: fullPath,
 		}));
 
-		return window.fsApi.readFile(fullPath, encoding);
+		return main.readFile(fullPath, encoding);
 	}, [assertPathWithinRoot, getCreateParentPath, refreshDirectory, setTreeState]);
 
 	const writeFile = useCallback(async (path: string, content: string, encoding?:BufferEncoding) => {
@@ -725,7 +726,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 		}
 
 		const fullPath = assertPathWithinRoot(path);
-		await window.fsApi.writeFile(fullPath, content, encoding);
+		await main.writeFile(fullPath, content, encoding);
 		await refreshDirectory(parentPath);
 
 		setTreeState((previous) => ({
@@ -743,7 +744,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 		}
 
 		const fullPath = assertPathWithinRoot(joinPath(parentPath, name));
-		await window.fsApi.createFile(fullPath);
+		await main.createFile(fullPath);
 		await refreshDirectory(parentPath);
 
 		setTreeState((previous) => ({
@@ -761,7 +762,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 		}
 
 		const fullPath = assertPathWithinRoot(joinPath(parentPath, name));
-		await window.fsApi.createDirectory(fullPath);
+		await main.createDirectory(fullPath);
 		await refreshDirectory(parentPath);
 
 		setTreeState((previous) => ({
@@ -797,7 +798,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 			const oldParentPath = getParentPath(normalizedOldPath);
 			const newParentPath = getParentPath(normalizedNewPath);
 
-			await window.fsApi.rename(normalizedOldPath, normalizedNewPath);
+			await main.rename(normalizedOldPath, normalizedNewPath);
 
 			setTreeState((previous) => ({
 				...previous,
@@ -877,7 +878,7 @@ export function useFileTree(options?: UseFileTreeOptions) {
 		}
 
 		const parentPath = getParentPath(normalizedPath);
-		await window.fsApi.delete(normalizedPath);
+		await main.delete(normalizedPath);
 
 		setTreeState((previous) => {
 			const nextNodes = { ...previous.nodes };

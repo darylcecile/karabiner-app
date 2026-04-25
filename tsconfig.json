@@ -12,6 +12,9 @@
 		"paths": {
 			"@/*": [
 				"./electron/*"
+			],
+			"@karabiner/relay": [
+				"./src/packages/relay"
 			]
 		}
 	},

@@ -7,13 +7,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 export const ConfigPath = "~/.karabiner/config/config.yaml";
 
 const ConfigSchema = z.object({
-
+	version: z.string().optional().default("1.0"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
 
 const defaultConfig:Config = {
-
+	version: "1.0",
 };
 
 let configCache: Config | null = null;
@@ -48,7 +48,8 @@ export function setConfig(key: string, value: any): Config {
 
 export function getConfig(key: string) {
 	const config = readConfig();
-	return key.split(".").reduce((obj, part) => obj?.[part], config);
+	// @ts-ignore
+	return key.split(".").reduce((obj, part) => obj?.[part as keyof typeof obj], config);
 }
 
 

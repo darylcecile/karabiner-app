@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./electron"),
+	  "@karabiner/relay": path.resolve(__dirname, "./src/packages/relay")
     },
-  },
+  }
 });

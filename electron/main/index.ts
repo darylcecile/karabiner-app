@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron/main'
 import { join } from 'node:path'
-import { defineMainMethods, setUpAppDir } from './ipcMethods';
+import { mainRelay } from './ipcMethods';
+import { setUpAppDir } from "./fs";
 
 async function createWindow() {
 	const window = new BrowserWindow({
@@ -26,7 +27,9 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
 	await setUpAppDir();
-	void defineMainMethods();
+	
+	mainRelay.attach(ipcMain);
+
 	void createWindow()
 
 	app.on('activate', () => {

@@ -1,3 +1,4 @@
+import { main } from '@/renderer/relay';
 // This file contains methods that can be used by both the main and renderer processes for file system operations, ensuring consistent path handling across the app.
 
 function getWorld(): "main" | "renderer" {
@@ -12,7 +13,7 @@ function getHomeDir() {
 	if (getWorld() === "main") {
 		return process.env.HOME || process.env.USERPROFILE || '';
 	}
-	return window.electron.getHomeDir();
+	return main.querySync("homeDir") as string;
 }
 
 function getPlatform() {
@@ -29,7 +30,7 @@ function getPlatform() {
 				return 'unknown';
 		}
 	}
-	return window.electron.getPlatform();
+	return main.querySync("platform") as "darwin" | "win32" | "linux" | "unknown";
 }
 
 function join(...paths: string[]) {
