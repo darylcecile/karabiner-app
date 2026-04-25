@@ -1,4 +1,4 @@
-import { createRelayTerminal } from "@karabiner/relay";
-import type { MainRelay } from '@/main/ipcMethods';
+import { createRendererRelay } from "@karabiner/relay";
+import type { MainRelayMethods } from '@/main/ipcMethods';
 
-export const main = createRelayTerminal<MainRelay>();
+export const main = createRendererRelay<MainRelayMethods>("mainRelay");

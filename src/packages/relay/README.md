@@ -1,183 +1,225 @@
 # Relay
 
-`relay` is a small Electron helper for exposing main-process methods to the renderer through preload, while keeping the renderer API typed.
+`@karabiner/relay` is a small Electron helper for exposing main-process methods to the renderer with a typed API.
 
-From a consumer perspective, it gives you this shape:
+The intended flow is:
 
-- define methods once in the main process
-- expose them in preload
-- call them from the renderer like a normal object
+1. Define your main-process methods once.
+2. Attach them in the main process.
+3. Expose them in preload.
+4. Call them from the renderer like a normal object.
 
-## Example
-
-```ts
-// main
-import { ipcMain } from "electron/main";
-
-export const mainRelay = new RelayClient({
-  getConfig() {
-    return { theme: "dark" };
-  },
-  async readFile(filePath: string) {
-    return await Bun.file(filePath).text();
-  },
-});
-
-mainRelay.attach(ipcMain);
-```
-
-```ts
-// preload
-import { contextBridge, ipcRenderer } from 'electron';
-
-createPreloadTerminal<typeof mainRelay>(contextBridge, ipcRenderer);
-```
-
-```ts
-// renderer
-const main = createRelayTerminal<typeof mainRelay>();
-
-const config = main.getConfig();
-const content = await main.readFile("/tmp/note.md");
-```
-
-## Install Shape
-
-This package currently exposes four public entry points:
+## Public API
 
 ```ts
 import {
-  RelayClient,
-  createRelay,
-  createPreloadTerminal,
-  createRelayTerminal,
+  RelayError,
+  RelayRemoteError,
+  RelayTimeoutError,
+  RelayMethodsOf,
+  createMainRelay,
+  createRendererRelay,
+  exposeRelay,
+  method,
+  syncMethod,
 } from "@karabiner/relay";
 ```
 
-## Main Process
+## Quick Start
 
-Create a relay by passing an object of methods to `RelayClient`.
+### Main
 
 ```ts
 import { ipcMain } from "electron/main";
-import { RelayClient } from "@karabiner/relay";
+import { createMainRelay, syncMethod } from "@karabiner/relay";
 
-export const mainRelay = new RelayClient({
-  getConfig() {
-    return { theme: "dark" };
-  },
-  setConfig(key: string, value: unknown) {
-    return { [key]: value };
-  },
-  async readFile(filePath: string) {
-    return await Bun.file(filePath).text();
-  },
-  async writeFile(filePath: string, content: string) {
-    await Bun.write(filePath, content);
-    return true;
+export const mainRelay = createMainRelay({
+  namespace: "app:main",
+  timeoutMs: 10_000,
+  methods: {
+    getConfig: syncMethod(() => {
+      return { theme: "dark" };
+    }),
+    async readFile(filePath: string) {
+      return await Bun.file(filePath).text();
+    },
   },
 });
 
 mainRelay.attach(ipcMain);
 ```
 
-`attach(ipcMain)` registers every method on Electron IPC so preload can forward them into the renderer.
-
-## Preload
-
-In preload, expose the relay into the isolated renderer world.
+### Preload
 
 ```ts
 import { contextBridge, ipcRenderer } from "electron";
-import { createPreloadTerminal } from "@karabiner/relay";
-import type { MainRelay } from "@/main/ipcMethods";
+import { exposeRelay } from "@karabiner/relay";
+import type { MainRelayMethods } from "@/main/ipcMethods";
 
-createPreloadTerminal<MainRelay>(contextBridge, ipcRenderer);
+exposeRelay<MainRelayMethods>(contextBridge, "mainRelay", ipcRenderer, {
+  namespace: "app:main",
+});
 ```
 
-This creates `window.ipcRelay` behind the scenes. Most consumers should not use `window.ipcRelay` directly.
-
-## Renderer
-
-In the renderer, create a typed terminal from the main relay type.
+### Renderer
 
 ```ts
-import { createRelayTerminal } from "@karabiner/relay";
-import type { MainRelay } from "@/main/ipcMethods";
+import { createRendererRelay } from "@karabiner/relay";
+import type { MainRelayMethods } from "@/main/ipcMethods";
 
-export const main = createRelayTerminal<MainRelay>();
-```
+export const main = createRendererRelay<MainRelayMethods>("mainRelay");
 
-You can then call relay methods as if they were local:
-
-```ts
 const config = main.getConfig();
 const content = await main.readFile("/tmp/note.md");
-await main.writeFile("/tmp/note.md", `${content}\nupdated`);
 ```
 
-Behavior at the call site:
+## What You Get
 
-- sync main methods return sync values in the renderer
-- async main methods return promises in the renderer
-- errors thrown in main are rethrown in the renderer as plain `Error`
+At the renderer call site:
 
-## Growing a Relay
+- sync main methods stay sync
+- async main methods stay async
+- main-process errors are rethrown as relay errors
+- async methods use the configured timeout
 
-If you prefer to build a relay in steps, use `createRelay()` and `defineMethods()`.
+## Defining Methods
+
+You define a relay by passing a `methods` object to `createMainRelay`.
 
 ```ts
-import { createRelay } from "@karabiner/relay";
+import { createMainRelay } from "@karabiner/relay";
 
-const baseRelay = createRelay().defineMethods({
-  ping() {
-    return "pong";
-  },
-});
-
-export const mainRelay = baseRelay.defineMethods({
-  async readFile(path: string) {
-    return await Bun.file(path).text();
+export const relay = createMainRelay({
+  namespace: "files",
+  methods: {
+    version() {
+      return "1.0.0";
+    },
+    async readFile(path: string) {
+      return await Bun.file(path).text();
+    },
   },
 });
 ```
 
-`defineMethods()` returns a new relay with the additional methods merged into its type.
+Plain functions work out of the box. The relay will infer whether they are sync or async.
 
-## Method Rules
+## Making Sync Methods Explicit
 
-Methods exposed from main can be:
-
-- synchronous
-- asynchronous
-
-Typical examples:
+For methods that must stay synchronous, prefer `syncMethod(...)`.
 
 ```ts
-const relay = new RelayClient({
-  version() {
-    return "1.0.0";
-  },
-  async readFile(path: string) {
-    return await Bun.file(path).text();
+import { createMainRelay, syncMethod } from "@karabiner/relay";
+
+export const relay = createMainRelay({
+  methods: {
+    platform: syncMethod(() => process.platform),
+    homeDir: syncMethod(() => process.env.HOME || ""),
   },
 });
 ```
 
-The library uses the method shape to decide whether to forward the call through sync IPC or async IPC.
+That removes ambiguity at the definition site and makes the transport mode obvious in code review.
 
-## What Consumers Should Expect
+## Per-Method Options
 
-- The renderer gets a typed proxy based on the main relay type
-- The preload layer handles response unwrapping for you
-- You do not need to manually name channels for each method
+Use `method(...)` when you want to add options such as a custom timeout.
 
-## Current Constraints
+```ts
+import { createMainRelay, method } from "@karabiner/relay";
 
-Consumers should be aware of the current limits of the library:
+export const relay = createMainRelay({
+  timeoutMs: 10_000,
+  methods: {
+    async readFile(path: string) {
+      return await Bun.file(path).text();
+    },
+    slowTask: method(
+      async (id: string) => {
+        return await runSlowTask(id);
+      },
+      { timeoutMs: 30_000 },
+    ),
+  },
+});
+```
 
-- channel names are global and not namespaced
-- there is no runtime argument validation
-- there are no timeout controls
-- there are no custom error classes
-- the main-to-renderer path is not a full typed request/response client API
+## Typing The Renderer API
+
+If you want the renderer API type from the relay instance, use `RelayMethodsOf`.
+
+```ts
+import type { RelayMethodsOf } from "@karabiner/relay";
+
+export type MainRelayMethods = RelayMethodsOf<typeof mainRelay>;
+```
+
+That type is what you pass into `exposeRelay<...>()` and `createRendererRelay<...>()`.
+
+## Errors
+
+Relay throws structured errors instead of returning `{ success, error }` payloads to the renderer.
+
+```ts
+import {
+  RelayError,
+  RelayRemoteError,
+  RelayTimeoutError,
+} from "@karabiner/relay";
+
+try {
+  await main.readFile("/tmp/missing.md");
+} catch (error) {
+  if (error instanceof RelayTimeoutError) {
+    console.error("timed out", error.details);
+  } else if (error instanceof RelayRemoteError) {
+    console.error(error.code, error.message, error.details);
+  } else if (error instanceof RelayError) {
+    console.error(error.code, error.message);
+  }
+}
+```
+
+Available error types:
+
+- `RelayError`
+- `RelayRemoteError`
+- `RelayTimeoutError`
+
+## Namespaces
+
+Relay channels are namespaced. Use a stable namespace string for each relay:
+
+```ts
+createMainRelay({
+  namespace: "karabiner:main",
+  methods: { ... },
+});
+```
+
+Use the same namespace in preload:
+
+```ts
+exposeRelay(contextBridge, "mainRelay", ipcRenderer, {
+  namespace: "karabiner:main",
+});
+```
+
+Namespaces keep different relay setups from colliding on the same Electron IPC channels.
+
+## Consumer Notes
+
+- The renderer should use the proxy returned by `createRendererRelay(...)`, not the raw window global.
+- `apiKey` is the name of the global exposed by preload. It does not have to match the namespace.
+- Timeouts apply to async methods only.
+- There is no runtime schema validation yet.
+- The current package focuses on the renderer-to-main path. It does not yet expose a symmetric typed main-to-renderer client API.
+
+## In This Repo
+
+Current app wiring:
+
+- main relay definition: [`electron/main/ipcMethods.ts`](/Users/daryl/code/GitHub/karabiner-app/electron/main/ipcMethods.ts)
+- main registration: [`electron/main/index.ts`](/Users/daryl/code/GitHub/karabiner-app/electron/main/index.ts)
+- preload exposure: [`electron/preload/index.ts`](/Users/daryl/code/GitHub/karabiner-app/electron/preload/index.ts)
+- renderer proxy: [`electron/renderer/relay.ts`](/Users/daryl/code/GitHub/karabiner-app/electron/renderer/relay.ts)

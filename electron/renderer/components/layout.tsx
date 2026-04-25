@@ -1,21 +1,42 @@
 import { Allotment } from 'allotment'
-import { PropsWithChildren } from 'react'
-import { Action, ActionBar } from './titlebar';
+import { PropsWithChildren, useState } from 'react'
+import { Action, ActionBar, useActionBar } from './titlebar';
 import "allotment/dist/style.css";
 
-import { PlusSignIcon } from '@hugeicons/core-free-icons';
+import { ArrowLeft02Icon, ArrowRight02Icon, LayoutAlignLeftIcon, LeftAngleIcon, LeftTriangleIcon, PanelLeftOpenIcon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { useWorkbench } from './workbench/Workbench';
 import { InputModal, useInputModalController } from './workbench/InputModal';
 import { toast } from 'sonner';
 import { FileTree } from './workbench/FileTree';
 import { TreeAccordion } from '@/renderer/components/workbench/TreeAccordion';
 import { Editor } from '@/renderer/components/editor';
+import { atom, useAtom } from 'jotai';
+
+const sidebarCollapsedAtom = atom(false)
 
 export function RootLayout(props: PropsWithChildren) {
+	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
+
 	return (
-		<Allotment proportionalLayout={false}>
-			<Allotment.Pane preferredSize={300} className='pt-8.5'>
-				<ActionBar className="mr-1" />
+		<Allotment 
+			proportionalLayout={false} 
+			separator={!collapsed}
+			onVisibleChange={(index, visible) => {
+				if (index === 0) {
+					setCollapsed(!visible)
+				}
+			}}
+		>
+			<Allotment.Pane 
+				preferredSize={240} 
+				className='pt-8.5' 
+				snap 
+				minSize={100}
+				visible={!collapsed}
+			>
+				<ActionBar className="mr-1 pl-20 flex items-center absolute min-w-30 ">
+					<Action icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
+				</ActionBar>
 				<div className="p-2">
 					<TreeAccordion label="Collections">
 						<FileTree />
@@ -24,8 +45,7 @@ export function RootLayout(props: PropsWithChildren) {
 			</Allotment.Pane>
 			<Allotment.Pane>
 				<ActionBar className='ml-1 px-1 flex items-center justify-between'>
-					{/* <Action icon={Notification03Icon} /> */}
-					<div />
+					<LeftAlignedActionBarGroup />
 					<RightAlignedActionBarGroup />
 				</ActionBar>
 				<main className='pt-8.5 overflow-y-auto'>
@@ -34,6 +54,32 @@ export function RootLayout(props: PropsWithChildren) {
 				</main>
 			</Allotment.Pane>
 		</Allotment>
+	)
+}
+
+function LeftAlignedActionBarGroup() {
+	const { width } = useActionBar();
+	const maxWidth = Math.min(width, window.innerWidth - 132);
+	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
+
+	return (
+		<>
+			<div
+				className="absolute w-full h-6 ml-auto flex flex-row items-center right-0 pl-20"
+				style={{ width: window.innerWidth }}
+			>
+				<Action icon={collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
+			</div>
+			<div
+				className="w-full relative h-6 ml-auto flex flex-row items-center"
+				style={{ maxWidth }}
+			>
+				<div className='flex flex-row items-center'>
+					<Action icon={ArrowLeft02Icon} onClick={() => toast("New file")} />
+					<Action icon={ArrowRight02Icon} onClick={() => toast("New file")} />
+				</div>
+			</div>
+		</>
 	)
 }
 
@@ -62,10 +108,8 @@ function RightAlignedActionBarGroup() {
 
 	return (
 		<>
-			<div className='flex flex-row items-center gap-2'>
-				<ActionBar className='ml-1 px-1 flex items-center justify-end'>
-					<Action icon={PlusSignIcon} onClick={handleNewFile} />
-				</ActionBar>
+			<div className='flex flex-row items-center gap-2 justify-end'>
+				<Action icon={PlusSignIcon} onClick={handleNewFile} />
 			</div>
 			<InputModal controller={inputController} />
 		</>

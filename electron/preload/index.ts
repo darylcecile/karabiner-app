@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MainRelay } from '@/main/ipcMethods';
-import { createPreloadTerminal } from '@karabiner/relay';
+import type { MainRelayMethods } from '@/main/ipcMethods';
+import { exposeRelay } from '@karabiner/relay';
 
 
-createPreloadTerminal<MainRelay>(contextBridge, ipcRenderer);
+exposeRelay<MainRelayMethods>(contextBridge, "mainRelay", ipcRenderer, {
+	namespace: "karabiner:main",
+});
