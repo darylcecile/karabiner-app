@@ -131,12 +131,9 @@ export function requestLabel(absPath: string, isFolder = false): void {
 	cache.set(absPath, 'pending');
 
 	void (async () => {
-		const state = await getAvailability().catch(() => null);
-		if (!state || !state.enabled) {
-			cache.set(absPath, null);
-			notifyPath(absPath);
-			return;
-		}
+		// Always try the persisted cache first — independent of AI availability —
+		// so we never re-spend AI tokens for a file whose path & content (mtime)
+		// haven't changed since we last labeled it.
 		try {
 			const existing = await main.getFileLabel(absPath);
 			if (existing) {
@@ -145,7 +142,15 @@ export function requestLabel(absPath: string, isFolder = false): void {
 				return;
 			}
 		} catch {
-			// fall through to regenerate
+			// fall through; we'll decide below whether to regenerate
+		}
+
+		// Cache miss → only invoke AI if a provider is actually available.
+		const state = await getAvailability().catch(() => null);
+		if (!state || !state.enabled) {
+			cache.set(absPath, null);
+			notifyPath(absPath);
+			return;
 		}
 		notifyPath(absPath);
 		scheduleRegenerate(absPath);
