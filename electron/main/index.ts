@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions } fr
 import { join } from 'node:path'
 import { mainRelay } from './ipcMethods';
 import { setUpAppDir } from "./fs";
+import { closeDb } from './rag/db';
+import { bootstrap as bootstrapRag } from './rag/indexer';
 
 if (process.env.KARABINER_DEBUG_PORT) {
 	const port = process.env.KARABINER_DEBUG_PORT;
@@ -155,7 +157,11 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
 	await setUpAppDir();
-	
+
+	bootstrapRag().catch((err) => {
+		console.error('rag bootstrap failed:', err);
+	});
+
 	mainRelay.attach(ipcMain);
 
 	buildAppMenu();
@@ -167,6 +173,10 @@ app.whenReady().then(async () => {
 			void createWindow()
 		}
 	})
+});
+
+app.on('before-quit', () => {
+	void closeDb();
 });
 
 app.on('window-all-closed', () => {

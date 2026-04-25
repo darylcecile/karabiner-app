@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { main } from '../../relay';
 import { cn } from '@/shared/utils';
 import { Separator } from '../ui/separator';
+import { Switch } from '../ui/switch';
+import { Spinner } from '../ui/spinner';
+import { useRagStatus } from '@/renderer/hooks/useRagStatus';
 
 type ProviderId = 'none' | 'auto' | 'claude' | 'copilot';
 
@@ -134,6 +137,127 @@ export function AIPane() {
 
 			<div className="text-xs text-foreground/60">
 				Active: <span className="text-foreground/80">{activeName(value, availability)}</span>
+			</div>
+
+			<Separator />
+
+			<IndexingSection />
+		</div>
+	);
+}
+
+function stateLabel(state: string): string {
+	switch (state) {
+		case 'idle': return 'Idle';
+		case 'loading-model': return 'Loading model…';
+		case 'indexing': return 'Indexing…';
+		case 'ready': return 'Ready';
+		case 'error': return 'Error';
+		default: return state;
+	}
+}
+
+function IndexingSection() {
+	const { status, start } = useRagStatus();
+	const [autoIndex, setAutoIndex] = useState<boolean>(true);
+	const [autoLoading, setAutoLoading] = useState(true);
+
+	useEffect(() => {
+		let cancelled = false;
+		(main as any).ragGetAutoIndex().then((v: boolean) => {
+			if (!cancelled) setAutoIndex(Boolean(v));
+		}).catch(() => {}).finally(() => {
+			if (!cancelled) setAutoLoading(false);
+		});
+		return () => { cancelled = true; };
+	}, []);
+
+	async function toggleAutoIndex(next: boolean) {
+		setAutoIndex(next);
+		try {
+			await (main as any).ragSetAutoIndex(next);
+		} catch {
+			// keep optimistic state
+		}
+	}
+
+	const isIndexing = status.state === 'indexing' || status.state === 'loading-model';
+	const pct = status.total > 0
+		? Math.min(100, Math.max(0, (status.indexed / status.total) * 100))
+		: 0;
+
+	return (
+		<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-1">
+				<h2 className="text-base font-semibold">Indexing</h2>
+				<p className="text-sm text-foreground/60">
+					Builds a local search index over your notes for fast retrieval.
+				</p>
+			</div>
+
+			<div className="flex items-center justify-between gap-3 rounded-md px-3 py-2.5 hover:bg-foreground/5">
+				<div className="flex flex-col gap-0.5">
+					<span className="text-sm font-medium">Auto-index on launch</span>
+					<span className="text-xs text-foreground/60">
+						Automatically build the index when the app starts.
+					</span>
+				</div>
+				<Switch
+					checked={autoIndex}
+					onCheckedChange={toggleAutoIndex}
+					disabled={autoLoading}
+				/>
+			</div>
+
+			<div className="flex flex-col gap-2 rounded-md px-3 py-2.5 border border-foreground/10">
+				<div className="flex items-center justify-between gap-2">
+					<div className="flex items-center gap-2 text-sm">
+						{isIndexing && <Spinner className="size-3.5" />}
+						{status.state === 'ready' && (
+							<span className="inline-block size-2 rounded-full bg-emerald-500" aria-hidden />
+						)}
+						{status.state === 'error' && (
+							<span className="inline-block size-2 rounded-full bg-red-500" aria-hidden />
+						)}
+						<span className="font-medium">{stateLabel(status.state)}</span>
+						{status.state === 'indexing' && (
+							<span className="tabular-nums text-foreground/60">
+								{status.indexed} / {status.total}
+							</span>
+						)}
+					</div>
+					<button
+						type="button"
+						onClick={start}
+						disabled={isIndexing}
+						className={cn(
+							'rounded-md border border-foreground/15 px-2.5 py-1 text-xs',
+							'hover:bg-foreground/5 transition-colors',
+							isIndexing && 'opacity-50 cursor-not-allowed',
+						)}
+					>
+						Reindex now
+					</button>
+				</div>
+
+				{isIndexing && (
+					<div className="h-1 w-full overflow-hidden rounded-full bg-foreground/10">
+						<div
+							className="h-full bg-foreground/50 transition-[width] duration-200"
+							style={{ width: `${pct}%` }}
+						/>
+					</div>
+				)}
+
+				{status.state === 'error' && status.errorMessage && (
+					<p className="text-xs text-red-500">{status.errorMessage}</p>
+				)}
+
+				{status.lastRunAt ? (
+					<p className="text-xs text-foreground/60">
+						Last indexed: <span className="text-foreground/80">{new Date(status.lastRunAt).toLocaleString()}</span>
+					</p>
+				) : null}
 			</div>
 		</div>
 	);

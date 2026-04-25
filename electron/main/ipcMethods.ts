@@ -8,6 +8,8 @@ import { isBinaryFile } from '@/main/files';
 import { getAIAvailability, getActiveProvider } from '@/main/ai/resolver';
 import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
+import type { RagProgress } from '@/shared/ragTypes';
+import * as ragIndexer from '@/main/rag/indexer';
 
 
 function resolvePath(p: string): string {
@@ -157,6 +159,40 @@ export const mainRelay = createMainRelay({
 			console.log('Unknown sync query:', propertyName);
 			return 'unknown';
 		}),
+		async ragGetStatus(): Promise<RagProgress> {
+			return ragIndexer.getStatus();
+		},
+		async ragStartIndexing(): Promise<void> {
+			void ragIndexer.startFullIndex().catch((err) => {
+				console.error('ragStartIndexing failed:', err);
+			});
+		},
+		async ragStopIndexing(): Promise<void> {
+			ragIndexer.stopIndexing();
+		},
+		async ragSetAutoIndex(enabled: boolean): Promise<void> {
+			setPreferences('rag.autoIndex', enabled);
+			if (enabled) {
+				void ragIndexer.startFullIndex().catch((err) => {
+					console.error('ragSetAutoIndex startFullIndex failed:', err);
+				});
+				void ragIndexer.startWatcher().catch((err) => {
+					console.error('ragSetAutoIndex startWatcher failed:', err);
+				});
+			} else {
+				ragIndexer.stopIndexing();
+				void ragIndexer.stopWatcher().catch((err) => {
+					console.error('ragSetAutoIndex stopWatcher failed:', err);
+				});
+			}
+		},
+		async ragGetAutoIndex(): Promise<boolean> {
+			return getPreferences('rag.autoIndex') ?? true;
+		},
+		async ragSearch(query: string, opts?: { limit?: number }) {
+			const { search } = await import('@/main/rag/search');
+			return await search(query, opts);
+		},
 	},
 });
 

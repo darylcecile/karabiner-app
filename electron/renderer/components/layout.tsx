@@ -13,6 +13,7 @@ import { Editor } from '@/renderer/components/editor';
 import { atom, useAtom } from 'jotai';
 import { ScrollArea, ScrollBar } from './ui/scroll-area';
 import { ContentScrollArea } from '@/renderer/components/workbench/ContentScrollArea';
+import { IndexingStatusFooter } from '@/renderer/components/workbench/IndexingStatusFooter';
 import { usePrefersColorScheme } from '../hooks/usePrefersColorScheme';
 import { cn } from '@/shared/utils';
 import { BlockNoteEditor } from '@blocknote/core';
@@ -66,19 +67,23 @@ export function RootLayout(props: PropsWithChildren) {
 							topFadeHeight={56}
 							bottomFadeHeight={40}
 							footer={
-								editor ? (
-									<div
-										className="text-2xs font-medium absolute right-4 left-4 bottom-2 text-foreground/50 flex items-center justify-between"
-									>
-										{/* status (e.g. 'indexing...') */}
-										<div>
-											{editor.isIndexing ? "Indexing..." : editor.isSaving ? "Saving..." : null}
-										</div>
+								<>
+									<IndexingStatusFooter />
+									{editor ? (
+										<div
+											className="text-2xs font-medium absolute right-4 left-4 bottom-2 text-foreground/50 flex items-center justify-between"
+										>
+											{/* status (e.g. 'indexing...')
+											<div>
+												{editor.isIndexing ? "Indexing..." : editor.isSaving ? "Saving..." : null}
+											</div> */}
+											<div />
 
-										{/* document state (counts) */}
-										<div>{getContentCounterFromEditor(editor)}</div>
-									</div>
-								) : null
+											{/* document state (counts) */}
+											<div>{getContentCounterFromEditor(editor)}</div>
+										</div>
+									) : null}
+								</>
 							}
 						>
 							<Editor />

@@ -15,6 +15,9 @@ const PreferencesSchema = z.object({
 	ai: z.object({
 		provider: z.enum(['none', 'auto', 'claude', 'copilot']).default('auto'),
 	}).default({ provider: 'auto' }),
+	rag: z.object({
+		autoIndex: z.boolean().default(true),
+	}).default({ autoIndex: true }),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
@@ -22,6 +25,7 @@ export type Preferences = z.infer<typeof PreferencesSchema>;
 const defaultPreferences:Preferences = {
 	customizations: [],
 	ai: { provider: 'auto' },
+	rag: { autoIndex: true },
 };
 
 let preferencesCache: Preferences | null = null;
