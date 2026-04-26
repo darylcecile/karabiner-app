@@ -15,8 +15,16 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "Daryl Cecile",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darylcecile/karabiner-app.git"
+  },
+  "homepage": "https://github.com/darylcecile/karabiner-app#readme",
+  "bugs": {
+    "url": "https://github.com/darylcecile/karabiner-app/issues"
+  },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",
     "@ai-sdk/react": "^3.0.170",

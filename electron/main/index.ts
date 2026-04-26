@@ -13,6 +13,8 @@ import { handleChatRequest } from './ai/chat/protocol-handler';
 import { handleEditorAIRequest } from './ai/editor/protocol-handler';
 import { startVaultWatcher, stopVaultWatcher } from './vaultWatcher';
 
+app.setName('Karabiner');
+
 // Register the asset protocol BEFORE app is ready so the renderer can use
 // `karabiner-file://<absolute-path>` URLs in <img>, <video>, etc.
 protocol.registerSchemesAsPrivileged([
@@ -97,7 +99,7 @@ function openSettingsWindow() {
 		fullscreenable: false,
 		titleBarStyle: 'hiddenInset',
 		vibrancy: 'sidebar',
-		title: 'Settings',
+		title: 'Karabiner — Settings',
 		webPreferences: {
 			preload: join(__dirname, '../preload/index.js'),
 			contextIsolation: true,
