@@ -9,7 +9,7 @@ export function TreeAccordion(props: PropsWithChildren<{ label: string, defaultO
 	const toggle = () => setIsOpen((open) => !open);
 
 	return (
-		<div className={"flex flex-col"}>
+		<div className={"flex flex-col gap-0.5"}>
 			<button 
 				className="text-foreground/45 text-xs flex items-center gap-1 px-2 font-semibold"
 				onClick={toggle}

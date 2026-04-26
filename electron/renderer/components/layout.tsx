@@ -73,11 +73,11 @@ export function RootLayout(props: PropsWithChildren) {
 						<Action icon={!collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
 					</ActionBar>
 					<div className="p-2 max-h-[calc(100vh-34px)] h-full overflow-y-auto flex flex-col gap-3">
+						<TreeAccordion label="Recent" defaultOpen>
+							<RecentFiles />
+						</TreeAccordion>
 						<TreeAccordion label="Collections" className='flex-1' defaultOpen>
 							<FileTree />
-						</TreeAccordion>
-						<TreeAccordion label="Recent">
-							<RecentFiles />
 						</TreeAccordion>
 					</div>
 				</Allotment.Pane>
