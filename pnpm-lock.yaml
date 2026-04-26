@@ -165,6 +165,10 @@ importers:
       vite:
         specifier: ^7.3.2
         version: 7.3.2(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
+    optionalDependencies:
+      apple-foundation-models:
+        specifier: ^0.0.1
+        version: 0.0.1
 
 packages:
 
@@ -2508,6 +2512,11 @@ packages:
     peerDependencies:
       dmg-builder: 25.1.8
       electron-builder-squirrel-windows: 25.1.8
+
+  apple-foundation-models@0.0.1:
+    resolution: {integrity: sha512-bvEcCAo+gCpJyz/jhUK1MOdUQxBr+ZQDw10Nfb5Bn+5E10oYgQTQnXqtUNgB34Nj+JWVmq2fItEYQr9SVHVkYw==}
+    engines: {node: '>=18.0.0'}
+    os: [darwin]
 
   aproba@2.1.0:
     resolution: {integrity: sha512-tLIEcj5GuR2RSTnxNKdkK0dJ/GrC7P38sUkiDmDuHfsHmbagTFAxDVIBltoklXEVIQ/f14IL8IMJ5pn9Hez1Ew==}
@@ -8049,6 +8058,9 @@ snapshots:
     transitivePeerDependencies:
       - bluebird
       - supports-color
+
+  apple-foundation-models@0.0.1:
+    optional: true
 
   aproba@2.1.0: {}
 

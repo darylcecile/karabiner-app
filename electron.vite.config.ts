@@ -13,7 +13,7 @@ export default defineConfig({
 				input: {
 					index: resolve(rootDir, 'electron/main/index.ts'),
 				},
-				external: ['@xenova/transformers', '@electric-sql/pglite', 'chokidar'],
+				external: ['@xenova/transformers', '@electric-sql/pglite', 'chokidar', 'apple-foundation-models'],
 				treeshake: 'smallest'
 			},
 		},

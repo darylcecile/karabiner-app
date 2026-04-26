@@ -20,6 +20,7 @@ asarUnpack:
   - node_modules/sharp/**
   - node_modules/@img/**
   - node_modules/onnxruntime-node/**
+  - node_modules/apple-foundation-models/**
 mac:
   category: public.app-category.productivity
   target:

@@ -18,12 +18,13 @@ type AvailabilitySnapshot = {
 	copilot: boolean;
 	openai: boolean;
 	ollama: boolean;
-	active: 'none' | 'claude' | 'copilot' | 'openai' | 'ollama';
+	apple: boolean;
+	active: 'none' | 'claude' | 'copilot' | 'openai' | 'ollama' | 'apple';
 };
 
 type AvailabilityState = {
 	availability: AvailabilitySnapshot;
-	provider: 'none' | 'auto' | 'claude' | 'copilot' | 'openai' | 'ollama';
+	provider: 'none' | 'auto' | 'claude' | 'copilot' | 'openai' | 'ollama' | 'apple';
 	enabled: boolean;
 	labelGenerationEnabled: boolean;
 	fetchedAt: number;
@@ -85,19 +86,19 @@ function isAvailabilityFresh(state: AvailabilityState | null): state is Availabi
 async function fetchAvailability(): Promise<AvailabilityState> {
 	if (availabilityInflight) return availabilityInflight;
 	availabilityInflight = (async () => {
-		let availability: AvailabilitySnapshot = { claude: false, copilot: false, openai: false, ollama: false, active: 'none' };
+		let availability: AvailabilitySnapshot = { claude: false, copilot: false, openai: false, ollama: false, apple: false, active: 'none' };
 		let provider: AvailabilityState['provider'] = 'none';
 		let labelGenerationEnabled = true;
 		try {
 			availability = await main.aiAvailability();
 		} catch {
-			availability = { claude: false, copilot: false, openai: false, ollama: false, active: 'none' };
+			availability = { claude: false, copilot: false, openai: false, ollama: false, apple: false, active: 'none' };
 		}
 		try {
 			const raw = await main.preferences('ai.provider');
 			if (
 				raw === 'none' || raw === 'auto' || raw === 'claude' ||
-				raw === 'copilot' || raw === 'openai' || raw === 'ollama'
+				raw === 'copilot' || raw === 'openai' || raw === 'ollama' || raw === 'apple'
 			) {
 				provider = raw;
 			}

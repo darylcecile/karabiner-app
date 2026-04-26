@@ -7,14 +7,17 @@ import { Spinner } from '../ui/spinner';
 import { Input } from '../ui/input';
 import { useRagStatus } from '@/renderer/hooks/useRagStatus';
 
-type ProviderId = 'none' | 'auto' | 'claude' | 'copilot' | 'openai' | 'ollama';
+type ProviderId = 'none' | 'auto' | 'claude' | 'copilot' | 'openai' | 'ollama' | 'apple';
 
 type Availability = {
 	claude: boolean;
 	copilot: boolean;
 	openai: boolean;
 	ollama: boolean;
+	apple: boolean;
 };
+
+const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent || '');
 
 type Option = {
 	id: ProviderId;
@@ -26,6 +29,16 @@ type Option = {
 const OPTIONS: Option[] = [
 	{ id: 'none', label: 'None', description: "Don't use AI" },
 	{ id: 'auto', label: 'Automatic', description: 'Use the first available provider' },
+	...(IS_MAC
+		? ([
+				{
+					id: 'apple',
+					label: 'Apple Intelligence',
+					description: 'On-device Foundation Models (macOS 26+)',
+					requires: 'apple',
+				},
+		  ] as Option[])
+		: []),
 	{ id: 'claude', label: 'Claude (CLI)', description: 'Use the locally installed Claude CLI', requires: 'claude' },
 	{ id: 'copilot', label: 'Copilot SDK', description: 'Use the GitHub Copilot SDK', requires: 'copilot' },
 	{ id: 'openai', label: 'OpenAI (BYOK)', description: 'Bring your own OpenAI-compatible API key', requires: 'openai' },
@@ -38,7 +51,9 @@ function activeName(value: ProviderId, availability: Availability | null): strin
 	if (value === 'copilot') return 'Copilot SDK';
 	if (value === 'openai') return 'OpenAI (BYOK)';
 	if (value === 'ollama') return 'Ollama (local)';
+	if (value === 'apple') return 'Apple Intelligence';
 	if (value === 'auto') {
+		if (availability?.apple) return 'Automatic — Apple Intelligence';
 		if (availability?.claude) return 'Automatic — Claude (CLI)';
 		if (availability?.copilot) return 'Automatic — Copilot SDK';
 		if (availability?.ollama) return 'Automatic — Ollama (local)';
@@ -48,7 +63,7 @@ function activeName(value: ProviderId, availability: Availability | null): strin
 	return value;
 }
 
-const EMPTY_AVAILABILITY: Availability = { claude: false, copilot: false, openai: false, ollama: false };
+const EMPTY_AVAILABILITY: Availability = { claude: false, copilot: false, openai: false, ollama: false, apple: false };
 
 export function AIPane() {
 	const [availability, setAvailability] = useState<Availability | null>(null);
@@ -94,7 +109,7 @@ export function AIPane() {
 	}
 
 	return (
-		<div className="flex flex-col gap-4">
+		<div className="flex flex-col gap-4 pb-4">
 			<div className="flex flex-col gap-1">
 				<h2 className="text-base font-semibold">AI</h2>
 				<p className="text-sm text-foreground/60">
@@ -416,7 +431,7 @@ function AIFeaturesSection({
 		provider !== 'none' &&
 		Boolean(
 			availability &&
-				(availability.claude || availability.copilot || availability.openai || availability.ollama),
+				(availability.claude || availability.copilot || availability.openai || availability.ollama || availability.apple),
 		);
 
 	const [labelGen, setLabelGen] = useState<boolean>(true);
@@ -581,7 +596,7 @@ function AskModeSection({
 		provider !== 'none' &&
 		Boolean(
 			availability &&
-				(availability.claude || availability.copilot || availability.openai || availability.ollama),
+				(availability.claude || availability.copilot || availability.openai || availability.ollama || availability.apple),
 		);
 
 	const [prefs, setPrefs] = useState<AskModePrefs>({

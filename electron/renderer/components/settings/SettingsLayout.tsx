@@ -5,6 +5,7 @@ import { cn } from '@/shared/utils';
 import { Separator } from '../ui/separator';
 import { GeneralPane } from './GeneralPane';
 import { AIPane } from './AIPane';
+import { CustomScrollPanel } from '../ui/custom-scroll-panel';
 
 type SectionId = 'general' | 'ai';
 
@@ -54,12 +55,12 @@ export function SettingsLayout() {
 				</nav>
 			</aside>
 			<Separator orientation="vertical" />
-			<main className="flex-1 overflow-y-auto pt-8">
-				<div className="p-6">
+			<CustomScrollPanel className="flex-1 overflow-y-auto pt-6" thumbWidth={6} scrollbarTopOffset={8} scrollbarBottomOffset={8}>
+				<div className="px-6">
 					{active === 'general' && <GeneralPane />}
 					{active === 'ai' && <AIPane />}
 				</div>
-			</main>
+			</CustomScrollPanel>
 		</div>
 	);
 }

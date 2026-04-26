@@ -13,7 +13,7 @@ const PreferencesSchema = z.object({
 		tint: z.string().optional(),
 	})),
 	ai: z.object({
-		provider: z.enum(['none', 'auto', 'claude', 'copilot', 'openai', 'ollama']).default('none'),
+		provider: z.enum(['none', 'auto', 'claude', 'copilot', 'openai', 'ollama', 'apple']).default('none'),
 		labelGeneration: z.boolean().default(true),
 		searchEnabled: z.boolean().default(true),
 		askMode: z.object({

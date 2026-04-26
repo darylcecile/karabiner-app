@@ -3,16 +3,18 @@ import { ClaudeCLIProvider } from "@/main/ai/claude";
 import { CopilotAIProvider } from "@/main/ai/copilot";
 import { OpenAIProvider } from "@/main/ai/openai";
 import { OllamaProvider } from "@/main/ai/ollama";
+import { AppleFoundationModelsProvider } from "@/main/ai/apple";
 import { getPreferences } from "@/main/preferences";
 
-type ActiveKind = "none" | "claude" | "copilot" | "openai" | "ollama";
-type ProviderPref = "none" | "auto" | "claude" | "copilot" | "openai" | "ollama";
+type ActiveKind = "none" | "claude" | "copilot" | "openai" | "ollama" | "apple";
+type ProviderPref = "none" | "auto" | "claude" | "copilot" | "openai" | "ollama" | "apple";
 
 export type AIAvailability = {
 	claude: boolean;
 	copilot: boolean;
 	openai: boolean;
 	ollama: boolean;
+	apple: boolean;
 	active: ActiveKind;
 };
 
@@ -20,21 +22,25 @@ let claudeInstance: ClaudeCLIProvider | null = null;
 let copilotInstance: CopilotAIProvider | null = null;
 let openaiInstance: OpenAIProvider | null = null;
 let ollamaInstance: OllamaProvider | null = null;
+let appleInstance: AppleFoundationModelsProvider | null = null;
 
-let availabilityCache: { claude: boolean; copilot: boolean; openai: boolean; ollama: boolean } | null = null;
-let availabilityPromise: Promise<{ claude: boolean; copilot: boolean; openai: boolean; ollama: boolean }> | null = null;
+type AvailabilityShape = { claude: boolean; copilot: boolean; openai: boolean; ollama: boolean; apple: boolean };
 
-async function detectAvailability() {
+let availabilityCache: AvailabilityShape | null = null;
+let availabilityPromise: Promise<AvailabilityShape> | null = null;
+
+async function detectAvailability(): Promise<AvailabilityShape> {
 	if (availabilityCache) return availabilityCache;
 	if (availabilityPromise) return availabilityPromise;
 	availabilityPromise = (async () => {
-		const [claude, copilot, openai, ollama] = await Promise.all([
+		const [claude, copilot, openai, ollama, apple] = await Promise.all([
 			ClaudeCLIProvider.isAvailable().catch(() => false),
 			CopilotAIProvider.isAvailable().catch(() => false),
 			OpenAIProvider.isAvailable().catch(() => false),
 			OllamaProvider.isAvailable().catch(() => false),
+			AppleFoundationModelsProvider.isAvailable().catch(() => false),
 		]);
-		availabilityCache = { claude, copilot, openai, ollama };
+		availabilityCache = { claude, copilot, openai, ollama, apple };
 		return availabilityCache;
 	})();
 	return availabilityPromise;
@@ -60,6 +66,11 @@ function getOllama(): OllamaProvider {
 	return ollamaInstance;
 }
 
+function getApple(): AppleFoundationModelsProvider {
+	if (!appleInstance) appleInstance = new AppleFoundationModelsProvider();
+	return appleInstance;
+}
+
 function getProviderPreference(): ProviderPref {
 	try {
 		const value = getPreferences("ai.provider");
@@ -69,7 +80,8 @@ function getProviderPreference(): ProviderPref {
 			value === "claude" ||
 			value === "copilot" ||
 			value === "openai" ||
-			value === "ollama"
+			value === "ollama" ||
+			value === "apple"
 		) {
 			return value;
 		}
@@ -105,7 +117,13 @@ async function resolveActive(): Promise<{ kind: ActiveKind; provider: AIProvider
 			? { kind: "ollama", provider: getOllama() }
 			: { kind: "none", provider: null };
 	}
-	// auto — preference order: local CLIs first, hosted second.
+	if (pref === "apple") {
+		return availability.apple
+			? { kind: "apple", provider: getApple() }
+			: { kind: "none", provider: null };
+	}
+	// auto — preference order: on-device first, then local CLIs, then hosted.
+	if (availability.apple) return { kind: "apple", provider: getApple() };
 	if (availability.claude) return { kind: "claude", provider: getClaude() };
 	if (availability.copilot) return { kind: "copilot", provider: getCopilot() };
 	if (availability.ollama) return { kind: "ollama", provider: getOllama() };
