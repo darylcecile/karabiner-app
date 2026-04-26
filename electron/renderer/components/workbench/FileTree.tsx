@@ -6,13 +6,12 @@ import { TreeNode } from '@/renderer/hooks/useTree';
 import { getCachedLabel, requestLabel, subscribeAllLabels } from '@/renderer/hooks/useFileLabel';
 import {
 	Tree,
-	TreeMenuItem,
-	TreeMenuSeparator,
-	type TreeContextMenuContext,
+	type TreeContextMenuRequest,
 	type TreeDragAndDropProps,
 	type TreeHandle,
 	type TreeRenamingProps,
 } from '@/renderer/components/tree';
+import { main } from '@/renderer/relay';
 
 const TREE_SEP = '/';
 
@@ -336,50 +335,62 @@ export function FileTree() {
 		}
 	}, [basenameOfRel, inputController, relToAbs]);
 
-	const renderContextMenu = useCallback((ctx: TreeContextMenuContext) => {
-		if (ctx.kind === 'root') {
-			return (
-				<>
-					<TreeMenuItem onSelect={() => { void promptCreateFile(null); }}>
-						New file
-					</TreeMenuItem>
-					<TreeMenuItem onSelect={() => { void promptCreateFolder(null); }}>
-						New folder
-					</TreeMenuItem>
-				</>
-			);
+	const handleContextMenuRequest = useCallback(async (req: TreeContextMenuRequest) => {
+		const kind = req.kind;
+		const rel = req.path;
+		const abs = rel ? relToAbs(rel) : null;
+		const res = await main.showTreeContextMenu({ kind, path: abs ?? null });
+		const action = res?.action;
+		if (!action) return;
+		switch (action) {
+			case 'newFile': {
+				const isFolder = kind === 'folder';
+				const isRoot = kind === 'root';
+				const parentRel = isRoot
+					? null
+					: isFolder
+						? rel
+						: rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/') + 1) : null;
+				void promptCreateFile(parentRel);
+				return;
+			}
+			case 'newFolder': {
+				const isFolder = kind === 'folder';
+				const isRoot = kind === 'root';
+				const parentRel = isRoot
+					? null
+					: isFolder
+						? rel
+						: rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/') + 1) : null;
+				void promptCreateFolder(parentRel);
+				return;
+			}
+			case 'rename': {
+				if (!rel) return;
+				const handle = treeHandleRef.current;
+				if (!handle) return;
+				requestAnimationFrame(() => { handle.startRenaming(rel); });
+				return;
+			}
+			case 'delete': {
+				if (!rel) return;
+				void promptDelete(rel);
+				return;
+			}
+			case 'revealInFinder': {
+				if (!abs) return;
+				try {
+					const result = await main.revealInFinder(abs);
+					if ('error' in result && result.error) {
+						toast.error(`Couldn't reveal in Finder: ${result.error}`);
+					}
+				} catch (err) {
+					toast.error(err instanceof Error ? err.message : String(err));
+				}
+				return;
+			}
 		}
-		const path = ctx.path!;
-		const isFolder = ctx.kind === 'folder';
-		const parentRelForCreate = isFolder ? path : (path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : null);
-		return (
-			<>
-				<TreeMenuItem onSelect={() => { void promptCreateFile(parentRelForCreate); }}>
-					New file
-				</TreeMenuItem>
-				{isFolder && (
-					<TreeMenuItem onSelect={() => { void promptCreateFolder(parentRelForCreate); }}>
-						New folder
-					</TreeMenuItem>
-				)}
-				<TreeMenuSeparator />
-				<TreeMenuItem
-					onSelect={() => {
-						const handle = treeHandleRef.current;
-						if (!handle) return;
-						requestAnimationFrame(() => {
-							handle.startRenaming(path);
-						});
-					}}
-				>
-					Rename
-				</TreeMenuItem>
-				<TreeMenuItem variant="destructive" onSelect={() => { void promptDelete(path); }}>
-					Delete
-				</TreeMenuItem>
-			</>
-		);
-	}, [promptCreateFile, promptCreateFolder, promptDelete]);
+	}, [promptCreateFile, promptCreateFolder, promptDelete, relToAbs]);
 
 	return (
 		<>
@@ -394,7 +405,8 @@ export function FileTree() {
 				renderIcon={renderIcon}
 				renaming={renamingProps}
 				dragAndDrop={dragAndDropProps}
-				renderContextMenu={renderContextMenu}
+				renderContextMenu={undefined}
+				onContextMenuRequest={handleContextMenuRequest}
 				modelRef={treeHandleRef}
 				aria-label="Files"
 				style={{ minHeight: 320 }}

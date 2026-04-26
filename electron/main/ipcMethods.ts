@@ -20,6 +20,7 @@ import { CanvasDataSchema, parseCanvas, type CanvasData } from '@/shared/canvasT
 import * as ragIndexer from '@/main/rag/indexer';
 import { showSearch, hideSearch, toggleSearch } from '@/main/searchWindow';
 import { getMainWindow } from '@/main/index';
+import { showFileTreeContextMenu, type FileTreeMenuPayload } from '@/main/contextMenu';
 
 
 function resolvePath(p: string): string {
@@ -394,6 +395,19 @@ export const mainRelay = createMainRelay({
 			mw.focus();
 			mw.webContents.send('search:open-file', { path: absPath });
 			return true;
+		},
+		async showTreeContextMenu(payload: FileTreeMenuPayload) {
+			const mw = getMainWindow();
+			if (!mw || mw.isDestroyed()) return { action: null };
+			return await showFileTreeContextMenu(payload, mw);
+		},
+		async revealInFinder(absPath: string) {
+			try {
+				shell.showItemInFolder(absPath);
+				return { ok: true as const };
+			} catch (err) {
+				return { error: err instanceof Error ? err.message : String(err) };
+			}
 		},
 	},
 });

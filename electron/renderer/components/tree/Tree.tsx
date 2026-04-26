@@ -66,6 +66,13 @@ export interface TreeContextMenuContext {
 	close: () => void;
 }
 
+export interface TreeContextMenuRequest {
+	path: string | null;
+	kind: 'file' | 'folder' | 'root';
+	clientX: number;
+	clientY: number;
+}
+
 export interface TreeProps {
 	paths: readonly string[];
 	initialExpansion?: 'open' | 'closed' | readonly string[];
@@ -77,6 +84,7 @@ export interface TreeProps {
 	renderDecoration?: (ctx: TreeDecorationContext) => ReactNode | null;
 	renderIcon?: (ctx: TreeIconContext) => ReactNode | null;
 	renderContextMenu?: (ctx: TreeContextMenuContext) => ReactNode;
+	onContextMenuRequest?: (req: TreeContextMenuRequest) => void;
 	renaming?: TreeRenamingProps;
 	dragAndDrop?: TreeDragAndDropProps;
 	itemHeight?: number;
@@ -132,6 +140,7 @@ export function Tree(props: TreeProps) {
 		renderDecoration,
 		renderIcon,
 		renderContextMenu,
+		onContextMenuRequest,
 		renaming,
 		dragAndDrop,
 		itemHeight = DEFAULT_ITEM_HEIGHT,
@@ -675,25 +684,33 @@ export function Tree(props: TreeProps) {
 
 	const handleContextMenu = useCallback(
 		(path: string, kind: TreeKind, e: React.MouseEvent) => {
-			if (!renderContextMenu) return;
+			if (!renderContextMenu && !onContextMenuRequest) return;
 			e.preventDefault();
 			e.stopPropagation();
 			setFocusedPath(path);
+			if (onContextMenuRequest) {
+				onContextMenuRequest({ path, kind, clientX: e.clientX, clientY: e.clientY });
+				return;
+			}
 			setContextMenuState({ x: e.clientX, y: e.clientY, path, kind });
 		},
-		[renderContextMenu],
+		[renderContextMenu, onContextMenuRequest],
 	);
 
 	const handleRootContextMenu = useCallback(
 		(e: React.MouseEvent) => {
-			if (!renderContextMenu) return;
+			if (!renderContextMenu && !onContextMenuRequest) return;
 			// Ignore events that came from within a row — those are handled by handleContextMenu.
 			const target = e.target as HTMLElement | null;
 			if (target?.closest('[role="treeitem"]')) return;
 			e.preventDefault();
+			if (onContextMenuRequest) {
+				onContextMenuRequest({ path: null, kind: 'root', clientX: e.clientX, clientY: e.clientY });
+				return;
+			}
 			setContextMenuState({ x: e.clientX, y: e.clientY, path: null, kind: 'root' });
 		},
-		[renderContextMenu],
+		[renderContextMenu, onContextMenuRequest],
 	);
 
 	const closeContextMenu = useCallback(() => {
@@ -740,7 +757,7 @@ export function Tree(props: TreeProps) {
 					onDoubleClick={handleDoubleClick}
 					onChevronClick={handleChevronClick}
 					onMouseDownFocus={handleMouseDownFocus}
-					onContextMenu={renderContextMenu ? handleContextMenu : undefined}
+					onContextMenu={(renderContextMenu || onContextMenuRequest) ? handleContextMenu : undefined}
 					draggable={dragAndDrop != null}
 					dragHandlers={dragHandlers}
 					dragOver={isDragOver}
@@ -778,6 +795,7 @@ export function Tree(props: TreeProps) {
 		renderDecoration,
 		renderIcon,
 		renderContextMenu,
+		onContextMenuRequest,
 		handleClick,
 		handleDoubleClick,
 		handleChevronClick,
@@ -803,7 +821,7 @@ export function Tree(props: TreeProps) {
 			onKeyDown={onKeyDown}
 			onDragOver={dragAndDrop ? onRootDragOver : undefined}
 			onDrop={dragAndDrop ? onRootDrop : undefined}
-			onContextMenu={renderContextMenu ? handleRootContextMenu : undefined}
+			onContextMenu={(renderContextMenu || onContextMenuRequest) ? handleRootContextMenu : undefined}
 			className={cn(
 				'relative w-full h-full overflow-y-auto overflow-x-hidden',
 				'bg-transparent text-sidebar-foreground',

@@ -5,6 +5,7 @@ import { setUpAppDir } from "./fs";
 import { closeDb } from './rag/db';
 import { bootstrap as bootstrapRag } from './rag/indexer';
 import { hideSearch, toggleSearch } from './searchWindow';
+import { setupNativeEditingContextMenu } from './contextMenu';
 
 if (process.env.KARABINER_DEBUG_PORT) {
 	const port = process.env.KARABINER_DEBUG_PORT;
@@ -181,6 +182,8 @@ async function createWindow() {
 		}
 		return { action: 'deny' };
 	});
+
+	setupNativeEditingContextMenu(window);
 
 	if (process.env.ELECTRON_RENDERER_URL) {
 		await window.loadURL(process.env.ELECTRON_RENDERER_URL)
