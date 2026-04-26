@@ -53,8 +53,15 @@ export interface TreeDropEvent {
 	targetKind: 'folder' | 'root';
 }
 
+export interface TreeExternalDropEvent {
+	files: readonly File[];
+	targetPath: string | null;
+	targetKind: 'folder' | 'root';
+}
+
 export interface TreeDragAndDropProps {
 	onDrop: (event: TreeDropEvent) => void | Promise<void>;
+	onExternalDrop?: (event: TreeExternalDropEvent) => void | Promise<void>;
 	canDrag?: (path: string) => boolean;
 	canDrop?: (event: { draggedPaths: readonly string[]; targetPath: string | null }) => boolean;
 	onError?: (error: Error) => void;
@@ -380,6 +387,14 @@ export function Tree(props: TreeProps) {
 
 	const dragHandlers = useMemo<TreeRowDragHandlers | undefined>(() => {
 		if (!dragAndDrop) return undefined;
+		const isExternalDrag = (e: React.DragEvent) => {
+			const types = e.dataTransfer.types;
+			if (!types) return false;
+			for (let i = 0; i < types.length; i++) {
+				if (types[i] === 'Files') return true;
+			}
+			return false;
+		};
 		return {
 			onDragStart: (path, e) => {
 				if (renamingPathRef.current) {
@@ -409,6 +424,14 @@ export function Tree(props: TreeProps) {
 				const kind: TreeKind = path.endsWith('/') ? 'folder' : 'file';
 				const target = resolveDropTarget(path, kind);
 				const dnd = dragPropsRef.current!;
+				if (isExternalDrag(e)) {
+					if (!dnd.onExternalDrop) return;
+					e.preventDefault();
+					setDragOverTarget(target);
+					if (kind === 'folder') scheduleAutoExpand(path);
+					else clearAutoExpand();
+					return;
+				}
 				const src = draggingPath;
 				if (src && src.endsWith('/') && isInsideOrSelf(src, target)) {
 					return;
@@ -424,6 +447,14 @@ export function Tree(props: TreeProps) {
 				const kind: TreeKind = path.endsWith('/') ? 'folder' : 'file';
 				const target = resolveDropTarget(path, kind);
 				const dnd = dragPropsRef.current!;
+				if (isExternalDrag(e)) {
+					if (!dnd.onExternalDrop) return;
+					e.preventDefault();
+					e.dataTransfer.dropEffect = 'copy';
+					if (dragOverTarget !== target) setDragOverTarget(target);
+					if (kind === 'folder') scheduleAutoExpand(path);
+					return;
+				}
 				const src = draggingPath;
 				if (src && src.endsWith('/') && isInsideOrSelf(src, target)) return;
 				const draggedPaths: readonly string[] = src ? [src] : [];
@@ -444,6 +475,23 @@ export function Tree(props: TreeProps) {
 				const kind: TreeKind = path.endsWith('/') ? 'folder' : 'file';
 				const target = resolveDropTarget(path, kind);
 				const targetKind: 'folder' | 'root' = target == null ? 'root' : 'folder';
+
+				if (isExternalDrag(e) && dnd.onExternalDrop) {
+					const files: File[] = [];
+					const list = e.dataTransfer.files;
+					for (let i = 0; i < list.length; i++) files.push(list[i]);
+					setDraggingPath(null);
+					setDragOverTarget(null);
+					clearAutoExpand();
+					if (files.length === 0) return;
+					try {
+						await dnd.onExternalDrop({ files, targetPath: target, targetKind });
+					} catch (err) {
+						dnd.onError?.(err instanceof Error ? err : new Error(String(err)));
+					}
+					return;
+				}
+
 				let dragged = '';
 				try {
 					dragged = e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData('text/plain') || '';
@@ -479,6 +527,17 @@ export function Tree(props: TreeProps) {
 		(e: React.DragEvent<HTMLDivElement>) => {
 			if (!dragAndDrop) return;
 			const dnd = dragPropsRef.current!;
+			const types = e.dataTransfer.types;
+			let external = false;
+			if (types) for (let i = 0; i < types.length; i++) if (types[i] === 'Files') { external = true; break; }
+			if (external) {
+				if (!dnd.onExternalDrop) return;
+				e.preventDefault();
+				e.dataTransfer.dropEffect = 'copy';
+				if (dragOverTarget !== null) setDragOverTarget(null);
+				clearAutoExpand();
+				return;
+			}
 			const draggedPaths: readonly string[] = draggingPath ? [draggingPath] : [];
 			if (dnd.canDrop && !dnd.canDrop({ draggedPaths, targetPath: null })) return;
 			e.preventDefault();
@@ -494,6 +553,26 @@ export function Tree(props: TreeProps) {
 			if (!dragAndDrop) return;
 			e.preventDefault();
 			const dnd = dragPropsRef.current!;
+
+			const types = e.dataTransfer.types;
+			let external = false;
+			if (types) for (let i = 0; i < types.length; i++) if (types[i] === 'Files') { external = true; break; }
+			if (external && dnd.onExternalDrop) {
+				const files: File[] = [];
+				const list = e.dataTransfer.files;
+				for (let i = 0; i < list.length; i++) files.push(list[i]);
+				setDraggingPath(null);
+				setDragOverTarget(null);
+				clearAutoExpand();
+				if (files.length === 0) return;
+				try {
+					await dnd.onExternalDrop({ files, targetPath: null, targetKind: 'root' });
+				} catch (err) {
+					dnd.onError?.(err instanceof Error ? err : new Error(String(err)));
+				}
+				return;
+			}
+
 			let dragged = '';
 			try {
 				dragged = e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData('text/plain') || '';

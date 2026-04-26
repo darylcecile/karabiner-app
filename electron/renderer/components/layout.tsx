@@ -21,6 +21,7 @@ import { usePrefersColorScheme } from '../hooks/usePrefersColorScheme';
 import { cn } from '@/shared/utils';
 import { BlockNoteEditor } from '@blocknote/core';
 import { main } from '@/renderer/relay';
+import { useWindowSize } from '@/renderer/hooks/useWindowSize';
 
 const sidebarCollapsedAtom = atom(false)
 
@@ -136,8 +137,9 @@ function MainActionBarGroup() {
 	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
 	const { workspace, fs } = useWorkbench();
 	const inputController = useInputModalController();
+	const win = useWindowSize();
 
-	const maxWidth = window.innerWidth - 110;
+	const maxWidth = win.width - 110;
 
 
 	async function handleNewFile() {
@@ -182,7 +184,7 @@ function MainActionBarGroup() {
 		<>
 			<div
 				className="absolute w-full h-6 ml-auto flex flex-row items-center right-0 pl-20"
-				style={{ width: window.innerWidth }}
+				style={{ width: win.width }}
 			>
 				<Action
 					icon={!collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon}

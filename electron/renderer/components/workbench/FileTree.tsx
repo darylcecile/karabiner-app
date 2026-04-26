@@ -251,6 +251,45 @@ export function FileTree() {
 				await fsRef.current.move(srcAbs, destDirAbs);
 			}
 		},
+		onExternalDrop: async ({ files, targetPath }) => {
+			const root = rootPathRef.current;
+			if (!root) return;
+			const destDirAbs = targetPath == null ? root : relToAbs(targetPath);
+			const srcPaths: string[] = [];
+			for (const file of files) {
+				const p = window.karabinerFiles?.getPathForFile(file);
+				if (p) srcPaths.push(p);
+			}
+			if (srcPaths.length === 0) {
+				toast.error('Could not resolve dropped file paths.');
+				return;
+			}
+			// Refuse imports that originate from inside the workspace — those should be moves, not copies.
+			const externalSrcs = srcPaths.filter((p) => !(p === root || p.startsWith(root + '/')));
+			if (externalSrcs.length === 0) return;
+			try {
+				const result = await main.importPaths(externalSrcs, destDirAbs);
+				if ('error' in result && result.error) {
+					toast.error(result.error);
+					return;
+				}
+				const imported = ('imported' in result && result.imported) ? result.imported : [];
+				const errors = ('errors' in result && result.errors) ? result.errors : [];
+				for (const err of errors) {
+					toast.error(`${err.src}: ${err.error}`);
+				}
+				await fsRef.current.refreshDirectory(destDirAbs);
+				if (imported.length > 0) {
+					toast.success(
+						imported.length === 1
+							? `Imported ${imported[0].split('/').pop()}`
+							: `Imported ${imported.length} items`,
+					);
+				}
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : 'Unable to import files.');
+			}
+		},
 		canDrop: ({ draggedPaths, targetPath }) => {
 			// Disallow dropping into self / descendant for folder drags.
 			for (const src of draggedPaths) {

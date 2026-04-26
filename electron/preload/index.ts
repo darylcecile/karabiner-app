@@ -1,6 +1,16 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { MainRelayMethods } from '@/main/ipcMethods';
 import { exposeRelay } from '@karabiner/relay';
+
+contextBridge.exposeInMainWorld('karabinerFiles', {
+	getPathForFile: (file: File): string => {
+		try {
+			return webUtils.getPathForFile(file);
+		} catch {
+			return '';
+		}
+	},
+});
 
 
 exposeRelay<MainRelayMethods>(contextBridge, "mainRelay", ipcRenderer, {

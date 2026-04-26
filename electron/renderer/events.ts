@@ -7,6 +7,9 @@ declare global {
 		karabinerEvents: {
 			on: <T = unknown>(channel: string, listener: (payload: T) => void) => () => void;
 		};
+		karabinerFiles: {
+			getPathForFile: (file: File) => string;
+		};
 	}
 }
 

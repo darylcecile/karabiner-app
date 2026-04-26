@@ -12,6 +12,7 @@ export type {
 	TreeDragAndDropProps,
 	TreeContextMenuContext,
 	TreeContextMenuRequest,
+	TreeExternalDropEvent,
 	TreeKind,
 	TreeRow,
 } from './Tree';

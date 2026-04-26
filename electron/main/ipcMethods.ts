@@ -3,7 +3,7 @@ import { shell } from 'electron';
 import { activeScans, readDirectoryImpl, ReadDirectoryOptions, runScan, ScanOptions } from './fs';
 import { getConfig, readConfig, setConfig } from './config';
 import { getPreferences, setPreferences } from './preferences';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile, cp } from 'node:fs/promises';
 import path from 'node:path';
 import { isBinaryFile } from '@/main/files';
 import { getAIAvailability, getActiveProvider, clearAIAvailabilityCache } from '@/main/ai/resolver';
@@ -28,6 +28,25 @@ function resolvePath(p: string): string {
 		return path.join(process.env.HOME || process.env.USERPROFILE || "", p.slice(1));
 	}
 	return path.resolve(p);
+}
+
+async function uniqueDestName(destDir: string, baseName: string): Promise<string> {
+	const exists = async (name: string) => {
+		try {
+			await stat(path.join(destDir, name));
+			return true;
+		} catch {
+			return false;
+		}
+	};
+	if (!(await exists(baseName))) return baseName;
+	const ext = path.extname(baseName);
+	const stem = ext ? baseName.slice(0, -ext.length) : baseName;
+	for (let i = 1; i < 1000; i++) {
+		const candidate = i === 1 ? `${stem} copy${ext}` : `${stem} copy ${i}${ext}`;
+		if (!(await exists(candidate))) return candidate;
+	}
+	return `${stem}-${Date.now()}${ext}`;
 }
 
 export const mainRelay = createMainRelay({
@@ -408,6 +427,45 @@ export const mainRelay = createMainRelay({
 			} catch (err) {
 				return { error: err instanceof Error ? err.message : String(err) };
 			}
+		},
+		async importPaths(srcPaths: string[], destDirAbs: string) {
+			const dest = resolvePath(destDirAbs);
+			try {
+				const destStat = await stat(dest);
+				if (!destStat.isDirectory()) {
+					return { error: 'Destination is not a directory.' };
+				}
+			} catch {
+				return { error: 'Destination directory does not exist.' };
+			}
+
+			const imported: string[] = [];
+			const errors: { src: string; error: string }[] = [];
+
+			for (const rawSrc of srcPaths) {
+				const src = resolvePath(rawSrc);
+				if (!src) continue;
+				try {
+					const srcStat = await stat(src);
+					// Refuse to copy a directory into itself or a descendant.
+					if (srcStat.isDirectory() && (dest === src || dest.startsWith(src + path.sep))) {
+						errors.push({ src, error: 'Cannot copy a folder into itself.' });
+						continue;
+					}
+					const baseName = path.basename(src);
+					const finalName = await uniqueDestName(dest, baseName);
+					const target = path.join(dest, finalName);
+					if (srcStat.isDirectory()) {
+						await cp(src, target, { recursive: true, errorOnExist: true, force: false });
+					} else {
+						await cp(src, target, { errorOnExist: true, force: false });
+					}
+					imported.push(target);
+				} catch (err) {
+					errors.push({ src, error: err instanceof Error ? err.message : String(err) });
+				}
+			}
+			return { imported, errors };
 		},
 	},
 });
