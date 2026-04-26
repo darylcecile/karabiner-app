@@ -3,7 +3,7 @@ import { app, nativeImage, shell } from 'electron';
 import { activeScans, readDirectoryImpl, ReadDirectoryOptions, runScan, ScanOptions } from './fs';
 import { getConfig, readConfig, setConfig } from './config';
 import { getPreferences, setPreferences } from './preferences';
-import { mkdir, readFile, rename, rm, stat, writeFile, cp } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile, cp } from 'node:fs/promises';
 import path from 'node:path';
 import { isBinaryFile } from '@/main/files';
 import { getAIAvailability, getActiveProvider, clearAIAvailabilityCache } from '@/main/ai/resolver';
@@ -523,6 +523,48 @@ export const mainRelay = createMainRelay({
 				return { error: err instanceof Error ? err.message : String(err) };
 			}
 			return { absPath: target };
+		},
+		async listVaultFiles(): Promise<Array<{ path: string; relPath: string; name: string }>> {
+			const vaultRoot = path.join(process.env.HOME ?? '', '.karabiner', 'vault');
+			const MAX_ENTRIES = 2000;
+			const results: Array<{ path: string; relPath: string; name: string }> = [];
+			try {
+				try {
+					const s = await stat(vaultRoot);
+					if (!s.isDirectory()) return [];
+				} catch {
+					return [];
+				}
+				const walk = async (dir: string): Promise<boolean> => {
+					let entries;
+					try {
+						entries = await readdir(dir, { withFileTypes: true });
+					} catch (err) {
+						console.warn('listVaultFiles: readdir failed for', dir, err);
+						return true;
+					}
+					for (const entry of entries) {
+						if (entry.name.startsWith('.')) continue;
+						if (entry.isDirectory()) {
+							if (entry.name === 'node_modules' || entry.name === '.git') continue;
+							const sub = path.join(dir, entry.name);
+							const ok = await walk(sub);
+							if (!ok) return false;
+						} else if (entry.isFile()) {
+							const abs = path.join(dir, entry.name);
+							const rel = path.relative(vaultRoot, abs).split(path.sep).join('/');
+							results.push({ path: abs, relPath: rel, name: entry.name });
+							if (results.length >= MAX_ENTRIES) return false;
+						}
+					}
+					return true;
+				};
+				await walk(vaultRoot);
+				return results;
+			} catch (err) {
+				console.warn('listVaultFiles failed:', err);
+				return [];
+			}
 		},
 		getRecentFiles: syncMethod(() => getRecentFiles()),
 		addRecentFile: syncMethod((absPath: string) => addRecentFile(absPath)),

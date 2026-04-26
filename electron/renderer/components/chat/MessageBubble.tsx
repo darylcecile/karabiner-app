@@ -13,10 +13,10 @@ export function MessageBubble({ message, addToolApprovalResponse }: Props) {
 	const isUser = message.role === 'user';
 
 	return (
-		<div className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}>
+		<div className={cn('flex w-full min-w-0', isUser ? 'justify-end' : 'justify-start')}>
 			<div
 				className={cn(
-					'flex max-w-[85%] flex-col gap-2',
+					'flex min-w-0 max-w-[85%] flex-col gap-2',
 					isUser ? 'items-end' : 'items-start',
 				)}
 			>
@@ -30,14 +30,14 @@ export function MessageBubble({ message, addToolApprovalResponse }: Props) {
 							<div
 								key={key}
 								className={cn(
-									'rounded-lg border px-3 py-2 shadow-xs',
+									'min-w-0 max-w-full overflow-hidden rounded-lg border px-3 py-2 shadow-xs',
 									isUser
 										? 'border-primary/20 bg-primary/10 text-foreground'
 										: 'border-foreground/10 bg-background/60',
 								)}
 							>
 								{isUser ? (
-									<p className="text-[13px] leading-relaxed whitespace-pre-wrap">
+									<p className="text-[13px] leading-relaxed break-words whitespace-pre-wrap">
 										{text}
 									</p>
 								) : (

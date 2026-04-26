@@ -1,5 +1,4 @@
-import ReactMarkdown, { type Components } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Streamdown, type Components } from 'streamdown';
 import { cn } from '@/shared/utils';
 
 const components: Components = {
@@ -93,10 +92,8 @@ const components: Components = {
 
 export function Markdown({ children }: { children: string }) {
 	return (
-		<div className="text-[13px]">
-			<ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-				{children}
-			</ReactMarkdown>
+		<div className="min-w-0 max-w-full text-[13px] [overflow-wrap:anywhere] [&_pre]:max-w-full">
+			<Streamdown components={components}>{children}</Streamdown>
 		</div>
 	);
 }

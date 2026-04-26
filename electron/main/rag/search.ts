@@ -350,12 +350,16 @@ async function grepFallback(
 	}
 }
 
-export async function search(query: string, opts?: { limit?: number; forceAsk?: boolean }): Promise<SearchResponse> {
+export async function search(query: string, opts?: { limit?: number; forceAsk?: boolean, ignoreRag?: boolean }): Promise<SearchResponse> {
 	const trimmed = query.trim();
 	if (!trimmed) {
 		return { source: "grep", query: "", results: [], reason: "empty query" };
 	}
 	const limit = clampLimit(opts?.limit);
+
+	if (opts?.ignoreRag) {
+		return await grepFallback(trimmed, limit, "rag-ignored");
+	}
 
 	// Honor the user preference: if AI-powered semantic search is disabled, skip
 	// the vector path entirely and fall back to grep + fuzzy ranking.

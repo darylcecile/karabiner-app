@@ -9,6 +9,7 @@ import type {
 } from "@ai-sdk/provider";
 import { AIProvider } from "@/main/ai/index";
 import { AppleFoundationModelsProvider } from "@/main/ai/apple";
+import { CopilotAIProvider } from "@/main/ai/copilot";
 
 /**
  * Convert an AI SDK v2 prompt (system + user/assistant messages with parts)
@@ -98,9 +99,20 @@ export class BridgedLanguageModel implements LanguageModelV2 {
 	readonly modelId: string;
 	readonly supportedUrls: Record<string, RegExp[]> = {};
 
-	constructor(private readonly aiProvider: AIProvider, providerKind: string) {
+	constructor(
+		private readonly aiProvider: AIProvider,
+		providerKind: string,
+		private readonly chatId?: string,
+	) {
 		this.provider = `karabiner-bridge:${providerKind}`;
 		this.modelId = providerKind || "unknown";
+	}
+
+	#sessionId(): string {
+		// Prefer the chat id (stable across turns) so providers that support
+		// resumable sessions (Copilot SDK) can carry conversation context.
+		// Fall back to a random per-call id when no chat id is available.
+		return this.chatId || crypto.randomUUID();
 	}
 
 	async doGenerate(
@@ -116,7 +128,7 @@ export class BridgedLanguageModel implements LanguageModelV2 {
 		warnings: Array<LanguageModelV2CallWarning>;
 	}> {
 		const question = flattenPrompt(options.prompt);
-		const sessionId = crypto.randomUUID();
+		const sessionId = this.#sessionId();
 		const text = await this.aiProvider.askWithSession(question, sessionId);
 		return {
 			content: [{ type: "text", text }],
@@ -130,10 +142,14 @@ export class BridgedLanguageModel implements LanguageModelV2 {
 		options: LanguageModelV2CallOptions,
 	): Promise<{ stream: ReadableStream<LanguageModelV2StreamPart> }> {
 		const question = flattenPrompt(options.prompt);
-		const warnings = buildWarnings(options);
+		const isCopilot = this.aiProvider instanceof CopilotAIProvider;
+		// Copilot natively executes the host's tools via its CLI (registered on
+		// the Copilot session). Don't surface unsupported-tool warnings for it.
+		const warnings = isCopilot ? [] : buildWarnings(options);
 		const aiProvider = this.aiProvider;
 		const abortSignal = options.abortSignal;
 		const textId = crypto.randomUUID();
+		const sessionId = this.#sessionId();
 
 		const stream = new ReadableStream<LanguageModelV2StreamPart>({
 			async start(controller) {
@@ -149,16 +165,64 @@ export class BridgedLanguageModel implements LanguageModelV2 {
 							outputChars += delta.length;
 							controller.enqueue({ type: "text-delta", id: textId, delta });
 						}
+						controller.enqueue({ type: "text-end", id: textId });
+					} else if (aiProvider instanceof CopilotAIProvider) {
+						let currentTextId = textId;
+						let textOpen = true;
+						for await (const ev of aiProvider.streamAsk(question, sessionId, abortSignal)) {
+							if (abortSignal?.aborted) break;
+							if (ev.kind === "text") {
+								if (!ev.delta) continue;
+								if (!textOpen) {
+									currentTextId = crypto.randomUUID();
+									controller.enqueue({ type: "text-start", id: currentTextId });
+									textOpen = true;
+								}
+								outputChars += ev.delta.length;
+								controller.enqueue({ type: "text-delta", id: currentTextId, delta: ev.delta });
+							} else if (ev.kind === "tool-call") {
+								if (textOpen) {
+									controller.enqueue({ type: "text-end", id: currentTextId });
+									textOpen = false;
+								}
+								controller.enqueue({
+									type: "tool-input-start",
+									id: ev.id,
+									toolName: ev.name,
+									providerExecuted: true,
+								});
+								controller.enqueue({ type: "tool-input-end", id: ev.id });
+								controller.enqueue({
+									type: "tool-call",
+									toolCallId: ev.id,
+									toolName: ev.name,
+									input: safeJsonStringify(ev.input),
+									providerExecuted: true,
+								});
+							} else if (ev.kind === "tool-result") {
+								controller.enqueue({
+									type: "tool-result",
+									toolCallId: ev.id,
+									toolName: ev.name,
+									result: ev.output,
+									isError: ev.isError,
+									providerExecuted: true,
+								});
+							}
+						}
+						if (textOpen) {
+							controller.enqueue({ type: "text-end", id: currentTextId });
+							textOpen = false;
+						}
 					} else {
-						const sessionId = crypto.randomUUID();
 						const text = await aiProvider.askWithSession(question, sessionId);
 						if (text) {
 							outputChars = text.length;
 							controller.enqueue({ type: "text-delta", id: textId, delta: text });
 						}
+						controller.enqueue({ type: "text-end", id: textId });
 					}
 
-					controller.enqueue({ type: "text-end", id: textId });
 					controller.enqueue({
 						type: "finish",
 						finishReason: abortSignal?.aborted ? "other" : "stop",
@@ -207,6 +271,7 @@ function buildWarnings(options: LanguageModelV2CallOptions): Array<LanguageModel
 export function createBridgedLanguageModel(
 	provider: AIProvider,
 	providerKind: string,
+	chatId?: string,
 ): LanguageModelV2 {
-	return new BridgedLanguageModel(provider, providerKind);
+	return new BridgedLanguageModel(provider, providerKind, chatId);
 }

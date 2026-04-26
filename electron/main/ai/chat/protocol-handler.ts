@@ -36,7 +36,7 @@ const SYSTEM_PROMPT_BRIDGED = [
 	"Note: tool definitions provided by the host are not callable directly by you with this provider. If the user wants tool output, instruct them to use the matching slash command.",
 ].join("\n");
 
-type ChatRequestBody = { messages?: UIMessage[] };
+type ChatRequestBody = { id?: string; messages?: UIMessage[] };
 
 function extractText(message: UIMessage): string {
 	return message.parts
@@ -63,12 +63,17 @@ export async function handleChatRequest(request: Request): Promise<Response> {
 	if (messages.length === 0) {
 		return new Response("Missing messages", { status: 400 });
 	}
+	const chatId = typeof body.id === "string" && body.id.length > 0 ? body.id : undefined;
 
 	const availability = await getAIAvailability();
 	const activeKind = availability.active;
 
 	let model: LanguageModel;
 	let useNativeTools = false;
+	// Copilot is bridged but its CLI executes our tools server-side and we
+	// surface tool-call/tool-result stream parts. Treat it as having native
+	// tools for prompt + step-count purposes.
+	let bridgedHasProviderTools = false;
 
 	const nativeModel = await tryCreateNativeModel(activeKind);
 	if (nativeModel && providerSupportsNativeTools(activeKind)) {
@@ -81,14 +86,17 @@ export async function handleChatRequest(request: Request): Promise<Response> {
 				status: 503,
 			});
 		}
-		model = createBridgedLanguageModel(provider, activeKind);
+		model = createBridgedLanguageModel(provider, activeKind, chatId);
+		bridgedHasProviderTools = activeKind === "copilot";
 	}
 
 	const tools = buildTools();
+	const toolsAreCallable = useNativeTools || bridgedHasProviderTools;
 
-	// For bridged providers (no native tool calling), intercept slash commands
-	// on the latest user message and inline the result so the model has context.
-	if (!useNativeTools) {
+	// For bridged providers without provider-executed tools, intercept slash
+	// commands on the latest user message and inline the result so the model
+	// has context. Copilot (provider-executed) calls tools directly.
+	if (!toolsAreCallable) {
 		const lastUser = [...messages].reverse().find((m) => m.role === "user");
 		if (lastUser) {
 			const text = extractText(lastUser);
@@ -104,10 +112,10 @@ export async function handleChatRequest(request: Request): Promise<Response> {
 
 	const result = streamText({
 		model,
-		system: useNativeTools ? SYSTEM_PROMPT_NATIVE_TOOLS : SYSTEM_PROMPT_BRIDGED,
+		system: toolsAreCallable ? SYSTEM_PROMPT_NATIVE_TOOLS : SYSTEM_PROMPT_BRIDGED,
 		messages: modelMessages,
 		tools,
-		stopWhen: stepCountIs(useNativeTools ? 8 : 1),
+		stopWhen: stepCountIs(toolsAreCallable ? 8 : 1),
 	});
 
 	return result.toUIMessageStreamResponse();

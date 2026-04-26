@@ -53,7 +53,6 @@ const TOOL_META: Record<
 		needsApproval: true,
 	},
 	grep: { label: 'Grep', icon: Search01Icon, tint: 'text-violet-500' },
-	searchFiles: { label: 'Search files', icon: FolderSearchIcon, tint: 'text-emerald-500' },
 	runBash: {
 		label: 'Run bash',
 		icon: FileScriptIcon,

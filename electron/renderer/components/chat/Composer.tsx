@@ -1,4 +1,4 @@
-import { forwardRef, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Sent02Icon, StopIcon } from '@hugeicons/core-free-icons';
 import { cn } from '@/shared/utils';
@@ -15,21 +15,30 @@ type Props = {
 	placeholder?: string;
 };
 
-export const Composer = forwardRef<HTMLTextAreaElement, Props>(function Composer(
-	{ value, onChange, onSubmit, onStop, canSubmit, isStreaming, disabled, placeholder },
-	ref,
-) {
-	const internalRef = useRef<HTMLTextAreaElement | null>(null);
+const MAX_HEIGHT_PX = 200;
 
-	function setRef(el: HTMLTextAreaElement | null) {
-		internalRef.current = el;
-		if (typeof ref === 'function') ref(el);
-		else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
-	}
+export function Composer({
+	value,
+	onChange,
+	onSubmit,
+	onStop,
+	canSubmit,
+	isStreaming,
+	disabled,
+	placeholder,
+}: Props) {
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-	function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-		// Enter submits, Shift+Enter inserts a newline.
-		if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+	useEffect(() => {
+		const el = textareaRef.current;
+		if (!el) return;
+		el.style.height = 'auto';
+		const next = Math.min(el.scrollHeight, MAX_HEIGHT_PX);
+		el.style.height = `${next}px`;
+	}, [value]);
+
+	function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
 			if (canSubmit) onSubmit();
 		}
@@ -41,20 +50,18 @@ export const Composer = forwardRef<HTMLTextAreaElement, Props>(function Composer
 				className={cn(
 					'flex items-end gap-2 rounded-lg border border-foreground/15 bg-background/80 px-2 py-1.5 shadow-xs transition-colors',
 					'focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/40',
+					disabled && 'opacity-50',
 				)}
 			>
 				<textarea
-					ref={setRef}
+					ref={textareaRef}
 					value={value}
 					onChange={(e) => onChange(e.target.value)}
 					onKeyDown={handleKeyDown}
-					rows={1}
 					disabled={disabled}
 					placeholder={placeholder ?? 'Send a message…'}
-					className={cn(
-						'field-sizing-content max-h-48 min-h-[28px] flex-1 resize-none bg-transparent px-1.5 py-1 text-[13px] leading-relaxed outline-none',
-						'placeholder:text-foreground/40 disabled:cursor-not-allowed disabled:opacity-50',
-					)}
+					rows={1}
+					className="flex-1 min-h-[28px] max-h-[200px] resize-none bg-transparent px-1.5 py-1 text-[13px] leading-relaxed outline-none placeholder:text-foreground/40"
 				/>
 				{isStreaming ? (
 					<Button
@@ -80,9 +87,9 @@ export const Composer = forwardRef<HTMLTextAreaElement, Props>(function Composer
 				)}
 			</div>
 			<div className="mt-1 px-1 text-[10.5px] text-foreground/45">
-				<kbd className="font-mono">Enter</kbd> to send · {' '}
-				<kbd className="font-mono">Shift+Enter</kbd> for newline
+				<kbd className="font-mono">Cmd/Ctrl+Enter</kbd> to send ·{' '}
+				<kbd className="font-mono">Enter</kbd> for newline
 			</div>
 		</div>
 	);
-});
+}

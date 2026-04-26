@@ -214,12 +214,20 @@ export function ChatApp() {
 								/>
 							))}
 
-							{status === 'submitted' && (
-								<div className="flex items-center gap-2 text-[12px] text-foreground/50">
-									<Spinner className="size-3" />
-									<span>Thinking…</span>
-								</div>
-							)}
+							{(() => {
+								const last = messages[messages.length - 1];
+								const lastIsEmptyAssistant = last?.role === 'assistant'
+									&& !last.parts?.some((p) => p.type === 'text' && p.text.length > 0);
+								const showThinking =
+									status === 'submitted'
+									|| (status === 'streaming' && (last?.role === 'user' || lastIsEmptyAssistant));
+								return showThinking ? (
+									<div className="flex items-center gap-2 text-[12px] text-foreground/50">
+										<Spinner className="size-3" />
+										<span>Thinking…</span>
+									</div>
+								) : null;
+							})()}
 
 							{error && (
 								<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">

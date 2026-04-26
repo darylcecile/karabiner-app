@@ -205,51 +205,6 @@ const grepTool = tool({
 	},
 });
 
-const searchFilesTool = tool({
-	description:
-		"Find files in the workspace matching a glob-like pattern (substring/glob match against the workspace-relative path). Case-insensitive by default.",
-	inputSchema: z.object({
-		pattern: z.string().min(1).describe("Substring or basic glob pattern."),
-		caseSensitive: z
-			.boolean()
-			.optional()
-			.describe("Whether to match case-sensitively. Defaults to false."),
-	}),
-	execute: async ({ pattern, caseSensitive }) => {
-		try {
-			const root = getWorkspaceRoot();
-			const { readdir } = await import("node:fs/promises");
-			const re = globToRegex(pattern, caseSensitive ?? false);
-			const out: string[] = [];
-			async function walk(dir: string): Promise<void> {
-				if (out.length >= 500) return;
-				let entries: Dirent[];
-				try {
-					entries = await readdir(dir, { withFileTypes: true });
-				} catch {
-					return;
-				}
-				for (const entry of entries) {
-					if (out.length >= 500) return;
-					if (entry.name.startsWith(".")) continue;
-					if (entry.name === "node_modules") continue;
-					const child = path.join(dir, entry.name);
-					const rel = path.relative(root, child);
-					if (entry.isDirectory()) {
-						await walk(child);
-					} else if (re.test(rel) || re.test(entry.name)) {
-						out.push(rel);
-					}
-				}
-			}
-			await walk(root);
-			return { pattern, matchCount: out.length, files: out };
-		} catch (err) {
-			return { error: describeError(err) };
-		}
-	},
-});
-
 function globToRegex(glob: string, caseSensitive: boolean = false): RegExp {
 	const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 	const pattern = escaped.replace(/\*\*/g, "::DOUBLE::").replace(/\*/g, "[^/]*").replace(/::DOUBLE::/g, ".*").replace(/\?/g, ".");
@@ -296,14 +251,15 @@ const runBashTool = tool({
 
 const searchWorkspaceTool = tool({
 	description:
-		"Search the user's workspace using the same engine as the in-app search panel. This is a SEMANTIC + fuzzy search across note content (powered by vector embeddings when available, with grep/fuzzy fallback). PREFER THIS over `grep` when looking up topics, ideas or keywords by meaning rather than exact text. Returns up to 20 ranked results with snippets.",
+		"Search the user's workspace using the same engine as the in-app search panel. This is a SEMANTIC + fuzzy search across note content (powered by vector embeddings when available, with grep/fuzzy fallback). PREFER THIS over `grep` when looking up topics, ideas or keywords by meaning rather than exact text. Returns up to 20 ranked results with snippets. Use pipe syntax (`|`) in the query to search multiple keywords (e.g. `project | meeting notes`).",
 	inputSchema: z.object({
 		query: z.string().min(1).describe("Natural-language query or keywords."),
 		limit: z.number().int().positive().max(50).optional().describe("Max results (default 20)."),
+		useRag: z.boolean().optional().describe("Force use of RAG search (vector + semantic) instead of grep searches. This is way slower and should be used if non-rag search isnt returning good results."),
 	}),
-	execute: async ({ query, limit }) => {
+	execute: async ({ query, limit, useRag }) => {
 		try {
-			const response = await ragSearch(query, { limit: limit ?? 20 });
+			const response = await ragSearch(query, { limit: limit ?? 20, ignoreRag: !useRag });
 			return {
 				query: response.query,
 				source: response.source,
@@ -327,7 +283,6 @@ export function buildTools() {
 		readFile: readFileTool,
 		writeFile: writeFileTool,
 		grep: grepTool,
-		searchFiles: searchFilesTool,
 		searchWorkspace: searchWorkspaceTool,
 		runBash: runBashTool,
 	};
