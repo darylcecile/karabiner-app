@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { shell } from 'electron';
 import { activeScans, readDirectoryImpl, ReadDirectoryOptions, runScan, ScanOptions } from './fs';
 import { getConfig, readConfig, setConfig } from './config';
 import { getPreferences, setPreferences } from './preferences';
@@ -361,6 +362,25 @@ export const mainRelay = createMainRelay({
 		async ragSearch(query: string, opts?: { limit?: number; forceAsk?: boolean }) {
 			const { search } = await import('@/main/rag/search');
 			return await search(query, opts);
+		},
+		async openExternal(url: string): Promise<{ ok: true; error?: undefined } | { ok?: undefined; error: string }> {
+			try {
+				let parsed: URL;
+				try {
+					parsed = new URL(url);
+				} catch {
+					return { error: 'Invalid URL' };
+				}
+				const allowed = new Set(['http:', 'https:', 'mailto:']);
+				if (!allowed.has(parsed.protocol)) {
+					return { error: `Refused to open URL with protocol "${parsed.protocol}"` };
+				}
+				await shell.openExternal(url);
+				return { ok: true };
+			} catch (err) {
+				console.error('openExternal failed:', err);
+				return { error: err instanceof Error ? err.message : String(err) };
+			}
 		},
 		searchShow: syncMethod(() => { showSearch(); }),
 		searchHide: syncMethod(() => { hideSearch(); }),

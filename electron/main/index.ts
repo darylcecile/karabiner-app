@@ -157,6 +157,7 @@ async function createWindow() {
 			preload: join(__dirname, '../preload/index.js'),
 			contextIsolation: true,
 			nodeIntegration: false,
+			webviewTag: true,
 		},
 	})
 
@@ -164,6 +165,21 @@ async function createWindow() {
 	window.on('closed', () => {
 		if (mainWindow === window) mainWindow = null;
 		hideSearch();
+	});
+
+	// Deny popup windows. Route http(s) URLs into the in-app WebViewer via the
+	// renderer's workspace.openUrl. This catches BlockNote's link click handler
+	// (which calls window.open internally) and any other code paths that try
+	// to open a new window.
+	window.webContents.setWindowOpenHandler(({ url }) => {
+		try {
+			if (/^https?:\/\//i.test(url) && !window.isDestroyed()) {
+				window.webContents.send('workspace:open-url', { url });
+			}
+		} catch {
+			// no-op
+		}
+		return { action: 'deny' };
 	});
 
 	if (process.env.ELECTRON_RENDERER_URL) {

@@ -3,13 +3,23 @@ import { useFileTree, Tree } from '@/renderer/hooks/useTree';
 import { useConfig } from '@/renderer/hooks/useConfig';
 import { Path } from '@/shared/fsUtils';
 import { useEditorState } from '@/renderer/components/editor';
+import { getFileViewKind } from './viewKind';
+
+export type ViewKind = 'editor' | 'canvas' | 'image' | 'url' | 'none';
+
+type HistoryEntry =
+	| { kind: 'file'; path: string }
+	| { kind: 'url'; url: string };
 
 const WorkbenchContext = createContext({} as {
 	fs: Tree;
 	treeRef: React.RefObject<unknown>,
 	workspace: {
 		openInEditor: (path: string) => void,
+		openUrl: (url: string) => void,
 		openedPath?: string,
+		openedUrl?: string,
+		viewKind: ViewKind,
 		isCanvasFile: boolean,
 		isLoadingRef: React.RefObject<boolean>,
 		goBack: () => void,
@@ -23,7 +33,8 @@ const WorkbenchContext = createContext({} as {
 export function Workbench(props: PropsWithChildren) {
 	const config = useConfig();
 	const [openedPath, setOpenedPath] = useState<string | undefined>(undefined);
-	const [history, setHistory] = useState<string[]>([]);
+	const [openedUrl, setOpenedUrl] = useState<string | undefined>(undefined);
+	const [history, setHistory] = useState<HistoryEntry[]>([]);
 	const [historyIndex, setHistoryIndex] = useState<number>(-1);
 	const includeHidden = Boolean(config.getConfigValue("showHiddenFiles")) || false;
 	const treeOptions = useMemo(() => ({
@@ -43,10 +54,21 @@ export function Workbench(props: PropsWithChildren) {
 		void fs.openRoot('~/.karabiner/vault');
 	}, [fs.openRoot]);
 
-	// Loads a file into the editor without touching history. Used by both the
-	// public openInEditor (which adds to history) and the back/forward navigators.
-	const loadIntoEditor = useCallback(async (path: string) => {
-		path = Path.normalize(path);
+	// Loads a view (file or URL) without touching history. Used by both the
+	// public open* methods (which add to history) and the back/forward navigators.
+	const loadView = useCallback(async (entry: HistoryEntry): Promise<boolean> => {
+		if (entry.kind === 'url') {
+			isLoadingRef.current = true;
+			try {
+				setOpenedPath(undefined);
+				setOpenedUrl(entry.url);
+				return true;
+			} finally {
+				queueMicrotask(() => { isLoadingRef.current = false; });
+			}
+		}
+
+		const path = Path.normalize(entry.path);
 		const node = fs.getNode(path);
 		// node is only defined for paths the file tree knows about. Search results
 		// can target files outside the currently loaded tree, so a missing node
@@ -54,17 +76,17 @@ export function Workbench(props: PropsWithChildren) {
 		if (node && node.kind !== "file") {
 			return false;
 		}
-		const isCanvas = path.toLowerCase().endsWith('.canvas');
+		const viewKind = getFileViewKind(path);
 		// Set the loading flag synchronously, before any awaits, so any onChange
 		// fired during the file-load lifecycle (focus, internal BlockNote setup,
 		// or replaceBlocks) is suppressed regardless of whether openedPath has
 		// flushed yet.
 		isLoadingRef.current = true;
 		try {
+			setOpenedUrl(undefined);
 			setOpenedPath(path);
-			if (isCanvas) {
-				// Canvas files bypass BlockNote — the CanvasView component
-				// fetches its own content via IPC.
+			if (viewKind === 'canvas' || viewKind === 'image') {
+				// Dedicated viewers self-load via IPC.
 				return true;
 			}
 			const isBinaryFormat = await fs.isBinaryFile(path);
@@ -85,48 +107,67 @@ export function Workbench(props: PropsWithChildren) {
 		}
 	}, [fs, editor]);
 
-	const openInEditor = useCallback(async (path: string) => {
-		const normalized = Path.normalize(path);
-		const ok = await loadIntoEditor(normalized);
-		if (!ok) return;
-		// Push onto history, truncating any forward entries. Skip if we're
-		// re-opening the current head (avoids dupes from clicking the same row).
+	const pushHistory = useCallback((entry: HistoryEntry) => {
 		setHistory(prev => {
 			const head = prev[historyIndex];
-			if (head === normalized) return prev;
+			if (head && entriesEqual(head, entry)) return prev;
 			const trimmed = prev.slice(0, historyIndex + 1);
-			const next = [...trimmed, normalized];
+			const next = [...trimmed, entry];
 			setHistoryIndex(next.length - 1);
 			return next;
 		});
-	}, [loadIntoEditor, historyIndex]);
+	}, [historyIndex]);
+
+	const openInEditor = useCallback(async (path: string) => {
+		const normalized = Path.normalize(path);
+		const ok = await loadView({ kind: 'file', path: normalized });
+		if (!ok) return;
+		pushHistory({ kind: 'file', path: normalized });
+	}, [loadView, pushHistory]);
+
+	const openUrl = useCallback(async (url: string) => {
+		const trimmed = url.trim();
+		if (!trimmed) return;
+		const ok = await loadView({ kind: 'url', url: trimmed });
+		if (!ok) return;
+		pushHistory({ kind: 'url', url: trimmed });
+	}, [loadView, pushHistory]);
 
 	const goBack = useCallback(() => {
 		if (historyIndex <= 0) return;
 		const target = history[historyIndex - 1];
 		if (!target) return;
 		setHistoryIndex(historyIndex - 1);
-		void loadIntoEditor(target);
-	}, [history, historyIndex, loadIntoEditor]);
+		void loadView(target);
+	}, [history, historyIndex, loadView]);
 
 	const goForward = useCallback(() => {
 		if (historyIndex >= history.length - 1) return;
 		const target = history[historyIndex + 1];
 		if (!target) return;
 		setHistoryIndex(historyIndex + 1);
-		void loadIntoEditor(target);
-	}, [history, historyIndex, loadIntoEditor]);
+		void loadView(target);
+	}, [history, historyIndex, loadView]);
+
+	const viewKind: ViewKind = useMemo(() => {
+		if (openedUrl) return 'url';
+		if (!openedPath) return 'none';
+		return getFileViewKind(openedPath);
+	}, [openedPath, openedUrl]);
 
 	const workspace = useMemo(() => ({
 		openInEditor,
+		openUrl,
 		openedPath,
-		isCanvasFile: openedPath ? openedPath.toLowerCase().endsWith('.canvas') : false,
+		openedUrl,
+		viewKind,
+		isCanvasFile: viewKind === 'canvas',
 		isLoadingRef,
 		goBack,
 		goForward,
 		canGoBack: historyIndex > 0,
 		canGoForward: historyIndex < history.length - 1,
-	}), [openInEditor, openedPath, goBack, goForward, history.length, historyIndex]);
+	}), [openInEditor, openUrl, openedPath, openedUrl, viewKind, goBack, goForward, history.length, historyIndex]);
 
 	return (
 		<WorkbenchContext.Provider
@@ -140,6 +181,13 @@ export function Workbench(props: PropsWithChildren) {
 			{props.children}
 		</WorkbenchContext.Provider>
 	)
+}
+
+function entriesEqual(a: HistoryEntry, b: HistoryEntry): boolean {
+	if (a.kind !== b.kind) return false;
+	if (a.kind === 'file' && b.kind === 'file') return a.path === b.path;
+	if (a.kind === 'url' && b.kind === 'url') return a.url === b.url;
+	return false;
 }
 
 export function useWorkbench() {

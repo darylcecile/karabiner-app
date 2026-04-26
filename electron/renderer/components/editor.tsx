@@ -1,5 +1,6 @@
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
+import { useEffect, useRef } from "react";
 import { BlockNoteView } from "@blocknote/mantine";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteSchema, createCodeBlockSpec } from "@blocknote/core";
@@ -7,13 +8,62 @@ import { codeBlockOptions } from "@blocknote/code-block";
 import { useWorkbench } from "./workbench/Workbench";
 import { toast } from "sonner";
 
+const EDITOR_FONT_FAMILY = '"Geist Variable", "Inter", system-ui, sans-serif';
+
 type BNEditor = ReturnType<typeof useCreateBlockNote>;
 
 export function Editor() {
 	const { fs, workspace, editor } = useWorkbench();
+	const containerRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const node = containerRef.current;
+		if (!node) return;
+
+		const handler = (e: MouseEvent) => {
+			const target = e.target;
+			if (!(target instanceof Element)) return;
+			const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
+			if (!anchor || !node.contains(anchor)) return;
+
+			const href = anchor.getAttribute("href");
+			if (!href) return;
+
+			// Internal anchors — let the browser scroll naturally.
+			if (href.startsWith("#")) return;
+
+			if (/^https?:/i.test(href)) {
+				e.preventDefault();
+				e.stopPropagation();
+				workspace.openUrl(href);
+				return;
+			}
+
+			if (href.toLowerCase().startsWith("mailto:")) {
+				e.preventDefault();
+				e.stopPropagation();
+				// TODO: route through main.openExternal once IPC lands.
+				console.warn("mailto unhandled, openExternal IPC missing:", href);
+				return;
+			}
+
+			if (href.startsWith("/") || href.toLowerCase().startsWith("file:")) {
+				const path = href.toLowerCase().startsWith("file:")
+					? href.replace(/^file:\/\//i, "")
+					: href;
+				e.preventDefault();
+				e.stopPropagation();
+				workspace.openInEditor(path);
+				return;
+			}
+		};
+
+		node.addEventListener("click", handler, true);
+		return () => node.removeEventListener("click", handler, true);
+	}, [workspace]);
 
 	return (
-		<div className="max-w-5xl mx-auto">
+		<div ref={containerRef} className="max-w-5xl mx-auto" style={{ fontFamily: EDITOR_FONT_FAMILY }}>
 			<BlockNoteView
 				id={workspace.openedPath ?? 'new-document'}
 				editor={editor}

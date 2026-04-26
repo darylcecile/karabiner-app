@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/manrope";
 @import "@fontsource-variable/outfit";
+@import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -170,6 +171,18 @@ main {
 .bn-editor {
 	border-radius: 0;
 	height: 100%;
+	font-family: "Geist Variable", "Inter", system-ui, sans-serif;
+}
+
+.bn-editor a {
+	color: var(--bn-colors-text-blue, #3b82f6);
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.bn-editor a:hover {
+	text-decoration: underline;
+	opacity: 0.85;
 }
 
 .app-drag {

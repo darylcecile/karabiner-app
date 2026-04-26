@@ -11,6 +11,8 @@ import { FileTree } from './workbench/FileTree';
 import { TreeAccordion } from '@/renderer/components/workbench/TreeAccordion';
 import { Editor } from '@/renderer/components/editor';
 import { CanvasView } from '@/renderer/components/canvas';
+import { ImageViewer } from '@/renderer/components/imageviewer';
+import { WebViewer } from '@/renderer/components/webviewer';
 import { atom, useAtom } from 'jotai';
 import { ScrollArea, ScrollBar } from './ui/scroll-area';
 import { ContentScrollArea } from '@/renderer/components/workbench/ContentScrollArea';
@@ -22,6 +24,7 @@ import { BlockNoteEditor } from '@blocknote/core';
 const sidebarCollapsedAtom = atom(false)
 
 type SearchOpenFilePayload = { path: string };
+type WorkspaceOpenUrlPayload = { url: string };
 
 export function RootLayout(props: PropsWithChildren) {
 	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
@@ -33,6 +36,12 @@ export function RootLayout(props: PropsWithChildren) {
 			if (path) workspace.openInEditor(path);
 		});
 	}, [workspace.openInEditor]);
+
+	useEffect(() => {
+		return window.karabinerEvents.on<WorkspaceOpenUrlPayload>('workspace:open-url', ({ url }) => {
+			if (url) workspace.openUrl(url);
+		});
+	}, [workspace.openUrl]);
 
 	return (
 		<div
@@ -68,9 +77,17 @@ export function RootLayout(props: PropsWithChildren) {
 				</Allotment.Pane>
 				<Allotment.Pane>
 					<div className="relative h-full">
-						{workspace.isCanvasFile && workspace.openedPath ? (
+						{workspace.viewKind === 'canvas' && workspace.openedPath ? (
 							<div className="absolute inset-0 pt-6">
 								<CanvasView path={workspace.openedPath} />
+							</div>
+						) : workspace.viewKind === 'image' && workspace.openedPath ? (
+							<div className="absolute inset-0 pt-6">
+								<ImageViewer path={workspace.openedPath} />
+							</div>
+						) : workspace.viewKind === 'url' && workspace.openedUrl ? (
+							<div className="absolute inset-0 pt-6">
+								<WebViewer url={workspace.openedUrl} />
 							</div>
 						) : (
 							<ContentScrollArea
@@ -142,7 +159,11 @@ function MainActionBarGroup() {
 		await fs.createFile(name.trim());
 	}
 
-	const fileName = workspace.openedPath ? workspace.openedPath.split("/").at(-1) : "Untitled";
+	const fileName = workspace.openedUrl
+		? workspace.openedUrl
+		: workspace.openedPath
+			? workspace.openedPath.split("/").at(-1)
+			: "Untitled";
 
 	return (
 		<>
