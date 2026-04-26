@@ -33,7 +33,7 @@ function getPlatform() {
 	return main.querySync("platform") as "darwin" | "win32" | "linux" | "unknown";
 }
 
-function join(...paths: string[]) {
+function joinPaths(...paths: string[]) {
 	const sep = getPlatform() === 'win32' ? '\\' : '/';
 	return paths.join(sep).replace(new RegExp(`[${sep}]+`, 'g'), sep);
 }
@@ -80,7 +80,7 @@ export namespace Path {
 	export function normalize(p: string): string {
 		// correct for both absolute and relative paths, and for both main and renderer processes
 		if (p.startsWith("~")) {
-			return join(getHomeDir() || "", p.slice(1));
+			return joinPaths(getHomeDir() || "", p.slice(1));
 		}
 
 		// correct separators
@@ -107,5 +107,10 @@ export namespace Path {
 		const base = parts.pop() || "";
 		const dir = parts.join(sep) || (p.startsWith(sep) ? sep : ".");
 		return [dir, base];
+	}
+
+
+	export function join(...parts: string[]): string {
+		return joinPaths(...parts);
 	}
 }

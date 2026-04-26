@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, Menu, net, protocol, type MenuItemConstructorOptions } from 'electron/main'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, ipcMain, Menu, protocol, type MenuItemConstructorOptions } from 'electron/main'
+import { isAbsolute, join, extname } from 'node:path'
+import { stat, readFile } from 'node:fs/promises'
 import { mainRelay } from './ipcMethods';
 import { setUpAppDir } from "./fs";
 import { closeDb } from './rag/db';
@@ -36,6 +36,34 @@ protocol.registerSchemesAsPrivileged([
 		},
 	},
 ]);
+
+const VAULT_ROOT = join(process.env.HOME || process.env.USERPROFILE || '', '.karabiner', 'vault');
+
+const MIME_BY_EXT: Record<string, string> = {
+	'.png': 'image/png',
+	'.jpg': 'image/jpeg',
+	'.jpeg': 'image/jpeg',
+	'.gif': 'image/gif',
+	'.webp': 'image/webp',
+	'.svg': 'image/svg+xml',
+	'.bmp': 'image/bmp',
+	'.ico': 'image/x-icon',
+	'.heic': 'image/heic',
+	'.heif': 'image/heif',
+	'.avif': 'image/avif',
+	'.tiff': 'image/tiff',
+	'.tif': 'image/tiff',
+	'.mp4': 'video/mp4',
+	'.webm': 'video/webm',
+	'.mov': 'video/quicktime',
+	'.mp3': 'audio/mpeg',
+	'.wav': 'audio/wav',
+	'.ogg': 'audio/ogg',
+	'.pdf': 'application/pdf',
+	'.json': 'application/json',
+	'.txt': 'text/plain; charset=utf-8',
+	'.md': 'text/markdown; charset=utf-8',
+};
 
 if (process.env.KARABINER_DEBUG_PORT) {
 	const port = process.env.KARABINER_DEBUG_PORT;
@@ -292,18 +320,68 @@ app.on('open-file', (event, filePath) => {
 app.whenReady().then(async () => {
 	await setUpAppDir();
 
-	// Serve `karabiner-file://<encoded-abs-path>` from disk. The host carries the
-	// absolute path (URL-encoded); pathname is "/" or empty.
+	// Serve `karabiner-file://...` from disk. We accept three URL shapes:
+	//   1. karabiner-file:///%2Fabs%2Fpath        (absolute path, percent-encoded into pathname)
+	//   2. karabiner-file:///abs/path             (absolute path, raw — host empty)
+	//   3. karabiner-file:///vault-relative/path  (resolved against the vault root)
+	// Whatever is decoded is first tried as an absolute path; if that misses we
+	// fall back to resolving it against the vault root.
 	protocol.handle('karabiner-file', async (request) => {
 		try {
 			const url = new URL(request.url);
-			// Format: karabiner-file:///<encoded-abs-path>
-			// host is empty, pathname holds the encoded path.
-			const encoded = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname;
-			const absPath = decodeURIComponent(encoded);
-			if (!absPath) return new Response('Not found', { status: 404 });
-			return await net.fetch(pathToFileURL(absPath).toString());
+			// Reconstruct the original "thing after the scheme". Host is usually
+			// empty (triple-slash form) but if present we treat it as the first
+			// segment of a vault-relative path.
+			const hostPart = url.host ? decodeURIComponent(url.host) : '';
+			const pathPart = decodeURIComponent(url.pathname || '');
+			let raw = hostPart ? `${hostPart}${pathPart}` : pathPart;
+
+			// Resolve an absolute candidate first, then a vault-relative fallback.
+			const candidates: string[] = [];
+			if (isAbsolute(raw)) {
+				candidates.push(raw);
+				// If raw was already absolute it might still actually be a vault
+				// asset whose path was naively prefixed with `/`. Try that too.
+				candidates.push(join(VAULT_ROOT, raw.replace(/^\/+/, '')));
+			} else {
+				if (raw.startsWith('/')) raw = raw.slice(1);
+				candidates.push(join(VAULT_ROOT, raw));
+			}
+
+			let resolved: string | null = null;
+			let st: Awaited<ReturnType<typeof stat>> | null = null;
+			for (const c of candidates) {
+				try {
+					const s = await stat(c);
+					if (s.isFile()) {
+						resolved = c;
+						st = s;
+						break;
+					}
+				} catch {
+					// keep trying
+				}
+			}
+
+			if (!resolved || !st) {
+				console.warn('[karabiner-file] not found:', request.url, 'tried:', candidates);
+				return new Response('Not found', { status: 404 });
+			}
+
+			const ext = extname(resolved).toLowerCase();
+			const type = MIME_BY_EXT[ext] ?? 'application/octet-stream';
+			const buf = await readFile(resolved);
+			return new Response(buf, {
+				status: 200,
+				headers: {
+					'Content-Type': type,
+					'Content-Length': String(st.size),
+					'Cache-Control': 'no-cache',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
 		} catch (err) {
+			console.error('[karabiner-file] handler failed:', err);
 			return new Response(`Error: ${err instanceof Error ? err.message : String(err)}`, { status: 500 });
 		}
 	});
@@ -348,3 +426,5 @@ app.on('window-all-closed', () => {
 		app.quit()
 	}
 });
+
+

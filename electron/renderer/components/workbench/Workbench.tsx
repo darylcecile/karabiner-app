@@ -8,7 +8,15 @@ import { getFileViewKind } from './viewKind';
 import { main } from '@/renderer/relay';
 
 function pathToAssetUrl(absPath: string): string {
-	return `karabiner-file:///${encodeURIComponent(absPath)}`;
+	const home = main.querySync('homeDir');
+	const vaultPath = Path.join(home || '', '.karabiner/vault/');
+
+	if (!home) {
+		toast.error('Unable to resolve asset path: no home directory');
+		return `karabiner-file:///${encodeURIComponent(absPath)}`;
+	}
+
+	return `karabiner-file://${absPath.replace(vaultPath, '')}`;
 }
 
 export type ViewKind = 'editor' | 'canvas' | 'image' | 'url' | 'none';
