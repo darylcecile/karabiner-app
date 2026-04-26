@@ -1,9 +1,15 @@
 import { createContext, PropsWithChildren, use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useFileTree, Tree } from '@/renderer/hooks/useTree';
 import { useConfig } from '@/renderer/hooks/useConfig';
 import { Path } from '@/shared/fsUtils';
 import { useEditorState } from '@/renderer/components/editor';
 import { getFileViewKind } from './viewKind';
+import { main } from '@/renderer/relay';
+
+function pathToAssetUrl(absPath: string): string {
+	return `karabiner-file:///${encodeURIComponent(absPath)}`;
+}
 
 export type ViewKind = 'editor' | 'canvas' | 'image' | 'url' | 'none';
 
@@ -50,7 +56,43 @@ export function Workbench(props: PropsWithChildren) {
 	}), [includeHidden]);
 	const fs = useFileTree(treeOptions);
 	const treeRef = useRef<unknown>(null);
-	const editor = useEditorState();
+
+	const fsRef = useRef(fs);
+	fsRef.current = fs;
+
+	const uploadFile = useCallback(async (file: File): Promise<string> => {
+		const root = fsRef.current.rootPath;
+		// 1) FS-picked file: copy into <root>/assets and return a karabiner-file:// URL.
+		const srcPath = window.karabinerFiles?.getPathForFile(file) || '';
+		if (root && srcPath) {
+			try {
+				const result = await main.saveImageToWorkspace(srcPath, root);
+				if ('absPath' in result && result.absPath) {
+					return pathToAssetUrl(result.absPath);
+				}
+				if ('error' in result && result.error) {
+					toast.error(result.error);
+				}
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : 'Unable to save image.');
+			}
+		}
+		// 2) Fallback: read the File via FileReader and return a base64 data URL.
+		// Used for clipboard pastes where there's no underlying disk path, or when
+		// no workspace is open.
+		return await new Promise<string>((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const result = reader.result;
+				if (typeof result === 'string') resolve(result);
+				else reject(new Error('Unable to read file.'));
+			};
+			reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
+			reader.readAsDataURL(file);
+		});
+	}, []);
+
+	const editor = useEditorState({ uploadFile });
 	const isLoadingRef = useRef<boolean>(false);
 
 	useEffect(() => {

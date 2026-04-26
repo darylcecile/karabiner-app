@@ -497,6 +497,32 @@ export const mainRelay = createMainRelay({
 				return { error: err instanceof Error ? err.message : String(err) };
 			}
 		},
+		async saveImageToWorkspace(srcPath: string, workspaceRoot: string) {
+			const src = resolvePath(srcPath);
+			const root = resolvePath(workspaceRoot);
+			if (!src || !root) return { error: 'Invalid source or workspace path.' };
+			try {
+				const s = await stat(src);
+				if (!s.isFile()) return { error: 'Source is not a file.' };
+			} catch {
+				return { error: 'Source file does not exist.' };
+			}
+			const assetsDir = path.join(root, 'assets');
+			try {
+				await mkdir(assetsDir, { recursive: true });
+			} catch (err) {
+				return { error: err instanceof Error ? err.message : String(err) };
+			}
+			const baseName = path.basename(src);
+			const finalName = await uniqueDestName(assetsDir, baseName);
+			const target = path.join(assetsDir, finalName);
+			try {
+				await cp(src, target, { errorOnExist: true, force: false });
+			} catch (err) {
+				return { error: err instanceof Error ? err.message : String(err) };
+			}
+			return { absPath: target };
+		},
 	},
 });
 

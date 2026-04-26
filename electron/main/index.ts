@@ -1,11 +1,27 @@
-import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron/main'
+import { app, BrowserWindow, ipcMain, Menu, net, protocol, type MenuItemConstructorOptions } from 'electron/main'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { mainRelay } from './ipcMethods';
 import { setUpAppDir } from "./fs";
 import { closeDb } from './rag/db';
 import { bootstrap as bootstrapRag } from './rag/indexer';
 import { hideSearch, toggleSearch } from './searchWindow';
 import { setupNativeEditingContextMenu } from './contextMenu';
+
+// Register the asset protocol BEFORE app is ready so the renderer can use
+// `karabiner-file://<absolute-path>` URLs in <img>, <video>, etc.
+protocol.registerSchemesAsPrivileged([
+	{
+		scheme: 'karabiner-file',
+		privileges: {
+			standard: true,
+			secure: true,
+			supportFetchAPI: true,
+			stream: true,
+			bypassCSP: true,
+		},
+	},
+]);
 
 if (process.env.KARABINER_DEBUG_PORT) {
 	const port = process.env.KARABINER_DEBUG_PORT;
@@ -195,6 +211,22 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
 	await setUpAppDir();
+
+	// Serve `karabiner-file://<encoded-abs-path>` from disk. The host carries the
+	// absolute path (URL-encoded); pathname is "/" or empty.
+	protocol.handle('karabiner-file', async (request) => {
+		try {
+			const url = new URL(request.url);
+			// Format: karabiner-file:///<encoded-abs-path>
+			// host is empty, pathname holds the encoded path.
+			const encoded = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname;
+			const absPath = decodeURIComponent(encoded);
+			if (!absPath) return new Response('Not found', { status: 404 });
+			return await net.fetch(pathToFileURL(absPath).toString());
+		} catch (err) {
+			return new Response(`Error: ${err instanceof Error ? err.message : String(err)}`, { status: 500 });
+		}
+	});
 
 	bootstrapRag().catch((err) => {
 		console.error('rag bootstrap failed:', err);
