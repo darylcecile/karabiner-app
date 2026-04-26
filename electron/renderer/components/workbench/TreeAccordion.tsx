@@ -3,8 +3,8 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { ChevronRight, ChevronDown } from '@hugeicons/core-free-icons';
 import { cn } from "@/shared/utils";
 
-export function TreeAccordion(props: PropsWithChildren<{ label: string }>) {
-	const [isOpen, setIsOpen] = useState(false);
+export function TreeAccordion(props: PropsWithChildren<{ label: string, defaultOpen?: boolean }>) {
+	const [isOpen, setIsOpen] = useState(props.defaultOpen ?? false);
 
 	const toggle = () => setIsOpen((open) => !open);
 

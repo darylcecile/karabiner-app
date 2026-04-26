@@ -125,6 +125,33 @@ export function FileTree() {
 		};
 	}, []);
 
+	const expandedRef = useRef<ReadonlySet<string>>(new Set());
+	const handleExpansionChange = useCallback((expanded: ReadonlySet<string>) => {
+		const prev = expandedRef.current;
+		const root = rootPathRef.current;
+		if (root) {
+			for (const rel of expanded) {
+				if (prev.has(rel)) continue;
+				const abs = joinAbs(root, rel);
+				if (abs === root) continue;
+				Promise.resolve(fsRef.current.expand(abs)).catch((err) => {
+					console.warn('[FileTree] expand failed', abs, err);
+				});
+			}
+			for (const rel of prev) {
+				if (expanded.has(rel)) continue;
+				const abs = joinAbs(root, rel);
+				if (abs === root) continue;
+				try {
+					fsRef.current.collapse?.(abs);
+				} catch (err) {
+					console.warn('[FileTree] collapse failed', abs, err);
+				}
+			}
+		}
+		expandedRef.current = expanded;
+	}, []);
+
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
 	const handleSelect = useCallback((rel: string) => {
@@ -353,6 +380,7 @@ export function FileTree() {
 				selectedPath={selectedPath}
 				onSelect={handleSelect}
 				onActivate={handleActivate}
+				onExpansionChange={handleExpansionChange}
 				renderPrimary={renderPrimary}
 				renderIcon={renderIcon}
 				renaming={renamingProps}
@@ -360,7 +388,7 @@ export function FileTree() {
 				renderContextMenu={renderContextMenu}
 				modelRef={treeHandleRef}
 				aria-label="Files"
-				style={{ height: 320 }}
+				style={{ minHeight: 320 }}
 			/>
 			<InputModal controller={inputController} />
 		</>

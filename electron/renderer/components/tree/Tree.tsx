@@ -805,7 +805,7 @@ export function Tree(props: TreeProps) {
 			onDrop={dragAndDrop ? onRootDrop : undefined}
 			onContextMenu={renderContextMenu ? handleRootContextMenu : undefined}
 			className={cn(
-				'relative w-full overflow-y-auto overflow-x-hidden',
+				'relative w-full h-full overflow-y-auto overflow-x-hidden',
 				'bg-transparent text-sidebar-foreground',
 				'focus:outline-none',
 				'[scroll-behavior:smooth]',

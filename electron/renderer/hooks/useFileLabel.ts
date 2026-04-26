@@ -26,10 +26,46 @@ type AvailabilityState = {
 	fetchedAt: number;
 };
 
-const AVAILABILITY_TTL_MS = 10_000;
+const AVAILABILITY_TTL_MS = 60_000;
 
 let availabilityCache: AvailabilityState | null = null;
 let availabilityInflight: Promise<AvailabilityState> | null = null;
+
+const FAILURE_THRESHOLD = 3;
+const BREAKER_COOLDOWN_MS = 60_000;
+let consecutiveFailures = 0;
+let breakerOpenUntil = 0;
+
+function isBreakerOpen(): boolean {
+	if (breakerOpenUntil === 0) return false;
+	if (Date.now() < breakerOpenUntil) return true;
+	// Breaker cooldown elapsed — close it.
+	console.warn('[useFileLabel] AI label circuit breaker closed; resuming generation');
+	breakerOpenUntil = 0;
+	consecutiveFailures = 0;
+	return false;
+}
+
+function recordSuccess() {
+	consecutiveFailures = 0;
+}
+
+function recordFailure() {
+	consecutiveFailures += 1;
+	if (consecutiveFailures >= FAILURE_THRESHOLD) {
+		breakerOpenUntil = Date.now() + BREAKER_COOLDOWN_MS;
+		consecutiveFailures = 0;
+		console.warn(
+			`[useFileLabel] AI label circuit breaker opened for ${BREAKER_COOLDOWN_MS}ms after ${FAILURE_THRESHOLD} consecutive failures`,
+		);
+	}
+}
+
+function drainQueueAsFailed() {
+	if (regenerateQueue.length === 0) return;
+	const drained = regenerateQueue.splice(0, regenerateQueue.length);
+	for (const job of drained) job.skip();
+}
 
 function notifyPath(absPath: string) {
 	const subs = pathSubscribers.get(absPath);
@@ -78,33 +114,60 @@ async function getAvailability(): Promise<AvailabilityState> {
 	return await fetchAvailability();
 }
 
-const MAX_CONCURRENT_REGENERATE = 2;
+const MAX_CONCURRENT_REGENERATE = 1;
 let activeRegenerations = 0;
-const regenerateQueue: Array<() => void> = [];
+type QueuedJob = { run: () => void; skip: () => void };
+const regenerateQueue: QueuedJob[] = [];
+
+function startNext() {
+	if (activeRegenerations >= MAX_CONCURRENT_REGENERATE) return;
+	if (isBreakerOpen()) {
+		drainQueueAsFailed();
+		return;
+	}
+	const next = regenerateQueue.shift();
+	if (next) next.run();
+}
 
 function scheduleRegenerate(absPath: string) {
 	const run = () => {
+		if (isBreakerOpen()) {
+			cache.set(absPath, null);
+			notifyPath(absPath);
+			drainQueueAsFailed();
+			return;
+		}
 		activeRegenerations += 1;
 		main
 			.regenerateFileLabel(absPath)
 			.then((entry) => {
 				cache.set(absPath, entry ?? null);
+				if (entry) {
+					recordSuccess();
+				} else {
+					recordFailure();
+				}
 			})
 			.catch(() => {
 				cache.set(absPath, null);
+				recordFailure();
 			})
 			.finally(() => {
 				activeRegenerations -= 1;
 				notifyPath(absPath);
-				const next = regenerateQueue.shift();
-				if (next) next();
+				if (isBreakerOpen()) {
+					drainQueueAsFailed();
+					return;
+				}
+				startNext();
 			});
 	};
-	if (activeRegenerations < MAX_CONCURRENT_REGENERATE) {
-		run();
-	} else {
-		regenerateQueue.push(run);
-	}
+	const skip = () => {
+		cache.set(absPath, null);
+		notifyPath(absPath);
+	};
+	regenerateQueue.push({ run, skip });
+	startNext();
 }
 
 export function getCachedLabel(absPath: string): CacheValue | undefined {
@@ -127,6 +190,11 @@ export function clearLabelCache() {
 export function requestLabel(absPath: string, isFolder = false): void {
 	if (isFolder) return;
 	if (cache.has(absPath)) return;
+
+	if (isBreakerOpen()) {
+		cache.set(absPath, null);
+		return;
+	}
 
 	cache.set(absPath, 'pending');
 

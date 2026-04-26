@@ -59,8 +59,8 @@ export function RootLayout(props: PropsWithChildren) {
 					<ActionBar className="mr-1 pl-20 flex items-center absolute">
 						<Action icon={!collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
 					</ActionBar>
-					<div className="p-2">
-						<TreeAccordion label="Collections">
+					<div className="p-2 max-h-[calc(100vh-34px)] overflow-y-auto">
+						<TreeAccordion label="Collections" defaultOpen>
 							<FileTree />
 						</TreeAccordion>
 					</div>
