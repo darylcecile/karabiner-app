@@ -78,7 +78,7 @@ export function RootLayout(props: PropsWithChildren) {
 						topFadeHeight={28}
 						bottomFadeHeight={20}
 					>
-						<TreeAccordion label="Recent" defaultOpen>
+						<TreeAccordion label="Recent">
 							<RecentFiles />
 						</TreeAccordion>
 						<TreeAccordion label="Collections" className='flex-1' defaultOpen>

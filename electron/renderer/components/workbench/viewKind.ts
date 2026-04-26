@@ -1,7 +1,7 @@
 // Maps a file path to the view that should render it. Centralised so the
 // workbench, layout, and image-viewer all agree.
 
-const IMAGE_EXTS = new Set([
+export const IMAGE_EXTS = new Set([
 	'.png',
 	'.jpg',
 	'.jpeg',

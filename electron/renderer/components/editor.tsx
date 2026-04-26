@@ -2,10 +2,12 @@ import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
 import { useEffect, useRef } from "react";
 import { BlockNoteView } from "@blocknote/mantine";
-import { useCreateBlockNote } from "@blocknote/react";
+import { useCreateBlockNote, FilePanelController, FormattingToolbarController } from "@blocknote/react";
 import { BlockNoteSchema, createCodeBlockSpec } from "@blocknote/core";
 import { codeBlockOptions } from "@blocknote/code-block";
 import { useWorkbench } from "./workbench/Workbench";
+import { CustomFilePanel } from "./editor/CustomFilePanel";
+import { CustomFormattingToolbar } from "./editor/CustomFormattingToolbar";
 import { toast } from "sonner";
 
 const EDITOR_FONT_FAMILY = '"Geist Variable", "Inter", system-ui, sans-serif';
@@ -69,6 +71,7 @@ export function Editor() {
 			<BlockNoteView
 				id={workspace.openedPath ?? 'new-document'}
 				editor={editor}
+				filePanel={false}
 				onChange={(bn, ctx) => {
 					// Skip the change emitted by programmatic content loads (file open).
 					// Must run BEFORE the openedPath check, since on first open the state
@@ -85,6 +88,7 @@ export function Editor() {
 				editable={!!workspace.openedPath}
 				
 				className="bg-transparent"
+				formattingToolbar={false}
 				theme={{
 					light: {
 						colors: {
@@ -101,7 +105,10 @@ export function Editor() {
 						}
 					}
 				}}
-			/>
+			>
+				<FilePanelController filePanel={CustomFilePanel} />
+				<FormattingToolbarController formattingToolbar={CustomFormattingToolbar} />
+			</BlockNoteView>
 		</div>
 	)
 }
@@ -130,7 +137,7 @@ export function useEditorState(props?: UseEditorState) {
 				...schema?.blockSpecs,
 			}
 		}),
-
+		autofocus: true,
 	});
 
 	return editor;
