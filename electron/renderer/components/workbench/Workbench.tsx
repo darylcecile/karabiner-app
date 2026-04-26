@@ -7,6 +7,7 @@ import { useEditorState } from '@/renderer/components/editor';
 import { parseMarkdownToBlocks } from '@/renderer/components/editor/markdown';
 import { getFileViewKind } from './viewKind';
 import { main } from '@/renderer/relay';
+import { onVaultFsChange } from '@/renderer/events';
 
 function pathToAssetUrl(absPath: string): string {
 	const home = main.querySync('homeDir');
@@ -211,6 +212,44 @@ export function Workbench(props: PropsWithChildren) {
 		if (!openedPath) return 'none';
 		return getFileViewKind(openedPath);
 	}, [openedPath, openedUrl]);
+
+	// React to external filesystem changes for the file currently open in the
+	// editor. The main process suppresses self-writes (the per-keystroke saves
+	// the editor performs) so events delivered here represent real external
+	// edits or deletions. We only act on the markdown editor view; canvas and
+	// image viewers manage their own reload semantics.
+	useEffect(() => {
+		const off = onVaultFsChange(({ path: changedPath, kind }) => {
+			if (!openedPath) return;
+			const normalized = Path.normalize(changedPath);
+			if (normalized !== Path.normalize(openedPath)) return;
+			if (viewKind !== 'editor') return;
+			if (kind !== 'change' && kind !== 'add') return;
+
+			void (async () => {
+				isLoadingRef.current = true;
+				try {
+					const isBinaryFormat = await fs.isBinaryFile(normalized);
+					if (isBinaryFormat) return;
+					const content = await fs.readFile(normalized, 'utf-8');
+					const markdown = content.toString();
+					const newDoc = parseMarkdownToBlocks(editor, markdown);
+					if (newDoc) {
+						editor.replaceBlocks(editor.document, newDoc);
+					}
+				} catch (err) {
+					console.warn('[workbench] external reload failed:', normalized, err);
+				} finally {
+					queueMicrotask(() => {
+						isLoadingRef.current = false;
+					});
+				}
+			})();
+		});
+		return () => {
+			off();
+		};
+	}, [openedPath, viewKind, fs, editor]);
 
 	const workspace = useMemo(() => ({
 		openInEditor,

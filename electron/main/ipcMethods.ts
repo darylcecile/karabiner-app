@@ -22,6 +22,7 @@ import { showSearch, hideSearch, toggleSearch } from '@/main/searchWindow';
 import { getMainWindow } from '@/main/index';
 import { showFileTreeContextMenu, type FileTreeMenuPayload } from '@/main/contextMenu';
 import { addRecentFile, clearRecentFiles, getRecentFiles, pruneMissingRecents } from '@/main/recents';
+import { noteSelfWrite } from '@/main/vaultWatcher';
 
 
 function resolvePath(p: string): string {
@@ -100,25 +101,35 @@ export const mainRelay = createMainRelay({
 		async writeFile(filePath: string, content: string, encoding: BufferEncoding = "utf-8") {
 			const absPath = resolvePath(filePath);
 			await mkdir(path.dirname(absPath), { recursive: true });
+			noteSelfWrite(absPath, content);
 			await writeFile(absPath, content, { encoding });
 			return true;
 		},
 		async createFile(filePath: string) {
 			const absPath = resolvePath(filePath);
 			await mkdir(path.dirname(absPath), { recursive: true });
+			noteSelfWrite(absPath, "");
 			await writeFile(absPath, "");
 			return true;
 		},
 		async createDirectory(dirPath: string) {
-			await mkdir(resolvePath(dirPath), { recursive: true });
+			const absPath = resolvePath(dirPath);
+			noteSelfWrite(absPath);
+			await mkdir(absPath, { recursive: true });
 			return true;
 		},
 		async rename(oldPath: string, newPath: string) {
-			await rename(resolvePath(oldPath), resolvePath(newPath));
+			const oldAbs = resolvePath(oldPath);
+			const newAbs = resolvePath(newPath);
+			noteSelfWrite(oldAbs);
+			noteSelfWrite(newAbs);
+			await rename(oldAbs, newAbs);
 			return true;
 		},
 		async delete(targetPath: string) {
-			await rm(resolvePath(targetPath), { recursive: true, force: true });
+			const absPath = resolvePath(targetPath);
+			noteSelfWrite(absPath);
+			await rm(absPath, { recursive: true, force: true });
 			return true;
 		},
 		async aiAvailability() {
@@ -172,6 +183,7 @@ export const mainRelay = createMainRelay({
 				try {
 					await mkdir(path.dirname(resolved), { recursive: true });
 					await writeFile(tmp, json, { encoding: 'utf-8' });
+					noteSelfWrite(resolved, json);
 					await rename(tmp, resolved);
 					return { ok: true };
 				} catch (err) {
@@ -295,6 +307,7 @@ export const mainRelay = createMainRelay({
 						const tmp = `${resolved}.tmp`;
 						try {
 							await writeFile(tmp, updated, { encoding: "utf-8" });
+							noteSelfWrite(resolved, updated);
 							await rename(tmp, resolved);
 						} catch (writeErr) {
 							try { await rm(tmp, { force: true }); } catch {}
@@ -461,6 +474,7 @@ export const mainRelay = createMainRelay({
 					const baseName = path.basename(src);
 					const finalName = await uniqueDestName(dest, baseName);
 					const target = path.join(dest, finalName);
+					noteSelfWrite(target);
 					if (srcStat.isDirectory()) {
 						await cp(src, target, { recursive: true, errorOnExist: true, force: false });
 					} else {
@@ -518,6 +532,7 @@ export const mainRelay = createMainRelay({
 			const finalName = await uniqueDestName(assetsDir, baseName);
 			const target = path.join(assetsDir, finalName);
 			try {
+				noteSelfWrite(target);
 				await cp(src, target, { errorOnExist: true, force: false });
 			} catch (err) {
 				return { error: err instanceof Error ? err.message : String(err) };

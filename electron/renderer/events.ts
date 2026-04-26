@@ -17,4 +17,20 @@ export function onRagProgress(listener: (p: RagProgress) => void): () => void {
 	return window.karabinerEvents.on<RagProgress>('rag:progress', listener);
 }
 
+export type VaultFsChangeKind =
+	| 'add'
+	| 'change'
+	| 'unlink'
+	| 'addDir'
+	| 'unlinkDir';
+
+export interface VaultFsChangeEvent {
+	path: string;
+	kind: VaultFsChangeKind;
+}
+
+export function onVaultFsChange(listener: (event: VaultFsChangeEvent) => void): () => void {
+	return window.karabinerEvents.on<VaultFsChangeEvent>('vault:fs-change', listener);
+}
+
 export {};

@@ -26,6 +26,7 @@ const ALLOWED_EVENT_CHANNELS = new Set([
 	'search:open-file',
 	'workspace:open-url',
 	'recents:changed',
+	'vault:fs-change',
 ]);
 
 contextBridge.exposeInMainWorld('karabinerEvents', {

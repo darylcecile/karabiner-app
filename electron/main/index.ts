@@ -11,6 +11,7 @@ import { clearRecentFiles, getRecentFiles, pruneMissingRecents, recentsEmitter }
 import { openChatWindow } from './chatWindow';
 import { handleChatRequest } from './ai/chat/protocol-handler';
 import { handleEditorAIRequest } from './ai/editor/protocol-handler';
+import { startVaultWatcher, stopVaultWatcher } from './vaultWatcher';
 
 // Register the asset protocol BEFORE app is ready so the renderer can use
 // `karabiner-file://<absolute-path>` URLs in <img>, <video>, etc.
@@ -407,6 +408,10 @@ app.whenReady().then(async () => {
 		console.error('rag bootstrap failed:', err);
 	});
 
+	void startVaultWatcher().catch((err) => {
+		console.error('vault watcher start failed:', err);
+	});
+
 	mainRelay.attach(ipcMain);
 
 	pruneMissingRecents();
@@ -424,6 +429,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
 	void closeDb();
+	void stopVaultWatcher();
 });
 
 app.on('window-all-closed', () => {

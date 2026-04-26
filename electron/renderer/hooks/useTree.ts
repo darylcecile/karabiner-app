@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DirEntry } from "@/main/fs";
 import { Path } from "@/shared/fsUtils";
 import { main } from '@/renderer/relay';
-import { invalidateFileLabelDebounced } from '@/renderer/hooks/useFileLabel';
+import { invalidateFileLabelDebounced, invalidateFileLabel } from '@/renderer/hooks/useFileLabel';
+import { onVaultFsChange } from '@/renderer/events';
 
 const MARKDOWN_EXT_RE = /\.(?:md|markdown|mdx)$/i;
 
@@ -648,6 +649,39 @@ export function useFileTree(options?: UseFileTreeOptions) {
 
 		await loadDirectory(normalizedDirectoryPath, true);
 	}, [assertPathWithinRoot, loadDirectory, loadExpandedLayer]);
+
+	// Subscribe to external vault filesystem changes and refresh the affected
+	// parent directory. We do *not* refresh on plain "change" events for files
+	// because their position in the tree is unaffected; the editor has its own
+	// listener for that. Self-writes (changes initiated by this app) are
+	// suppressed at the main-process layer, so we only react to genuinely
+	// external mutations here.
+	useEffect(() => {
+		const off = onVaultFsChange(({ path: changedPath, kind }) => {
+			const rootPath = stateRef.current.rootPath;
+			if (!rootPath) return;
+			const normalized = Path.normalize(changedPath);
+			if (!isPathWithinRoot(rootPath, normalized)) return;
+
+			if (kind === "change") {
+				// File content changed; tree shape unaffected. Invalidate any
+				// cached label so the next render fetches the latest heading/emoji.
+				invalidateFileLabel(normalized);
+				return;
+			}
+
+			// add / unlink / addDir / unlinkDir all affect the parent's listing.
+			const [parent] = Path.split(normalized);
+			const parentNode = stateRef.current.nodes[parent];
+			if (!parentNode || !parentNode.isLoaded) return;
+			void refreshDirectory(parent).catch((err) => {
+				console.warn("[useFileTree] refresh on vault change failed:", parent, err);
+			});
+		});
+		return () => {
+			off();
+		};
+	}, [refreshDirectory]);
 
 	const setNodeCustomization = useCallback(
 		(path: string, customization: NodeCustomization) => {
