@@ -159,7 +159,7 @@ export function ToolPart({ part, addToolApprovalResponse }: Props) {
 						{summary}
 					</span>
 				)}
-				<span className="ml-auto flex shrink-0 items-center gap-1 text-[10.5px] text-foreground/55 uppercase">
+				<span className="ml-auto flex shrink-0 items-center gap-1 text-sm text-foreground/55 uppercase">
 					{isRunning && (
 						<>
 							<Spinner className="size-3" />

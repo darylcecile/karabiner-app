@@ -16,6 +16,8 @@
 	line-height: 1.5;
 	font-weight: 400;
 	-webkit-font-smoothing: antialiased;
+	scrollbar-width: thin;
+	scrollbar-color: gray transparent;
 
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.148 0.004 228.8);

@@ -72,7 +72,11 @@ export class CopilotAIProvider extends AIProvider {
 		return /Session not found/i.test(msg);
 	}
 
-	async #openSession(callerSessionId: string | undefined, tools: CopilotTool[] = this.#buildCopilotTools()) {
+	async #openSession(
+		callerSessionId: string | undefined,
+		tools: CopilotTool[] = this.#buildCopilotTools(),
+		streaming = false,
+	) {
 		// Try to resume an existing conversation first so context carries
 		// across turns. Fall back to creating a fresh session (using the
 		// caller id, when given, so subsequent turns can resume it again)
@@ -83,6 +87,7 @@ export class CopilotAIProvider extends AIProvider {
 					onPermissionRequest: approveAll,
 					model: "gpt-5.4",
 					tools,
+					streaming,
 				});
 			} catch (err) {
 				if (!this.#isMissingSessionError(err)) throw err;
@@ -92,13 +97,16 @@ export class CopilotAIProvider extends AIProvider {
 			model: "gpt-5.4",
 			onPermissionRequest: approveAll,
 			tools,
+			streaming,
 			...(callerSessionId ? { sessionId: callerSessionId } : {}),
 		});
 	}
 
 	private async internalAsk(question: string, sessionId?: string): Promise<string> {
 		const tryOnce = async () => {
-			const session = await this.#openSession(sessionId);
+			// internalAsk is used by non-chat callers (RAG search, file
+			// metadata, etc.) — they don't need tools or streaming.
+			const session = await this.#openSession(sessionId, [], false);
 
 			let response = "";
 			const seenDeltaForMsg = new Set<string>();
@@ -177,7 +185,7 @@ export class CopilotAIProvider extends AIProvider {
 
 		const run = async () => {
 			const tryOnce = async () => {
-				const session = await this.#openSession(sessionId, tools);
+				const session = await this.#openSession(sessionId, tools, true);
 				const seenDeltaForMsg = new Set<string>();
 
 				session.on("assistant.message_delta", (event) => {
