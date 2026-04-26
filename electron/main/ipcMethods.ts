@@ -10,7 +10,7 @@ import { isLabelEchoingFilename } from '@/main/ai/index';
 import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
 import type { RagProgress } from '@/shared/ragTypes';
-import { parseCanvas, type CanvasData } from '@/shared/canvasTypes';
+import { CanvasDataSchema, parseCanvas, type CanvasData } from '@/shared/canvasTypes';
 import * as ragIndexer from '@/main/rag/indexer';
 import { showSearch, hideSearch, toggleSearch } from '@/main/searchWindow';
 import { getMainWindow } from '@/main/index';
@@ -120,6 +120,39 @@ export const mainRelay = createMainRelay({
 				}
 			} catch (err) {
 				console.error("readCanvas failed:", err);
+				return { error: err instanceof Error ? err.message : String(err) };
+			}
+		},
+		async writeCanvas(
+			absPath: string,
+			data: CanvasData,
+		): Promise<{ ok: true; error?: undefined } | { ok?: undefined; error: string }> {
+			try {
+				const parsed = CanvasDataSchema.safeParse(data);
+				if (!parsed.success) {
+					const msg = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+					console.warn('[canvas] writeCanvas validation failed:', msg);
+					return { error: msg };
+				}
+				const resolved = resolvePath(absPath);
+				const json = JSON.stringify(parsed.data, null, '\t');
+				const tmp = `${resolved}.tmp`;
+				try {
+					await mkdir(path.dirname(resolved), { recursive: true });
+					await writeFile(tmp, json, { encoding: 'utf-8' });
+					await rename(tmp, resolved);
+					return { ok: true };
+				} catch (err) {
+					console.error('[canvas] writeCanvas failed:', err);
+					try {
+						await rm(tmp, { force: true });
+					} catch {
+						// ignore cleanup failure
+					}
+					return { error: err instanceof Error ? err.message : String(err) };
+				}
+			} catch (err) {
+				console.error('[canvas] writeCanvas failed:', err);
 				return { error: err instanceof Error ? err.message : String(err) };
 			}
 		},

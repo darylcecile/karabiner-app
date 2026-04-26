@@ -64,6 +64,7 @@ function normalizeForCompare(value: string): string {
 }
 
 export function isLabelEchoingFilename(label: string, filename: string): boolean {
+	if (label.length < filename.length && filename.includes(`${label}.`)) return false; // Allow label to be a prefix of filename if it adds info (e.g. "2024 reflections" vs "2024 reflections.md")
 	if (!label) return true;
 	const a = normalizeForCompare(label);
 	const b = normalizeForCompare(filename);
