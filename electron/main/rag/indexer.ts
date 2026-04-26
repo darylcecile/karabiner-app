@@ -9,6 +9,7 @@ import * as embedder from "@/main/rag/embedder";
 import { chunkMarkdown } from "@/main/rag/chunker";
 import { isBinaryFile } from "@/main/files";
 import { getPreferences } from "@/main/preferences";
+import { clearCachedLabel, clearCachedLabelsByPrefix, reconcileCachedLabels } from "@/main/ai/labelCache";
 import { RAG_PROGRESS_CHANNEL, type RagProgress } from "@/shared/ragTypes";
 
 const VAULT_ROOT = path.join(process.env.HOME ?? "", ".karabiner", "vault");
@@ -211,6 +212,9 @@ async function removeFile(absPath: string): Promise<void> {
 		const pg = await getDb();
 		await pg.query(`DELETE FROM files WHERE path = $1`, [absPath]);
 	});
+	await clearCachedLabel(absPath).catch((err) =>
+		console.error("[rag/indexer] clearCachedLabel failed:", absPath, err),
+	);
 }
 
 async function removeDir(absPath: string): Promise<void> {
@@ -219,6 +223,9 @@ async function removeDir(absPath: string): Promise<void> {
 		const prefix = absPath.endsWith("/") ? absPath : absPath + "/";
 		await pg.query(`DELETE FROM files WHERE path LIKE $1`, [prefix + "%"]);
 	});
+	await clearCachedLabelsByPrefix(absPath).catch((err) =>
+		console.error("[rag/indexer] clearCachedLabelsByPrefix failed:", absPath, err),
+	);
 }
 
 // MARK: full index pass
@@ -259,6 +266,15 @@ export async function startFullIndex(): Promise<void> {
 				}
 			} catch (err) {
 				console.error("[rag/indexer] reconciliation failed:", err);
+			}
+
+			try {
+				const removed = await reconcileCachedLabels(files);
+				if (removed > 0) {
+					console.log(`[rag/indexer] reconcileCachedLabels removed ${removed} stale label cache entries`);
+				}
+			} catch (err) {
+				console.error("[rag/indexer] reconcileCachedLabels failed:", err);
 			}
 
 			setStatus({ state: "indexing", total: files.length, indexed: 0, currentFile: undefined });

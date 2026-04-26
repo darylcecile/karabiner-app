@@ -8,8 +8,8 @@ category: string;
 
 const MetadataSchema = z.object({
 label: z.string().min(1).max(80),
-emoji: z.string().min(1).max(8),
-category: z.string().min(1).max(40),
+emoji: z.string().max(8).default("🗒️"),
+category: z.string().min(1).max(40).default("Notes"),
 });
 
 export const FILE_METADATA_PROMPT_INSTRUCTIONS = [
@@ -21,8 +21,24 @@ export const FILE_METADATA_PROMPT_INSTRUCTIONS = [
 	"  - DO NOT just rewrite, capitalise, or de-kebab the filename.",
 	"  - The label MUST add information beyond the filename (e.g. the topic, the question being asked, the key entity).",
 	"  - If the content is empty or too short to summarise, return an empty string for label.",
-	"- emoji: a single appropriate emoji character that reflects the content's topic.",
-	'- category: short bucket like "Journal", "Project", "Research", "Notes".',
+	"- emoji: REQUIRED. A single Unicode emoji character that reflects the content's topic.",
+	'  - MUST be exactly one emoji (e.g. "📝", "💡", "📅", "🧪"). Never an empty string. Never multiple emoji. Never plain text.',
+	"  - If you are uncertain, default to 📝.",
+	'- category: REQUIRED. Short bucket like "Journal", "Project", "Research", "Notes", "Meeting", "Reference".',
+	'  - If unsure, use "Notes".',
+	"",
+	"Examples:",
+	'  Filename: "wobbly.md"',
+	'  Content: "# Standup notes 2024-03-12\\n- Reviewed PR #482\\n- Blocked on auth refresh bug\\n- Pairing with Sam tomorrow"',
+	'  → {"label":"Standup blocked on auth bug","emoji":"🗒️","category":"Meeting"}',
+	"",
+	'  Filename: "year-end-review.md"',
+	'  Content: "Reflecting on 2024 — shipped the search rewrite, mentored 2 juniors, missed Q3 OKR for onboarding latency."',
+	'  → {"label":"2024 reflections and OKR miss","emoji":"📈","category":"Journal"}',
+	"",
+	'  Filename: "untitled.md"',
+	'  Content: "ok"',
+	'  → {"label":"","emoji":"📝","category":"Notes"}',
 ].join("\n");
 
 export function buildFileMetadataPrompt(content: string, filename: string): string {
@@ -67,27 +83,35 @@ abstract ask(question: string): Promise<string>;
 abstract askWithSession(question: string, sessionId: string): Promise<string>;
 abstract generateFileMetadata(content: string, filename: string): Promise<FileMetadata | null>;
 
-protected parseMetadataResponse(raw: string): FileMetadata | null {
-if (!raw) return null;
-const candidates: string[] = [];
-const trimmed = raw.trim();
-candidates.push(trimmed);
+	protected parseMetadataResponse(raw: string): FileMetadata | null {
+		if (!raw) {
+			console.warn("[AIProvider] parseMetadataResponse: empty raw response");
+			return null;
+		}
+		const candidates: string[] = [];
+		const trimmed = raw.trim();
+		candidates.push(trimmed);
 
-const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-if (fenceMatch && fenceMatch[1]) candidates.push(fenceMatch[1].trim());
+		const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+		if (fenceMatch && fenceMatch[1]) candidates.push(fenceMatch[1].trim());
 
-const objMatch = trimmed.match(/\{[\s\S]*\}/);
-if (objMatch) candidates.push(objMatch[0]);
+		const objMatch = trimmed.match(/\{[\s\S]*\}/);
+		if (objMatch) candidates.push(objMatch[0]);
 
-for (const candidate of candidates) {
-try {
-const parsed = JSON.parse(candidate);
-const result = MetadataSchema.safeParse(parsed);
-if (result.success) return result.data;
-} catch {
-// keep trying
-}
-}
-return null;
-}
+		const errors: string[] = [];
+		for (const candidate of candidates) {
+			try {
+				const parsed = JSON.parse(candidate);
+				const result = MetadataSchema.safeParse(parsed);
+				if (result.success) return result.data;
+				errors.push(`schema mismatch: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+			} catch (err) {
+				errors.push(`JSON parse failed: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
+		console.warn(
+			`[AIProvider] parseMetadataResponse: no candidate matched schema. raw=${JSON.stringify(trimmed.slice(0, 500))} errors=[${errors.join(' | ')}]`,
+		);
+		return null;
+	}
 }

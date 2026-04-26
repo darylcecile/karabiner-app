@@ -151,6 +151,7 @@ function startNext() {
 function scheduleRegenerate(absPath: string) {
 	const run = () => {
 		if (isBreakerOpen()) {
+			console.warn(`[useFileLabel] bail: circuit breaker opened mid-queue for ${absPath}`);
 			cache.set(absPath, null);
 			notifyPath(absPath);
 			drainQueueAsFailed();
@@ -164,10 +165,12 @@ function scheduleRegenerate(absPath: string) {
 				if (entry) {
 					recordSuccess();
 				} else {
+					console.warn(`[useFileLabel] regenerateFileLabel returned null for ${absPath}`);
 					recordFailure();
 				}
 			})
-			.catch(() => {
+			.catch((err) => {
+				console.warn(`[useFileLabel] regenerateFileLabel threw for ${absPath}:`, err);
 				cache.set(absPath, null);
 				recordFailure();
 			})
@@ -211,6 +214,7 @@ export function requestLabel(absPath: string, isFolder = false): void {
 	if (cache.has(absPath)) return;
 
 	if (isBreakerOpen()) {
+		console.warn(`[useFileLabel] bail: circuit breaker open for ${absPath}`);
 		cache.set(absPath, null);
 		return;
 	}
@@ -228,14 +232,33 @@ export function requestLabel(absPath: string, isFolder = false): void {
 				notifyPath(absPath);
 				return;
 			}
-		} catch {
+		} catch (err) {
+			console.warn(`[useFileLabel] getFileLabel threw for ${absPath}:`, err);
 			// fall through; we'll decide below whether to regenerate
 		}
 
 		// Cache miss → only invoke AI if a provider is actually available
 		// AND label generation hasn't been explicitly disabled by the user.
-		const state = await getAvailability().catch(() => null);
-		if (!state || !state.enabled || !state.labelGenerationEnabled) {
+		const state = await getAvailability().catch((err) => {
+			console.warn(`[useFileLabel] availability check threw for ${absPath}:`, err);
+			return null;
+		});
+		if (!state) {
+			console.warn(`[useFileLabel] bail: no availability state for ${absPath}`);
+			cache.set(absPath, null);
+			notifyPath(absPath);
+			return;
+		}
+		if (!state.enabled) {
+			console.warn(
+				`[useFileLabel] bail: AI not enabled (provider=${state.provider}, active=${state.availability.active}) for ${absPath}`,
+			);
+			cache.set(absPath, null);
+			notifyPath(absPath);
+			return;
+		}
+		if (!state.labelGenerationEnabled) {
+			console.warn(`[useFileLabel] bail: label generation disabled in prefs for ${absPath}`);
 			cache.set(absPath, null);
 			notifyPath(absPath);
 			return;

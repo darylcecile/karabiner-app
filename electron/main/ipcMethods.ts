@@ -10,6 +10,7 @@ import { isLabelEchoingFilename } from '@/main/ai/index';
 import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
 import type { RagProgress } from '@/shared/ragTypes';
+import { parseCanvas, type CanvasData } from '@/shared/canvasTypes';
 import * as ragIndexer from '@/main/rag/indexer';
 import { showSearch, hideSearch, toggleSearch } from '@/main/searchWindow';
 import { getMainWindow } from '@/main/index';
@@ -91,6 +92,37 @@ export const mainRelay = createMainRelay({
 		async aiAvailability() {
 			return await getAIAvailability();
 		},
+		async readCanvas(
+			absPath: string,
+		): Promise<{ data: CanvasData; error?: undefined } | { data?: undefined; error: string }> {
+			try {
+				const resolved = resolvePath(absPath);
+				let raw: string;
+				try {
+					raw = await readFile(resolved, { encoding: "utf-8" });
+				} catch (err: any) {
+					if (err && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
+						return { error: "File not found" };
+					}
+					console.error("readCanvas read failed:", err);
+					return { error: err instanceof Error ? err.message : String(err) };
+				}
+				const trimmed = raw.trim();
+				if (trimmed === "" || trimmed === "{}") {
+					return { data: { nodes: [], edges: [] } };
+				}
+				try {
+					const data = parseCanvas(raw);
+					return { data };
+				} catch (err) {
+					console.warn("readCanvas parse failed:", err);
+					return { error: err instanceof Error ? err.message : String(err) };
+				}
+			} catch (err) {
+				console.error("readCanvas failed:", err);
+				return { error: err instanceof Error ? err.message : String(err) };
+			}
+		},
 		async getFileLabel(absPath: string) {
 			try {
 				const resolved = resolvePath(absPath);
@@ -111,31 +143,58 @@ export const mainRelay = createMainRelay({
 		},
 		async regenerateFileLabel(absPath: string) {
 			try {
-				if (getPreferences("ai.labelGeneration") === false) return null;
+				if (getPreferences("ai.labelGeneration") === false) {
+					console.warn(`[regenerateFileLabel] bail: ai.labelGeneration disabled (${absPath})`);
+					return null;
+				}
 				const resolved = resolvePath(absPath);
 				let mtimeMs: number;
 				try {
 					const s = await stat(resolved);
 					mtimeMs = s.mtimeMs;
-				} catch {
+				} catch (err) {
+					console.warn(`[regenerateFileLabel] bail: stat failed for ${resolved}:`, err);
 					return null;
 				}
-				if (await isBinaryFile(resolved)) return null;
+				if (await isBinaryFile(resolved)) {
+					console.warn(`[regenerateFileLabel] bail: binary file ${resolved}`);
+					return null;
+				}
 				const provider = await getActiveProvider();
-				if (!provider) return null;
+				if (!provider) {
+					console.warn(`[regenerateFileLabel] bail: no active AI provider (${resolved})`);
+					return null;
+				}
 				let content: string;
 				try {
 					content = await readFile(resolved, "utf-8");
-				} catch {
+				} catch (err) {
+					console.warn(`[regenerateFileLabel] bail: readFile failed for ${resolved}:`, err);
 					return null;
 				}
 				const truncated = content.length > 4000 ? content.slice(0, 4000) : content;
 				const filename = path.basename(resolved);
-				const result = await provider.generateFileMetadata(truncated, filename).catch(() => null);
-				if (!result) return null;
+				if (truncated.trim().length < 20) {
+					console.warn(
+						`[regenerateFileLabel] bail: content too short to summarise (${truncated.trim().length} chars) for ${filename}`,
+					);
+					return null;
+				}
+				const result = await provider.generateFileMetadata(truncated, filename).catch((err) => {
+					console.warn(`[regenerateFileLabel] bail: provider threw for ${filename}:`, err);
+					return null;
+				});
+				if (!result) {
+					console.warn(`[regenerateFileLabel] bail: provider returned no result for ${filename}`);
+					return null;
+				}
+				if (!result.label || result.label.trim().length === 0) {
+					console.warn(`[regenerateFileLabel] bail: provider returned empty label for ${filename}`);
+					return null;
+				}
 				if (isLabelEchoingFilename(result.label, filename)) {
 					console.warn(
-						`[regenerateFileLabel] discarded label that echoes filename: "${result.label}" vs "${filename}"`,
+						`[regenerateFileLabel] bail: label echoes filename — "${result.label}" vs "${filename}"`,
 					);
 					return null;
 				}

@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { FileTree } from './workbench/FileTree';
 import { TreeAccordion } from '@/renderer/components/workbench/TreeAccordion';
 import { Editor } from '@/renderer/components/editor';
+import { CanvasView } from '@/renderer/components/canvas';
 import { atom, useAtom } from 'jotai';
 import { ScrollArea, ScrollBar } from './ui/scroll-area';
 import { ContentScrollArea } from '@/renderer/components/workbench/ContentScrollArea';
@@ -67,36 +68,42 @@ export function RootLayout(props: PropsWithChildren) {
 				</Allotment.Pane>
 				<Allotment.Pane>
 					<div className="relative h-full">
-						<ContentScrollArea
-							className='pt-6 bg-background/25 dark:bg-black/20'
-							scrollbarTopOffset={32}
-							scrollbarBottomOffset={16}
-							thumbWidth={6}
-							topFadeHeight={56}
-							bottomFadeHeight={40}
-							footer={
-								<>
-									<IndexingStatusFooter />
-									{editor ? (
-										<div
-											className="text-2xs font-medium absolute right-4 left-4 bottom-2 text-foreground/50 flex items-center justify-between"
-										>
-											{/* status (e.g. 'indexing...')
-											<div>
-												{editor.isIndexing ? "Indexing..." : editor.isSaving ? "Saving..." : null}
-											</div> */}
-											<div />
+						{workspace.isCanvasFile && workspace.openedPath ? (
+							<div className="absolute inset-0 pt-6">
+								<CanvasView path={workspace.openedPath} />
+							</div>
+						) : (
+							<ContentScrollArea
+								className='pt-6 bg-background/25 dark:bg-black/20'
+								scrollbarTopOffset={32}
+								scrollbarBottomOffset={16}
+								thumbWidth={6}
+								topFadeHeight={56}
+								bottomFadeHeight={40}
+								footer={
+									<>
+										<IndexingStatusFooter />
+										{editor ? (
+											<div
+												className="text-2xs font-medium absolute right-4 left-4 bottom-2 text-foreground/50 flex items-center justify-between"
+											>
+												{/* status (e.g. 'indexing...')
+												<div>
+													{editor.isIndexing ? "Indexing..." : editor.isSaving ? "Saving..." : null}
+												</div> */}
+												<div />
 
-											{/* document state (counts) */}
-											<div>{getContentCounterFromEditor(editor)}</div>
-										</div>
-									) : null}
-								</>
-							}
-						>
-							<Editor />
-							{props.children}
-						</ContentScrollArea>
+												{/* document state (counts) */}
+												<div>{getContentCounterFromEditor(editor)}</div>
+											</div>
+										) : null}
+									</>
+								}
+							>
+								<Editor />
+								{props.children}
+							</ContentScrollArea>
+						)}
 						<ActionBar className='ml-1 px-1 flex items-center justify-between z-100'>
 							<MainActionBarGroup />
 						</ActionBar>

@@ -10,6 +10,7 @@ const WorkbenchContext = createContext({} as {
 	workspace: {
 		openInEditor: (path: string) => void,
 		openedPath?: string,
+		isCanvasFile: boolean,
 		isLoadingRef: React.RefObject<boolean>,
 		goBack: () => void,
 		goForward: () => void,
@@ -53,6 +54,7 @@ export function Workbench(props: PropsWithChildren) {
 		if (node && node.kind !== "file") {
 			return false;
 		}
+		const isCanvas = path.toLowerCase().endsWith('.canvas');
 		// Set the loading flag synchronously, before any awaits, so any onChange
 		// fired during the file-load lifecycle (focus, internal BlockNote setup,
 		// or replaceBlocks) is suppressed regardless of whether openedPath has
@@ -60,6 +62,11 @@ export function Workbench(props: PropsWithChildren) {
 		isLoadingRef.current = true;
 		try {
 			setOpenedPath(path);
+			if (isCanvas) {
+				// Canvas files bypass BlockNote — the CanvasView component
+				// fetches its own content via IPC.
+				return true;
+			}
 			const isBinaryFormat = await fs.isBinaryFile(path);
 			if (isBinaryFormat) return true;
 			const content = await fs.readFile(path, "utf-8");
@@ -113,6 +120,7 @@ export function Workbench(props: PropsWithChildren) {
 	const workspace = useMemo(() => ({
 		openInEditor,
 		openedPath,
+		isCanvasFile: openedPath ? openedPath.toLowerCase().endsWith('.canvas') : false,
 		isLoadingRef,
 		goBack,
 		goForward,

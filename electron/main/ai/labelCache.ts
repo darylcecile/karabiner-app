@@ -70,6 +70,34 @@ export async function clearCachedLabel(absPath: string): Promise<void> {
 	}
 }
 
+export async function clearCachedLabelsByPrefix(prefix: string): Promise<number> {
+	const c = await loadCache();
+	const normalized = prefix.endsWith("/") ? prefix : prefix + "/";
+	let removed = 0;
+	for (const key of Object.keys(c.entries)) {
+		if (key === prefix || key.startsWith(normalized)) {
+			delete c.entries[key];
+			removed += 1;
+		}
+	}
+	if (removed > 0) await persistCache();
+	return removed;
+}
+
+export async function reconcileCachedLabels(validPaths: Iterable<string>): Promise<number> {
+	const c = await loadCache();
+	const valid = new Set(validPaths);
+	let removed = 0;
+	for (const key of Object.keys(c.entries)) {
+		if (!valid.has(key)) {
+			delete c.entries[key];
+			removed += 1;
+		}
+	}
+	if (removed > 0) await persistCache();
+	return removed;
+}
+
 export async function clearAllCachedLabels(): Promise<number> {
 	const c = await loadCache();
 	const count = Object.keys(c.entries).length;
