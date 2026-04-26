@@ -16,6 +16,7 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,components.json}'
   - '!**/*.map'
   - '!build/afterPack.cjs'
+  - '!build/notarize.cjs'
   # Drop foreign-platform native binaries (we only build for mac targets).
   - '!**/node_modules/@github/copilot-{linux,win32}-*/**'
   - '!**/node_modules/@img/sharp-{linux,linuxmusl,win32}-*/**'
@@ -46,8 +47,19 @@ mac:
         - arm64
         - x64
   artifactName: ${name}-${version}-${arch}.${ext}
+  # Hardened runtime is mandatory for notarization. When CI imports the
+  # Developer ID Application cert, electron-builder will pick it up from the
+  # keychain automatically. If no cert is present (forks, local builds without
+  # CSC env vars), set CSC_IDENTITY_AUTO_DISCOVERY=false to force ad-hoc.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+afterSign: build/notarize.cjs
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}
+  internetEnabled: false
 win:
   target:
     - target: nsis

@@ -115,7 +115,7 @@ export async function handleChatRequest(request: Request): Promise<Response> {
 		system: toolsAreCallable ? SYSTEM_PROMPT_NATIVE_TOOLS : SYSTEM_PROMPT_BRIDGED,
 		messages: modelMessages,
 		tools,
-		stopWhen: stepCountIs(toolsAreCallable ? 8 : 1),
+		stopWhen: stepCountIs(toolsAreCallable ? 50 : 1),
 	});
 
 	return result.toUIMessageStreamResponse();

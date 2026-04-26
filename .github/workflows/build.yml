@@ -64,10 +64,65 @@ jobs:
       - name: Type-check
         run: pnpm exec tsc --noEmit
 
+      - name: Import signing certificate (macOS)
+        if: matrix.target == 'mac'
+        env:
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          MAC_KEYCHAIN_PASSWORD: ${{ secrets.MAC_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAC_CERT_P12_BASE64:-}" ]; then
+            echo "::warning::MAC_CERT_P12_BASE64 not set — falling back to ad-hoc signing."
+            echo "MAC_SIGN=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          echo -n "$MAC_CERT_P12_BASE64" | base64 --decode --output "$CERT_PATH"
+          security create-keychain -p "$MAC_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$MAC_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MAC_CERT_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$MAC_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+          echo "MAC_SIGN=true" >> "$GITHUB_ENV"
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Stage notarization API key (macOS)
+        if: matrix.target == 'mac' && env.MAC_SIGN == 'true'
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_API_KEY_P8_BASE64:-}" ]; then
+            echo "::warning::APPLE_API_KEY_P8_BASE64 not set — skipping notarization."
+            echo "MAC_NOTARIZE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo -n "$APPLE_API_KEY_P8_BASE64" | base64 --decode --output "$KEY_PATH"
+          echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "MAC_NOTARIZE=true" >> "$GITHUB_ENV"
+
       - name: Build & package app
         run: pnpm run build:${{ matrix.target }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # When MAC_SIGN=true, electron-builder picks up the cert from the
+          # temporary keychain we imported above. When it's false (no secrets
+          # configured, e.g. on forks), we fall back to ad-hoc signing.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.MAC_SIGN == 'true' && 'true' || 'false' }}
+          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
+          # Notarization credentials (consumed by electron-builder via notarytool).
+          APPLE_API_KEY: ${{ env.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload distributables
         uses: actions/upload-artifact@v4
