@@ -209,6 +209,30 @@ export function clearLabelCache() {
 	for (const fn of globalSubscribers) fn();
 }
 
+// Drop the cached label for a single path and immediately re-request it.
+// Call this whenever the file's content (or filename heading) changes so the
+// label re-derives from the new content.
+export function invalidateFileLabel(absPath: string): void {
+	if (!cache.has(absPath)) return;
+	cache.delete(absPath);
+	notifyPath(absPath);
+	requestLabel(absPath, false);
+}
+
+// Debounced variant — coalesces rapid edits (e.g. typing in the editor) so
+// we only re-derive the label after the user pauses.
+const invalidateTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const INVALIDATE_DEBOUNCE_MS = 1500;
+export function invalidateFileLabelDebounced(absPath: string): void {
+	const existing = invalidateTimers.get(absPath);
+	if (existing) clearTimeout(existing);
+	const t = setTimeout(() => {
+		invalidateTimers.delete(absPath);
+		invalidateFileLabel(absPath);
+	}, INVALIDATE_DEBOUNCE_MS);
+	invalidateTimers.set(absPath, t);
+}
+
 export function requestLabel(absPath: string, isFolder = false): void {
 	if (isFolder) return;
 	if (cache.has(absPath)) return;

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DirEntry } from "@/main/fs";
 import { Path } from "@/shared/fsUtils";
 import { main } from '@/renderer/relay';
+import { invalidateFileLabelDebounced } from '@/renderer/hooks/useFileLabel';
+
+const MARKDOWN_EXT_RE = /\.(?:md|markdown|mdx)$/i;
 
 export type NodeCustomization = {
 	tint?: string | null;
@@ -727,6 +730,11 @@ export function useFileTree(options?: UseFileTreeOptions) {
 
 		const fullPath = assertPathWithinRoot(path);
 		await main.writeFile(fullPath, content, encoding);
+		// If the markdown body's first heading changed, the cached label is
+		// stale. Debounce so rapid keystrokes coalesce into one re-derive.
+		if (MARKDOWN_EXT_RE.test(fullPath)) {
+			invalidateFileLabelDebounced(fullPath);
+		}
 		await refreshDirectory(parentPath);
 
 		setTreeState((previous) => ({

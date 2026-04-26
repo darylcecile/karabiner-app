@@ -7,6 +7,11 @@ import path from 'node:path';
 import { isBinaryFile } from '@/main/files';
 import { getAIAvailability, getActiveProvider, clearAIAvailabilityCache } from '@/main/ai/resolver';
 import { isLabelEchoingFilename } from '@/main/ai/index';
+import {
+	extractMarkdownHeading,
+	isMarkdownExtension,
+	prependMarkdownHeading,
+} from '@/main/ai/markdownHeading';
 import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
 import type { RagProgress } from '@/shared/ragTypes';
@@ -193,11 +198,6 @@ export const mainRelay = createMainRelay({
 					console.warn(`[regenerateFileLabel] bail: binary file ${resolved}`);
 					return null;
 				}
-				const provider = await getActiveProvider();
-				if (!provider) {
-					console.warn(`[regenerateFileLabel] bail: no active AI provider (${resolved})`);
-					return null;
-				}
 				let content: string;
 				try {
 					content = await readFile(resolved, "utf-8");
@@ -205,8 +205,35 @@ export const mainRelay = createMainRelay({
 					console.warn(`[regenerateFileLabel] bail: readFile failed for ${resolved}:`, err);
 					return null;
 				}
-				const truncated = content.length > 4000 ? content.slice(0, 4000) : content;
 				const filename = path.basename(resolved);
+				const ext = path.extname(resolved);
+				const isMarkdown = isMarkdownExtension(ext);
+
+				// Fast path: if the markdown file already starts with an H1/H2,
+				// use that as the label without calling the provider.
+				if (isMarkdown) {
+					const heading = extractMarkdownHeading(content);
+					if (heading && heading.label.trim().length > 0) {
+						const entry = {
+							label: heading.label,
+							emoji: heading.emoji || "📝",
+							category: "Notes",
+							mtimeMs,
+							generatedAt: Date.now(),
+						};
+						await setCachedLabel(resolved, entry).catch((err) => {
+							console.error("setCachedLabel failed:", err);
+						});
+						return { label: entry.label, emoji: entry.emoji, category: entry.category };
+					}
+				}
+
+				const provider = await getActiveProvider();
+				if (!provider) {
+					console.warn(`[regenerateFileLabel] bail: no active AI provider (${resolved})`);
+					return null;
+				}
+				const truncated = content.length > 4000 ? content.slice(0, 4000) : content;
 				if (truncated.trim().length < 20) {
 					console.warn(
 						`[regenerateFileLabel] bail: content too short to summarise (${truncated.trim().length} chars) for ${filename}`,
@@ -231,6 +258,31 @@ export const mainRelay = createMainRelay({
 					);
 					return null;
 				}
+
+				// For markdown files that lacked a heading, write the generated label
+				// back as an H1 so it becomes the source of truth on next read and
+				// the user can edit it directly in the file.
+				if (isMarkdown) {
+					try {
+						const updated = prependMarkdownHeading(content, result.label, result.emoji);
+						const tmp = `${resolved}.tmp`;
+						try {
+							await writeFile(tmp, updated, { encoding: "utf-8" });
+							await rename(tmp, resolved);
+						} catch (writeErr) {
+							try { await rm(tmp, { force: true }); } catch {}
+							throw writeErr;
+						}
+						const s = await stat(resolved);
+						mtimeMs = s.mtimeMs;
+					} catch (err) {
+						console.warn(
+							`[regenerateFileLabel] heading prepend failed for ${filename}; caching label only:`,
+							err,
+						);
+					}
+				}
+
 				await setCachedLabel(resolved, {
 					label: result.label,
 					emoji: result.emoji,
