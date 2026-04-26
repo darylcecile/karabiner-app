@@ -19,7 +19,7 @@ function createSearchWindow(): BrowserWindow {
 		height: HEIGHT,
 		minWidth: 480,
 		minHeight: 240,
-		// frame: false,
+		frame: false,
 		titleBarStyle: 'hidden',
 		transparent: true,
 		hasShadow: true,
@@ -40,6 +40,10 @@ function createSearchWindow(): BrowserWindow {
 			nodeIntegration: false,
 		},
 	});
+
+	if (process.platform === 'darwin' && typeof (win as any).setWindowButtonVisibility === 'function') {
+		(win as any).setWindowButtonVisibility(false);
+	}
 
 	if (process.env.ELECTRON_RENDERER_URL) {
 		void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/search.html`);

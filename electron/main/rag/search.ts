@@ -3,8 +3,11 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { promisify } from "node:util";
+import Fuse from "fuse.js";
 import { getDb } from "@/main/rag/db";
 import { embed, isReady } from "@/main/rag/embedder";
+import { getPreferences } from "@/main/preferences";
+import { getActiveProvider } from "@/main/ai/resolver";
 
 const execFileP = promisify(execFile);
 
@@ -16,11 +19,18 @@ export type SearchResult = {
 	chunkIndex?: number;
 };
 
+export type AskAnswer = {
+	text: string;
+	citations: Array<{ resultIndex: number; path: string; snippet?: string }>;
+};
+
 export type SearchResponse = {
-	source: "vector" | "grep";
+	source: "vector" | "grep" | "ask";
 	query: string;
 	results: SearchResult[];
 	reason?: string;
+	answer?: AskAnswer;
+	rewrittenQueries?: string[];
 };
 
 const SNIPPET_LEN = 200;
@@ -146,16 +156,44 @@ type RgMatch = {
 	};
 };
 
-async function rgSearch(query: string, vaultRoot: string, limit: number): Promise<SearchResult[]> {
+type GrepCandidate = {
+	path: string;
+	snippet: string;
+	lineNumber: number;
+};
+
+const FUZZY_LIMIT = 200;
+
+function buildRgPattern(query: string): string {
+	const tokens = query
+		.split(/\s+/)
+		.map((t) => t.trim())
+		.filter(Boolean)
+		.map((t) => t.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"));
+	if (tokens.length === 0) return query;
+	return tokens.join("|");
+}
+
+async function rgFindCandidates(query: string, vaultRoot: string): Promise<GrepCandidate[]> {
 	const rg = await getRgPath();
 	if (!rg) return [];
-	const args = ["--json", "--max-count", "5", "--max-filesize", "1M", "-S", "--", query, vaultRoot];
+	const pattern = buildRgPattern(query);
+	const args = [
+		"--json",
+		"--max-count",
+		"3",
+		"--max-filesize",
+		"1M",
+		"-S",
+		"-e",
+		pattern,
+		vaultRoot,
+	];
 	let stdout = "";
 	try {
 		const r = await execFileP(rg, args, { maxBuffer: 50 * 1024 * 1024 });
 		stdout = r.stdout;
 	} catch (err: any) {
-		// rg exits with code 1 when no matches; that yields a rejection with a code.
 		if (err && typeof err === "object" && (err.code === 1 || err.code === "1")) {
 			return [];
 		}
@@ -166,10 +204,9 @@ async function rgSearch(query: string, vaultRoot: string, limit: number): Promis
 		}
 	}
 
-	const results: SearchResult[] = [];
-	const lines = stdout.split("\n");
+	const byPath = new Map<string, GrepCandidate>();
 	const normalizedRoot = path.resolve(vaultRoot);
-	for (const line of lines) {
+	for (const line of stdout.split("\n")) {
 		if (!line) continue;
 		let obj: RgMatch;
 		try {
@@ -185,14 +222,17 @@ async function rgSearch(query: string, vaultRoot: string, limit: number): Promis
 		const abs = path.resolve(filePath);
 		if (!abs.startsWith(normalizedRoot + path.sep) && abs !== normalizedRoot) continue;
 
-		results.push({
-			path: abs,
-			score: 1 / (1 + lineNumber / 100),
-			snippet: buildSnippet(lineText, query),
-		});
-		if (results.length >= limit) break;
+		const existing = byPath.get(abs);
+		if (!existing || lineNumber < existing.lineNumber) {
+			byPath.set(abs, {
+				path: abs,
+				snippet: buildSnippet(lineText, query),
+				lineNumber,
+			});
+		}
+		if (byPath.size >= FUZZY_LIMIT) break;
 	}
-	return results;
+	return Array.from(byPath.values());
 }
 
 async function* walkMarkdown(root: string): AsyncGenerator<string> {
@@ -213,27 +253,78 @@ async function* walkMarkdown(root: string): AsyncGenerator<string> {
 	}
 }
 
-async function nodeGrepSearch(query: string, vaultRoot: string, limit: number): Promise<SearchResult[]> {
-	const results: SearchResult[] = [];
+async function nodeGrepCandidates(query: string, vaultRoot: string): Promise<GrepCandidate[]> {
+	const candidates: GrepCandidate[] = [];
+	const tokens = query
+		.toLowerCase()
+		.split(/\s+/)
+		.map((t) => t.trim())
+		.filter(Boolean);
 	const lowered = query.toLowerCase();
 	for await (const file of walkMarkdown(vaultRoot)) {
-		if (results.length >= limit) break;
+		if (candidates.length >= FUZZY_LIMIT) break;
 		try {
 			const s = await stat(file);
 			if (s.size > MAX_FILE_BYTES) continue;
 			const content = await readFile(file, "utf-8");
-			const idx = content.toLowerCase().indexOf(lowered);
-			if (idx < 0) continue;
-			results.push({
+			const loweredContent = content.toLowerCase();
+			let idx = loweredContent.indexOf(lowered);
+			if (idx < 0) {
+				// fall back: any individual token must match
+				idx = -1;
+				for (const tok of tokens) {
+					const i = loweredContent.indexOf(tok);
+					if (i >= 0 && (idx < 0 || i < idx)) idx = i;
+				}
+				if (idx < 0) continue;
+			}
+			candidates.push({
 				path: file,
-				score: 1 / (1 + idx / 1000),
 				snippet: buildSnippet(content, query),
+				lineNumber: content.slice(0, idx).split("\n").length,
 			});
 		} catch {
 			// skip unreadable files
 		}
 	}
-	return results;
+	return candidates;
+}
+
+function fuzzyRank(candidates: GrepCandidate[], query: string, limit: number): SearchResult[] {
+	if (candidates.length === 0) return [];
+	const enriched = candidates.map((c) => ({
+		...c,
+		basename: path.basename(c.path),
+	}));
+	const fuse = new Fuse(enriched, {
+		includeScore: true,
+		ignoreLocation: true,
+		threshold: 0.5,
+		keys: [
+			{ name: "basename", weight: 0.6 },
+			{ name: "snippet", weight: 0.3 },
+			{ name: "path", weight: 0.1 },
+		],
+	});
+	const ranked = fuse.search(query);
+	const matched = ranked.map((r) => ({
+		path: r.item.path,
+		// fuse score: 0 = perfect, 1 = no match. Convert to a 0..1 relevance.
+		score: 1 - (r.score ?? 0),
+		snippet: r.item.snippet,
+	}));
+	if (matched.length >= limit) return matched.slice(0, limit);
+	// Fall back: include any leftover candidates Fuse filtered out, ranked by line number proximity.
+	const matchedPaths = new Set(matched.map((m) => m.path));
+	const leftovers = enriched
+		.filter((c) => !matchedPaths.has(c.path))
+		.sort((a, b) => a.lineNumber - b.lineNumber)
+		.map((c) => ({
+			path: c.path,
+			score: 1 / (1 + c.lineNumber / 100),
+			snippet: c.snippet,
+		}));
+	return matched.concat(leftovers).slice(0, limit);
 }
 
 async function grepFallback(
@@ -245,11 +336,13 @@ async function grepFallback(
 	try {
 		const rg = await getRgPath();
 		if (rg) {
-			const results = await rgSearch(query, vaultRoot, limit);
-			return { source: "grep", query, results, reason: `${baseReason}:rg` };
+			const candidates = await rgFindCandidates(query, vaultRoot);
+			const results = fuzzyRank(candidates, query, limit);
+			return { source: "grep", query, results, reason: `${baseReason}:rg+fuse` };
 		}
-		const results = await nodeGrepSearch(query, vaultRoot, limit);
-		return { source: "grep", query, results, reason: `${baseReason}:node-grep` };
+		const candidates = await nodeGrepCandidates(query, vaultRoot);
+		const results = fuzzyRank(candidates, query, limit);
+		return { source: "grep", query, results, reason: `${baseReason}:node-grep+fuse` };
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		console.error("[rag/search] grep error:", err);
@@ -257,12 +350,39 @@ async function grepFallback(
 	}
 }
 
-export async function search(query: string, opts?: { limit?: number }): Promise<SearchResponse> {
+export async function search(query: string, opts?: { limit?: number; forceAsk?: boolean }): Promise<SearchResponse> {
 	const trimmed = query.trim();
 	if (!trimmed) {
 		return { source: "grep", query: "", results: [], reason: "empty query" };
 	}
 	const limit = clampLimit(opts?.limit);
+
+	// Honor the user preference: if AI-powered semantic search is disabled, skip
+	// the vector path entirely and fall back to grep + fuzzy ranking.
+	let aiSearchEnabled = true;
+	try {
+		const pref = getPreferences("ai.searchEnabled");
+		if (pref === false) aiSearchEnabled = false;
+	} catch {
+		// preferences unavailable — assume enabled
+	}
+	if (!aiSearchEnabled) {
+		return await grepFallback(trimmed, limit, "ai-search-disabled");
+	}
+
+	const askPrefs = readAskModePrefs();
+	const wantAsk = opts?.forceAsk
+		? askPrefs.enabled
+		: askPrefs.enabled && askPrefs.autoDetect && looksLikeQuestion(trimmed);
+
+	if (wantAsk) {
+		try {
+			const askResp = await askSearch(trimmed, limit, askPrefs);
+			if (askResp) return askResp;
+		} catch (err) {
+			console.error("[rag/search] ask error, falling back to vector:", err);
+		}
+	}
 
 	let chunkCount = 0;
 	let dbOk = true;
@@ -288,4 +408,196 @@ export async function search(query: string, opts?: { limit?: number }): Promise<
 		console.error("[rag/search] vector error, falling back to grep:", err);
 		return await grepFallback(trimmed, limit, `vector-error: ${msg}`);
 	}
+}
+
+// MARK: ask mode
+
+type AskPrefs = {
+	enabled: boolean;
+	autoDetect: boolean;
+	showAnswer: boolean;
+	showResults: boolean;
+};
+
+function readAskModePrefs(): AskPrefs {
+	const fallback: AskPrefs = { enabled: true, autoDetect: true, showAnswer: true, showResults: true };
+	try {
+		const raw = getPreferences("ai.askMode") as Partial<AskPrefs> | undefined;
+		if (!raw) return fallback;
+		return {
+			enabled: raw.enabled !== false,
+			autoDetect: raw.autoDetect !== false,
+			showAnswer: raw.showAnswer !== false,
+			showResults: raw.showResults !== false,
+		};
+	} catch {
+		return fallback;
+	}
+}
+
+const QUESTION_WORDS = ["what", "who", "how", "where", "why", "when", "which", "show", "find", "list"];
+
+export function looksLikeQuestion(query: string): boolean {
+	const trimmed = query.trim().toLowerCase();
+	if (!trimmed) return false;
+	if (trimmed.endsWith("?")) return true;
+	const tokens = trimmed.split(/\s+/);
+	if (tokens.length >= 6) return true;
+	const first = tokens[0] ?? "";
+	if (QUESTION_WORDS.includes(first)) return true;
+	return false;
+}
+
+const REWRITE_PROMPT = [
+	"You convert a natural-language question about a personal notes vault into 1 to 3 short search queries.",
+	"Rules:",
+	"- Each rewrite is 2 to 6 words, no quotes, no punctuation.",
+	"- Cover different phrasings or synonyms when useful.",
+	"- Return ONLY a JSON array of strings, no commentary, no fences.",
+	'- Example: ["end of year review", "year-end retrospective"]',
+].join("\n");
+
+function parseRewrites(raw: string, fallback: string): string[] {
+	const candidates: string[] = [];
+	const trimmed = raw.trim();
+	if (trimmed) candidates.push(trimmed);
+	const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+	if (fence?.[1]) candidates.push(fence[1].trim());
+	const arr = trimmed.match(/\[[\s\S]*\]/);
+	if (arr) candidates.push(arr[0]);
+	for (const c of candidates) {
+		try {
+			const parsed = JSON.parse(c);
+			if (Array.isArray(parsed)) {
+				const cleaned = parsed
+					.filter((x): x is string => typeof x === "string")
+					.map((s) => s.trim())
+					.filter((s) => s.length > 0)
+					.slice(0, 3);
+				if (cleaned.length > 0) return cleaned;
+			}
+		} catch {
+			// keep trying
+		}
+	}
+	return [fallback];
+}
+
+async function dedupedVectorSearch(queries: string[], limit: number): Promise<SearchResult[]> {
+	const merged = new Map<string, SearchResult>();
+	for (const q of queries) {
+		try {
+			const part = await vectorSearch(q, limit);
+			for (const r of part) {
+				const key = `${r.path}#${r.chunkIndex ?? 0}`;
+				const existing = merged.get(key);
+				if (!existing || r.score > existing.score) merged.set(key, r);
+			}
+		} catch (err) {
+			console.error("[rag/search] sub-query failed:", q, err);
+		}
+	}
+	return Array.from(merged.values())
+		.sort((a, b) => b.score - a.score)
+		.slice(0, limit);
+}
+
+const ANSWER_PROMPT = [
+	"You are a concise assistant answering a question using ONLY the user's note excerpts.",
+	"Rules:",
+	"- Answer in 1 to 3 short sentences. Plain text, no markdown headings, no fences.",
+	"- Cite supporting excerpts with [N] tokens (e.g. [1], [2]) using the indices below.",
+	"- If the excerpts don't contain the answer, say so plainly without speculation.",
+].join("\n");
+
+function buildAnswerUserPrompt(question: string, results: SearchResult[]): string {
+	const excerpts = results.slice(0, 6).map((r, i) => {
+		const name = path.basename(r.path);
+		return `[${i + 1}] ${name}\n${r.snippet}`;
+	});
+	return [
+		`Question: ${question}`,
+		"",
+		"Excerpts:",
+		excerpts.join("\n\n"),
+		"",
+		"Answer with citations:",
+	].join("\n");
+}
+
+async function askSearch(query: string, limit: number, prefs: AskPrefs): Promise<SearchResponse | null> {
+	const provider = await getActiveProvider();
+	if (!provider) return null;
+
+	// 1. Rewrite the question into a small set of search queries.
+	let rewrites: string[] = [query];
+	try {
+		const raw = await provider.ask(`${REWRITE_PROMPT}\n\nQuestion: ${query}`);
+		rewrites = parseRewrites(raw, query);
+	} catch (err) {
+		console.error("[rag/search] rewrite failed:", err);
+	}
+
+	// 2. Run vector search per rewrite (with the original question as a fallback)
+	//    and merge results.
+	if (!isReady()) return null;
+	let chunkCount = 0;
+	try {
+		chunkCount = await countChunks();
+	} catch {
+		return null;
+	}
+	if (chunkCount < 1) return null;
+
+	const allQueries = Array.from(new Set([query, ...rewrites])).slice(0, 4);
+	const results = await dedupedVectorSearch(allQueries, limit);
+	if (results.length === 0) {
+		return {
+			source: "ask",
+			query,
+			results: [],
+			rewrittenQueries: rewrites,
+			reason: "ask:no-matches",
+		};
+	}
+
+	// 3. Optionally synthesize an answer from the top results.
+	let answer: AskAnswer | undefined;
+	if (prefs.showAnswer) {
+		try {
+			const answerText = await provider.ask(
+				`${ANSWER_PROMPT}\n\n${buildAnswerUserPrompt(query, results)}`,
+			);
+			if (answerText && answerText.trim()) {
+				const used = new Set<number>();
+				const re = /\[(\d+)\]/g;
+				let match: RegExpExecArray | null;
+				while ((match = re.exec(answerText)) !== null) {
+					const n = parseInt(match[1] ?? "0", 10);
+					if (n >= 1 && n <= results.length) used.add(n - 1);
+				}
+				const citations = (used.size > 0 ? Array.from(used) : results.map((_, i) => i).slice(0, 3))
+					.sort((a, b) => a - b)
+					.map((idx) => ({
+						resultIndex: idx,
+						path: results[idx]!.path,
+						snippet: results[idx]!.snippet,
+					}));
+				answer = { text: answerText.trim(), citations };
+			}
+		} catch (err) {
+			console.error("[rag/search] answer synthesis failed:", err);
+		}
+	}
+
+	return {
+		source: "ask",
+		query,
+		results: prefs.showResults ? results : [],
+		rewrittenQueries: rewrites,
+		answer,
+		reason: answer
+			? prefs.showResults ? "ask:answer+results" : "ask:answer-only"
+			: prefs.showResults ? "ask:results-only" : "ask:no-output",
+	};
 }

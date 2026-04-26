@@ -44,13 +44,43 @@ function buildParentLabel(absPath: string, vaultRoot: string): string {
 }
 
 function sourceLabel(source: SearchResponse['source'], count: number): string {
-	if (count === 0) return 'No matches';
-	if (source === 'vector') return 'Vector';
-	return 'Filename match';
+	if (count === 0 && source !== 'ask') return 'No matches';
+	if (source === 'vector') return 'Semantic';
+	if (source === 'ask') return 'Asked';
+	return 'Keyword';
+}
+
+function sourceBadge(source: SearchResponse['source']): { label: string; className: string; title: string } {
+	if (source === 'vector') {
+		return {
+			label: 'Semantic',
+			title: 'Result ranked by vector embedding similarity',
+			className: 'bg-primary/15 text-primary',
+		};
+	}
+	if (source === 'ask') {
+		return {
+			label: 'Cited',
+			title: 'Retrieved as supporting context for the answer',
+			className: 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
+		};
+	}
+	return {
+		label: 'Keyword',
+		title: 'Result matched via grep + fuzzy ranking (no embedding match)',
+		className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+	};
+}
+
+function stripQueryPrefix(q: string): { text: string; forced: boolean } {
+	const trimmed = q.trimStart();
+	if (trimmed.startsWith('?')) return { text: trimmed.slice(1).trimStart(), forced: true };
+	return { text: q, forced: false };
 }
 
 export default function SearchApp() {
 	const [query, setQuery] = useState('');
+	const [forceAsk, setForceAsk] = useState(false);
 	const [state, setState] = useState<SearchState>({ kind: 'idle' });
 	const [activeIndex, setActiveIndex] = useState(0);
 	const inputRef = useRef<HTMLInputElement | null>(null);
@@ -77,6 +107,24 @@ export default function SearchApp() {
 		return [];
 	})();
 
+	const resultsSource: SearchResponse['source'] | null = (() => {
+		if (state.kind === 'results') return state.response.source;
+		if (state.kind === 'loading' && state.previousResponse) return state.previousResponse.source;
+		if (state.kind === 'error' && state.previousResponse) return state.previousResponse.source;
+		return null;
+	})();
+
+	const currentResponse: SearchResponse | null = (() => {
+		if (state.kind === 'results') return state.response;
+		if (state.kind === 'loading' && state.previousResponse) return state.previousResponse;
+		if (state.kind === 'error' && state.previousResponse) return state.previousResponse;
+		return null;
+	})();
+
+	const answer = currentResponse?.answer ?? null;
+	const queryHasAskPrefix = query.trimStart().startsWith('?');
+	const askIndicatorActive = forceAsk || queryHasAskPrefix || resultsSource === 'ask';
+
 	const isLoading = state.kind === 'loading';
 
 	useEffect(() => {
@@ -87,6 +135,7 @@ export default function SearchApp() {
 	useEffect(() => {
 		const off = window.karabinerEvents.on('search:focus-input', () => {
 			setQuery('');
+			setForceAsk(false);
 			setState({ kind: 'idle' });
 			setActiveIndex(0);
 			escapePressedRef.current = false;
@@ -109,6 +158,10 @@ export default function SearchApp() {
 			return;
 		}
 
+		const { text: cleaned, forced: prefixForced } = stripQueryPrefix(trimmed);
+		const askRequested = forceAsk || prefixForced;
+		const queryToSend = cleaned.length > 0 ? cleaned : trimmed;
+
 		const mySeq = ++requestSeqRef.current;
 		// Enter loading state immediately, preserving prior results so the list
 		// stays visible (dimmed) while we debounce + fetch.
@@ -125,7 +178,10 @@ export default function SearchApp() {
 		const timer = window.setTimeout(async () => {
 			if (mySeq !== requestSeqRef.current) return;
 			try {
-				const response = (await main.ragSearch(trimmed, { limit: RESULT_LIMIT })) as SearchResponse;
+				const response = (await main.ragSearch(queryToSend, {
+					limit: RESULT_LIMIT,
+					forceAsk: askRequested,
+				})) as SearchResponse;
 				if (mySeq !== requestSeqRef.current) return;
 				setState({ kind: 'results', response });
 				setActiveIndex(0);
@@ -148,7 +204,7 @@ export default function SearchApp() {
 		return () => {
 			window.clearTimeout(timer);
 		};
-	}, [query]);
+	}, [query, forceAsk]);
 
 	useEffect(() => {
 		const el = itemRefs.current[activeIndex];
@@ -179,6 +235,11 @@ export default function SearchApp() {
 
 	const onInputKeyDown = useCallback(
 		(e: React.KeyboardEvent<HTMLInputElement>) => {
+			if (e.key === 'Tab') {
+				e.preventDefault();
+				setForceAsk((v) => !v);
+				return;
+			}
 			if (e.key === 'ArrowDown') {
 				e.preventDefault();
 				if (results.length === 0) return;
@@ -214,6 +275,7 @@ export default function SearchApp() {
 				if (query.length > 0 && !escapePressedRef.current) {
 					escapePressedRef.current = true;
 					setQuery('');
+					setForceAsk(false);
 					setState({ kind: 'idle' });
 					setActiveIndex(0);
 					closeWindow();
@@ -255,7 +317,10 @@ export default function SearchApp() {
 
 	const showEmptyState = state.kind === 'idle';
 	const showNoResults =
-		state.kind === 'results' && state.response.results.length === 0 && query.trim().length > 0;
+		state.kind === 'results' &&
+		state.response.results.length === 0 &&
+		!state.response.answer &&
+		query.trim().length > 0;
 	const showStaleListLoading = isLoading && results.length > 0;
 	const showLoadingPlaceholder = isLoading && results.length === 0;
 
@@ -307,6 +372,21 @@ export default function SearchApp() {
 					style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
 					className="flex-1 bg-transparent border-0 outline-none text-sm placeholder:text-foreground/40 focus-visible:ring-0"
 				/>
+				{askIndicatorActive ? (
+					<span
+						title={
+							forceAsk
+								? 'Ask mode forced (Tab to toggle off)'
+								: queryHasAskPrefix
+									? 'Ask mode forced via "?" prefix'
+									: 'Ask mode active for this query'
+						}
+						style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+						className="text-2xs px-1.5 py-0.5 rounded-sm font-medium tracking-wide shrink-0 bg-purple-500/15 text-purple-600 dark:text-purple-400"
+					>
+						Ask
+					</span>
+				) : null}
 				{state.kind === 'loading' ? (
 					<span
 						aria-label="Searching"
@@ -360,6 +440,43 @@ export default function SearchApp() {
 					</div>
 				) : null}
 
+				{answer ? (
+					<div className="mx-1.5 my-1.5 px-3 py-2.5 rounded-md border border-purple-500/20 bg-purple-500/5 flex flex-col gap-1.5">
+						<div className="flex items-center gap-2">
+							<span className="text-2xs px-1.5 py-0.5 rounded-sm font-medium tracking-wide bg-purple-500/15 text-purple-600 dark:text-purple-400">
+								Answer
+							</span>
+							{currentResponse?.rewrittenQueries && currentResponse.rewrittenQueries.length > 0 ? (
+								<span className="text-2xs text-foreground/40 truncate" title={currentResponse.rewrittenQueries.join(' · ')}>
+									searched: {currentResponse.rewrittenQueries.slice(0, 2).join(' · ')}
+								</span>
+							) : null}
+						</div>
+						<p className="text-xs leading-relaxed text-foreground/85 whitespace-pre-wrap">
+							{answer.text}
+						</p>
+						{answer.citations.length > 0 && results.length > 0 ? (
+							<div className="flex flex-wrap gap-1 pt-0.5">
+								{answer.citations.map((c) => {
+									const name = stripMdExt(basename(c.path));
+									return (
+										<button
+											key={`${c.path}-${c.resultIndex}`}
+											type="button"
+											onClick={() => activate(c.resultIndex)}
+											onMouseDown={(e) => e.preventDefault()}
+											title={c.path}
+											className="text-2xs px-1.5 py-0.5 rounded-sm bg-foreground/8 hover:bg-foreground/15 text-foreground/70 max-w-[200px] truncate"
+										>
+											[{c.resultIndex + 1}] {name}
+										</button>
+									);
+								})}
+							</div>
+						) : null}
+					</div>
+				) : null}
+
 				{results.length > 0 ? (
 					<ul
 						ref={listRef}
@@ -410,6 +527,20 @@ export default function SearchApp() {
 											<span className="text-2xs text-foreground/40 truncate">{parent}</span>
 										) : null}
 										<span className="flex-1" />
+										{resultsSource ? (() => {
+											const badge = sourceBadge(resultsSource);
+											return (
+												<span
+													title={badge.title}
+													className={cn(
+														'text-2xs px-1.5 py-0.5 rounded-sm font-medium tracking-wide shrink-0',
+														badge.className,
+													)}
+												>
+													{badge.label}
+												</span>
+											);
+										})() : null}
 										{r.heading ? (
 											<span className="text-2xs px-1.5 py-0.5 rounded-sm bg-foreground/10 text-foreground/60 max-w-[180px] truncate shrink-0">
 												{r.heading}
@@ -434,6 +565,9 @@ export default function SearchApp() {
 					</span>
 					<span>
 						<span className="text-foreground/60">↑↓</span> navigate
+					</span>
+					<span>
+						<span className="text-foreground/60">⇥</span> ask
 					</span>
 					<span>
 						<span className="text-foreground/60">esc</span> close

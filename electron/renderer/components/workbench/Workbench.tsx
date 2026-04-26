@@ -46,7 +46,11 @@ export function Workbench(props: PropsWithChildren) {
 	// public openInEditor (which adds to history) and the back/forward navigators.
 	const loadIntoEditor = useCallback(async (path: string) => {
 		path = Path.normalize(path);
-		if (fs.getNode(path).kind !== "file") {
+		const node = fs.getNode(path);
+		// node is only defined for paths the file tree knows about. Search results
+		// can target files outside the currently loaded tree, so a missing node
+		// shouldn't block opening — only bail when we know the entry isn't a file.
+		if (node && node.kind !== "file") {
 			return false;
 		}
 		// Set the loading flag synchronously, before any awaits, so any onChange

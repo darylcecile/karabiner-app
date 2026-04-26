@@ -13,8 +13,32 @@ const PreferencesSchema = z.object({
 		tint: z.string().optional(),
 	})),
 	ai: z.object({
-		provider: z.enum(['none', 'auto', 'claude', 'copilot']).default('auto'),
-	}).default({ provider: 'auto' }),
+		provider: z.enum(['none', 'auto', 'claude', 'copilot', 'openai', 'ollama']).default('none'),
+		labelGeneration: z.boolean().default(true),
+		searchEnabled: z.boolean().default(true),
+		askMode: z.object({
+			enabled: z.boolean().default(true),
+			autoDetect: z.boolean().default(true),
+			showAnswer: z.boolean().default(true),
+			showResults: z.boolean().default(true),
+		}).default({ enabled: true, autoDetect: true, showAnswer: true, showResults: true }),
+		openai: z.object({
+			apiKey: z.string().default(''),
+			model: z.string().default('gpt-4o-mini'),
+			baseUrl: z.string().default('https://api.openai.com/v1'),
+		}).default({ apiKey: '', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' }),
+		ollama: z.object({
+			baseUrl: z.string().default('http://localhost:11434'),
+			model: z.string().default('llama3.2'),
+		}).default({ baseUrl: 'http://localhost:11434', model: 'llama3.2' }),
+	}).default({
+		provider: 'none',
+		labelGeneration: true,
+		searchEnabled: true,
+		askMode: { enabled: true, autoDetect: true, showAnswer: true, showResults: true },
+		openai: { apiKey: '', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
+		ollama: { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
+	}),
 	rag: z.object({
 		autoIndex: z.boolean().default(true),
 	}).default({ autoIndex: true }),
@@ -24,7 +48,14 @@ export type Preferences = z.infer<typeof PreferencesSchema>;
 
 const defaultPreferences:Preferences = {
 	customizations: [],
-	ai: { provider: 'auto' },
+	ai: {
+		provider: 'none',
+		labelGeneration: true,
+		searchEnabled: true,
+		askMode: { enabled: true, autoDetect: true, showAnswer: true, showResults: true },
+		openai: { apiKey: '', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
+		ollama: { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
+	},
 	rag: { autoIndex: true },
 };
 

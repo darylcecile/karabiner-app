@@ -5,7 +5,7 @@ import { getPreferences, setPreferences } from './preferences';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isBinaryFile } from '@/main/files';
-import { getAIAvailability, getActiveProvider } from '@/main/ai/resolver';
+import { getAIAvailability, getActiveProvider, clearAIAvailabilityCache } from '@/main/ai/resolver';
 import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
 import type { RagProgress } from '@/shared/ragTypes';
@@ -33,6 +33,11 @@ export const mainRelay = createMainRelay({
 				return getPreferences(key);
 			}
 			setPreferences(key, value);
+			// Provider config (api keys, urls, models) influences detection &
+			// instance state — invalidate so the next request re-evaluates.
+			if (key === 'ai.provider' || key.startsWith('ai.openai') || key.startsWith('ai.ollama')) {
+				clearAIAvailabilityCache();
+			}
 		}),
 		async readDirectory(dirPath: string, options?: ReadDirectoryOptions) {
 			return await readDirectoryImpl(resolvePath(dirPath), options);
@@ -105,6 +110,7 @@ export const mainRelay = createMainRelay({
 		},
 		async regenerateFileLabel(absPath: string) {
 			try {
+				if (getPreferences("ai.labelGeneration") === false) return null;
 				const resolved = resolvePath(absPath);
 				let mtimeMs: number;
 				try {
@@ -191,7 +197,7 @@ export const mainRelay = createMainRelay({
 		async ragGetAutoIndex(): Promise<boolean> {
 			return getPreferences('rag.autoIndex') ?? true;
 		},
-		async ragSearch(query: string, opts?: { limit?: number }) {
+		async ragSearch(query: string, opts?: { limit?: number; forceAsk?: boolean }) {
 			const { search } = await import('@/main/rag/search');
 			return await search(query, opts);
 		},

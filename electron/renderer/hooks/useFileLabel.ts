@@ -16,13 +16,16 @@ const globalSubscribers = new Set<() => void>();
 type AvailabilitySnapshot = {
 	claude: boolean;
 	copilot: boolean;
-	active: 'none' | 'claude' | 'copilot';
+	openai: boolean;
+	ollama: boolean;
+	active: 'none' | 'claude' | 'copilot' | 'openai' | 'ollama';
 };
 
 type AvailabilityState = {
 	availability: AvailabilitySnapshot;
-	provider: 'none' | 'auto' | 'claude' | 'copilot';
+	provider: 'none' | 'auto' | 'claude' | 'copilot' | 'openai' | 'ollama';
 	enabled: boolean;
+	labelGenerationEnabled: boolean;
 	fetchedAt: number;
 };
 
@@ -82,23 +85,39 @@ function isAvailabilityFresh(state: AvailabilityState | null): state is Availabi
 async function fetchAvailability(): Promise<AvailabilityState> {
 	if (availabilityInflight) return availabilityInflight;
 	availabilityInflight = (async () => {
-		let availability: AvailabilitySnapshot = { claude: false, copilot: false, active: 'none' };
-		let provider: AvailabilityState['provider'] = 'auto';
+		let availability: AvailabilitySnapshot = { claude: false, copilot: false, openai: false, ollama: false, active: 'none' };
+		let provider: AvailabilityState['provider'] = 'none';
+		let labelGenerationEnabled = true;
 		try {
 			availability = await main.aiAvailability();
 		} catch {
-			availability = { claude: false, copilot: false, active: 'none' };
+			availability = { claude: false, copilot: false, openai: false, ollama: false, active: 'none' };
 		}
 		try {
 			const raw = await main.preferences('ai.provider');
-			if (raw === 'none' || raw === 'auto' || raw === 'claude' || raw === 'copilot') {
+			if (
+				raw === 'none' || raw === 'auto' || raw === 'claude' ||
+				raw === 'copilot' || raw === 'openai' || raw === 'ollama'
+			) {
 				provider = raw;
 			}
 		} catch {
-			provider = 'auto';
+			provider = 'none';
+		}
+		try {
+			const raw = await main.preferences('ai.labelGeneration');
+			if (raw === false) labelGenerationEnabled = false;
+		} catch {
+			// keep default true
 		}
 		const enabled = provider !== 'none' && availability.active !== 'none';
-		const state: AvailabilityState = { availability, provider, enabled, fetchedAt: Date.now() };
+		const state: AvailabilityState = {
+			availability,
+			provider,
+			enabled,
+			labelGenerationEnabled,
+			fetchedAt: Date.now(),
+		};
 		availabilityCache = state;
 		return state;
 	})();
@@ -213,9 +232,10 @@ export function requestLabel(absPath: string, isFolder = false): void {
 			// fall through; we'll decide below whether to regenerate
 		}
 
-		// Cache miss → only invoke AI if a provider is actually available.
+		// Cache miss → only invoke AI if a provider is actually available
+		// AND label generation hasn't been explicitly disabled by the user.
 		const state = await getAvailability().catch(() => null);
-		if (!state || !state.enabled) {
+		if (!state || !state.enabled || !state.labelGenerationEnabled) {
 			cache.set(absPath, null);
 			notifyPath(absPath);
 			return;
