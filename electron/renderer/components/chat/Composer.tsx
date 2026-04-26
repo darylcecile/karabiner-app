@@ -49,7 +49,7 @@ export function Composer({
 		<div className="border-t border-foreground/10 bg-background/60 focus-within:bg-background/80 px-2 pt-2 pb-2 backdrop-blur-sm group/composer">
 			<div
 				className={cn(
-					'flex items-end gap-2 shadow-xs transition-colors',
+					'flex items-end gap-2 transition-colors',
 					// 'focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/40',
 					disabled && 'opacity-50',
 				)}

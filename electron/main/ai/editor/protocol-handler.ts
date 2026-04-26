@@ -1,6 +1,8 @@
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
-import { getAIAvailability } from "@/main/ai/resolver";
+import { convertToModelMessages, streamText, type LanguageModel, type UIMessage } from "ai";
+import { getActiveProvider, getAIAvailability } from "@/main/ai/resolver";
 import { tryCreateNativeModel, providerSupportsNativeTools } from "../chat/native-models";
+import { CopilotAIProvider } from "@/main/ai/copilot";
+import { CopilotEditorLanguageModel } from "./copilot-editor-model";
 
 type EditorAIBody = {
 	id?: string;
@@ -55,19 +57,28 @@ export async function handleEditorAIRequest(request: Request): Promise<Response>
 		return new Response("No AI provider configured. Please set one in Settings.", { status: 503 });
 	}
 
-	if (!providerSupportsNativeTools(activeKind)) {
+	let model: LanguageModel;
+	if (activeKind === "copilot") {
+		const provider = await getActiveProvider();
+		if (!(provider instanceof CopilotAIProvider)) {
+			console.warn("[editor-ai] copilot active but provider instance is wrong");
+			return new Response("Copilot provider is not available.", { status: 503 });
+		}
+		model = new CopilotEditorLanguageModel(provider);
+	} else if (providerSupportsNativeTools(activeKind)) {
+		const nativeModel = await tryCreateNativeModel(activeKind);
+		if (!nativeModel) {
+			console.warn(`[editor-ai] tryCreateNativeModel returned null for '${activeKind}'`);
+			return new Response(
+				`Failed to initialise the '${activeKind}' provider. Check its configuration in Settings (e.g. API key).`,
+				{ status: 503 },
+			);
+		}
+		model = nativeModel;
+	} else {
 		console.warn(`[editor-ai] provider '${activeKind}' does not support native tools`);
 		return new Response(
-			`Editor AI requires a provider that supports native tool calls. The active provider '${activeKind}' does not — switch to OpenAI, Ollama, or Apple Intelligence in Settings.`,
-			{ status: 503 },
-		);
-	}
-
-	const nativeModel = await tryCreateNativeModel(activeKind);
-	if (!nativeModel) {
-		console.warn(`[editor-ai] tryCreateNativeModel returned null for '${activeKind}'`);
-		return new Response(
-			`Failed to initialise the '${activeKind}' provider. Check its configuration in Settings (e.g. API key).`,
+			`Editor AI requires a provider that supports native tool calls. The active provider '${activeKind}' does not — switch to OpenAI, Ollama, Apple Intelligence, or Copilot in Settings.`,
 			{ status: 503 },
 		);
 	}
@@ -76,7 +87,7 @@ export async function handleEditorAIRequest(request: Request): Promise<Response>
 	const toolDefinitions = (body.toolDefinitions ?? {}) as Parameters<typeof toolDefinitionsToToolSet>[0];
 
 	const result = streamText({
-		model: nativeModel,
+		model,
 		system: aiDocumentFormats.html.systemPrompt,
 		messages: await convertToModelMessages(injectDocumentStateMessages(messages)),
 		tools: toolDefinitionsToToolSet(toolDefinitions),
