@@ -10,6 +10,7 @@ import { setupNativeEditingContextMenu } from './contextMenu';
 import { clearRecentFiles, getRecentFiles, pruneMissingRecents, recentsEmitter } from './recents';
 import { openChatWindow } from './chatWindow';
 import { handleChatRequest } from './ai/chat/protocol-handler';
+import { handleEditorAIRequest } from './ai/editor/protocol-handler';
 
 // Register the asset protocol BEFORE app is ready so the renderer can use
 // `karabiner-file://<absolute-path>` URLs in <img>, <video>, etc.
@@ -391,6 +392,10 @@ app.whenReady().then(async () => {
 	// this handler returns a UI message stream Response.
 	protocol.handle('karabiner-ai', async (request) => {
 		try {
+			const url = new URL(request.url);
+			if (url.host === 'editor') {
+				return await handleEditorAIRequest(request);
+			}
 			return await handleChatRequest(request);
 		} catch (err) {
 			console.error('[karabiner-ai] handler failed:', err);
