@@ -478,7 +478,7 @@ export function FileTree() {
 				onContextMenuRequest={handleContextMenuRequest}
 				modelRef={treeHandleRef}
 				aria-label="Files"
-				style={{ minHeight: 320 }}
+				// style={{ minHeight: 320 }}
 			/>
 			<InputModal controller={inputController} />
 		</>

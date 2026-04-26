@@ -8,12 +8,14 @@ export const ConfigPath = "~/.karabiner/config/config.yaml";
 
 const ConfigSchema = z.object({
 	version: z.string().optional().default("1.0"),
+	recentFiles: z.array(z.string()).optional().default([]),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
 
 const defaultConfig:Config = {
 	version: "1.0",
+	recentFiles: [],
 };
 
 let configCache: Config | null = null;

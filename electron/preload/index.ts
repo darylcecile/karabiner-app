@@ -25,6 +25,7 @@ const ALLOWED_EVENT_CHANNELS = new Set([
 	'search:focus-input',
 	'search:open-file',
 	'workspace:open-url',
+	'recents:changed',
 ]);
 
 contextBridge.exposeInMainWorld('karabinerEvents', {

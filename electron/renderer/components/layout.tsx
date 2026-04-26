@@ -8,6 +8,7 @@ import { useWorkbench } from './workbench/Workbench';
 import { InputModal, useInputModalController } from './workbench/InputModal';
 import { toast } from 'sonner';
 import { FileTree } from './workbench/FileTree';
+import { RecentFiles } from './workbench/RecentFiles';
 import { TreeAccordion } from '@/renderer/components/workbench/TreeAccordion';
 import { Editor } from '@/renderer/components/editor';
 import { CanvasView } from '@/renderer/components/canvas';
@@ -71,9 +72,12 @@ export function RootLayout(props: PropsWithChildren) {
 					<ActionBar className="mr-1 pl-20 flex items-center absolute">
 						<Action icon={!collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
 					</ActionBar>
-					<div className="p-2 max-h-[calc(100vh-34px)] overflow-y-auto">
-						<TreeAccordion label="Collections" defaultOpen>
+					<div className="p-2 max-h-[calc(100vh-34px)] h-full overflow-y-auto flex flex-col gap-3">
+						<TreeAccordion label="Collections" className='flex-1' defaultOpen>
 							<FileTree />
+						</TreeAccordion>
+						<TreeAccordion label="Recent">
+							<RecentFiles />
 						</TreeAccordion>
 					</div>
 				</Allotment.Pane>

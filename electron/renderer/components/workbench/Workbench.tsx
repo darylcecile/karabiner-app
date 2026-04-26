@@ -170,6 +170,7 @@ export function Workbench(props: PropsWithChildren) {
 		const ok = await loadView({ kind: 'file', path: normalized });
 		if (!ok) return;
 		pushHistory({ kind: 'file', path: normalized });
+		void main.addRecentFile(normalized);
 	}, [loadView, pushHistory]);
 
 	const openUrl = useCallback(async (url: string) => {

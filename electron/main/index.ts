@@ -7,6 +7,7 @@ import { closeDb } from './rag/db';
 import { bootstrap as bootstrapRag } from './rag/indexer';
 import { hideSearch, toggleSearch } from './searchWindow';
 import { setupNativeEditingContextMenu } from './contextMenu';
+import { clearRecentFiles, getRecentFiles, pruneMissingRecents, recentsEmitter } from './recents';
 
 // Register the asset protocol BEFORE app is ready so the renderer can use
 // `karabiner-file://<absolute-path>` URLs in <img>, <video>, etc.
@@ -72,9 +73,42 @@ function openSettingsWindow() {
 	});
 }
 
+function basenameOf(p: string): string {
+	const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+	return idx >= 0 ? p.slice(idx + 1) : p;
+}
+
+function openInEditorFromMenu(absPath: string) {
+	const mw = getMainWindow();
+	if (mw && !mw.isDestroyed()) {
+		mw.webContents.send('search:open-file', { path: absPath });
+		if (mw.isMinimized()) mw.restore();
+		mw.focus();
+	}
+}
+
 function buildAppMenu() {
 	const isMac = process.platform === 'darwin';
 	const appName = app.name || 'Karabiner';
+
+	const recents = getRecentFiles();
+	const openRecentSubmenu: MenuItemConstructorOptions[] = recents.length === 0
+		? [{ label: 'No Recent Files', enabled: false }]
+		: [
+			...recents.map((p) => ({
+				label: basenameOf(p),
+				toolTip: p,
+				click: () => openInEditorFromMenu(p),
+			} satisfies MenuItemConstructorOptions)),
+			{ type: 'separator' as const },
+			{
+				label: 'Clear Recently Opened',
+				click: () => {
+					clearRecentFiles();
+					buildAppMenu();
+				},
+			},
+		];
 
 	const template: MenuItemConstructorOptions[] = [
 		...(isMac
@@ -112,6 +146,11 @@ function buildAppMenu() {
 					label: 'Search',
 					accelerator: 'CmdOrCtrl+K',
 					click: () => toggleSearch(),
+				},
+				{ type: 'separator' as const },
+				{
+					label: 'Open Recent',
+					submenu: openRecentSubmenu,
 				},
 				{ type: 'separator' as const },
 				isMac ? { role: 'close' as const } : { role: 'quit' as const },
@@ -201,6 +240,13 @@ async function createWindow() {
 
 	setupNativeEditingContextMenu(window);
 
+	window.webContents.once('did-finish-load', () => {
+		if (pendingOpenFiles.length === 0) return;
+		for (const p of pendingOpenFiles.splice(0)) {
+			window.webContents.send('search:open-file', { path: p });
+		}
+	});
+
 	if (process.env.ELECTRON_RENDERER_URL) {
 		await window.loadURL(process.env.ELECTRON_RENDERER_URL)
 		return
@@ -208,6 +254,22 @@ async function createWindow() {
 
 	await window.loadFile(join(__dirname, '../renderer/index.html'))
 }
+
+// macOS: receive paths from Dock recent docs / "Open With" / Finder. Queue any
+// that arrive before the window exists; flush when ready.
+const pendingOpenFiles: string[] = [];
+app.on('open-file', (event, filePath) => {
+	event.preventDefault();
+	if (!filePath) return;
+	const mw = getMainWindow();
+	if (mw && !mw.isDestroyed()) {
+		mw.webContents.send('search:open-file', { path: filePath });
+		if (mw.isMinimized()) mw.restore();
+		mw.focus();
+	} else {
+		pendingOpenFiles.push(filePath);
+	}
+});
 
 app.whenReady().then(async () => {
 	await setUpAppDir();
@@ -234,7 +296,9 @@ app.whenReady().then(async () => {
 
 	mainRelay.attach(ipcMain);
 
+	pruneMissingRecents();
 	buildAppMenu();
+	recentsEmitter.on('changed', () => buildAppMenu());
 
 	void createWindow()
 

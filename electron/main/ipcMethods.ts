@@ -21,6 +21,7 @@ import * as ragIndexer from '@/main/rag/indexer';
 import { showSearch, hideSearch, toggleSearch } from '@/main/searchWindow';
 import { getMainWindow } from '@/main/index';
 import { showFileTreeContextMenu, type FileTreeMenuPayload } from '@/main/contextMenu';
+import { addRecentFile, clearRecentFiles, getRecentFiles, pruneMissingRecents } from '@/main/recents';
 
 
 function resolvePath(p: string): string {
@@ -523,6 +524,10 @@ export const mainRelay = createMainRelay({
 			}
 			return { absPath: target };
 		},
+		getRecentFiles: syncMethod(() => getRecentFiles()),
+		addRecentFile: syncMethod((absPath: string) => addRecentFile(absPath)),
+		clearRecentFiles: syncMethod(() => clearRecentFiles()),
+		pruneMissingRecentFiles: syncMethod(() => pruneMissingRecents()),
 	},
 });
 

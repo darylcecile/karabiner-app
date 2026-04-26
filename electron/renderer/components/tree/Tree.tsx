@@ -901,7 +901,7 @@ export function Tree(props: TreeProps) {
 	]);
 
 	const containerStyle: CSSProperties = {
-		minHeight: 240,
+		// minHeight: 240,
 		...style,
 	};
 
