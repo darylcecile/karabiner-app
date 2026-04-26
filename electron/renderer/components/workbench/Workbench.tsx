@@ -4,6 +4,7 @@ import { useFileTree, Tree } from '@/renderer/hooks/useTree';
 import { useConfig } from '@/renderer/hooks/useConfig';
 import { Path } from '@/shared/fsUtils';
 import { useEditorState } from '@/renderer/components/editor';
+import { parseMarkdownToBlocks } from '@/renderer/components/editor/markdown';
 import { getFileViewKind } from './viewKind';
 import { main } from '@/renderer/relay';
 
@@ -148,7 +149,7 @@ export function Workbench(props: PropsWithChildren) {
 			if (isBinaryFormat) return true;
 			const content = await fs.readFile(path, "utf-8");
 			const markdown = content.toString();
-			const newDoc = editor.tryParseMarkdownToBlocks(markdown);
+			const newDoc = parseMarkdownToBlocks(editor, markdown);
 			if (newDoc) {
 				editor.replaceBlocks(editor.document, newDoc);
 			}

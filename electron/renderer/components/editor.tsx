@@ -8,6 +8,7 @@ import { codeBlockOptions } from "@blocknote/code-block";
 import { useWorkbench } from "./workbench/Workbench";
 import { CustomFilePanel } from "./editor/CustomFilePanel";
 import { CustomFormattingToolbar } from "./editor/CustomFormattingToolbar";
+import { serializeEditorToMarkdown, serializeBlocksToMarkdown } from "./editor/markdown";
 import { toast } from "sonner";
 
 const EDITOR_FONT_FAMILY = '"Geist Variable", "Inter", system-ui, sans-serif';
@@ -66,6 +67,29 @@ export function Editor() {
 		return () => node.removeEventListener("click", handler, true);
 	}, [workspace]);
 
+	useEffect(() => {
+		const node = containerRef.current;
+		if (!node || !editor) return;
+
+		const onCopy = (e: ClipboardEvent) => {
+			if (!e.clipboardData) return;
+			const sel = (editor as any).getSelection?.();
+			const blocks = sel?.blocks as any[] | undefined;
+			if (!blocks || blocks.length === 0) return;
+			const md = serializeBlocksToMarkdown(editor as any, blocks);
+			// Bubble phase: runs after BlockNote's plugin set its own text/plain,
+			// so this overwrite wins.
+			e.clipboardData.setData("text/plain", md);
+		};
+
+		node.addEventListener("copy", onCopy);
+		node.addEventListener("cut", onCopy);
+		return () => {
+			node.removeEventListener("copy", onCopy);
+			node.removeEventListener("cut", onCopy);
+		};
+	}, [editor]);
+
 	return (
 		<div ref={containerRef} className="max-w-5xl mx-auto" style={{ fontFamily: EDITOR_FONT_FAMILY }}>
 			<BlockNoteView
@@ -82,7 +106,7 @@ export function Editor() {
 						toast.error("No file is currently opened. Unable to save.");
 						return;
 					}
-					const markdown = bn.blocksToMarkdownLossy();
+					const markdown = serializeEditorToMarkdown(bn);
 					fs.writeFile(currentPath, markdown);
 				}}
 				editable={!!workspace.openedPath}

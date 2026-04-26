@@ -55,7 +55,7 @@ function sourceBadge(source: SearchResponse['source']): { label: string; classNa
 		return {
 			label: 'Semantic',
 			title: 'Result ranked by vector embedding similarity',
-			className: 'bg-primary/15 text-primary',
+			className: 'bg-primary/5 text-primary',
 		};
 	}
 	if (source === 'ask') {

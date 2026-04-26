@@ -30,7 +30,7 @@ function createSearchWindow(): BrowserWindow {
 		fullscreenable: false,
 		skipTaskbar: true,
 		show: false,
-		vibrancy: 'fullscreen-ui',
+		vibrancy: 'sidebar',
 		backgroundColor: '#00000000',
 		roundedCorners: true,
 		alwaysOnTop: false,
