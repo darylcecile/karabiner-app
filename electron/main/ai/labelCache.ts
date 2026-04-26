@@ -69,3 +69,11 @@ export async function clearCachedLabel(absPath: string): Promise<void> {
 		await persistCache();
 	}
 }
+
+export async function clearAllCachedLabels(): Promise<number> {
+	const c = await loadCache();
+	const count = Object.keys(c.entries).length;
+	c.entries = {};
+	await persistCache();
+	return count;
+}

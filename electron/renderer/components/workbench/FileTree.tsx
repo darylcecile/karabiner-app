@@ -203,6 +203,15 @@ export function FileTree() {
 					</span>
 				);
 			}
+			if (entry === 'pending') {
+				return (
+					<span
+						aria-label="Generating label"
+						title="Generating label…"
+						className="inline-block size-3 rounded-full border-[1.5px] border-foreground/20 border-t-primary animate-spin"
+					/>
+				);
+			}
 			return null;
 		},
 		[],

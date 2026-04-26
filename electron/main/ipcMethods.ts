@@ -6,6 +6,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isBinaryFile } from '@/main/files';
 import { getAIAvailability, getActiveProvider, clearAIAvailabilityCache } from '@/main/ai/resolver';
+import { isLabelEchoingFilename } from '@/main/ai/index';
 import { getCachedLabel, setCachedLabel } from '@/main/ai/labelCache';
 import { createMainRelay, RelayMethodsOf, syncMethod } from '@karabiner/relay';
 import type { RagProgress } from '@/shared/ragTypes';
@@ -132,6 +133,12 @@ export const mainRelay = createMainRelay({
 				const filename = path.basename(resolved);
 				const result = await provider.generateFileMetadata(truncated, filename).catch(() => null);
 				if (!result) return null;
+				if (isLabelEchoingFilename(result.label, filename)) {
+					console.warn(
+						`[regenerateFileLabel] discarded label that echoes filename: "${result.label}" vs "${filename}"`,
+					);
+					return null;
+				}
 				await setCachedLabel(resolved, {
 					label: result.label,
 					emoji: result.emoji,
@@ -145,6 +152,16 @@ export const mainRelay = createMainRelay({
 			} catch (err) {
 				console.error("regenerateFileLabel failed:", err);
 				return null;
+			}
+		},
+		async clearLabelCache() {
+			try {
+				const { clearAllCachedLabels } = await import('@/main/ai/labelCache');
+				const cleared = await clearAllCachedLabels();
+				return { cleared };
+			} catch (err) {
+				console.error("clearLabelCache failed:", err);
+				return { cleared: 0, error: err instanceof Error ? err.message : String(err) };
 			}
 		},
 		querySync: syncMethod((propertyName: string) => {

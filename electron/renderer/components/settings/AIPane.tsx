@@ -501,6 +501,64 @@ function AIFeaturesSection({
 					disabled={loading || !aiActive}
 				/>
 			</div>
+
+			<ClearLabelCacheRow />
+		</div>
+	);
+}
+
+function ClearLabelCacheRow() {
+	const [busy, setBusy] = useState(false);
+	const [feedback, setFeedback] = useState<string | null>(null);
+
+	async function clearCache() {
+		if (busy) return;
+		setBusy(true);
+		setFeedback(null);
+		try {
+			const result = (await (main as any).clearLabelCache()) as { cleared?: number; error?: string };
+			if (result?.error) {
+				setFeedback(`Failed: ${result.error}`);
+			} else {
+				const n = result?.cleared ?? 0;
+				setFeedback(n === 0 ? 'Cache was already empty' : `Cleared ${n} ${n === 1 ? 'label' : 'labels'}`);
+				try {
+					const { clearLabelCache: clearRendererCache } = await import('@/renderer/hooks/useFileLabel');
+					clearRendererCache();
+				} catch {
+					/* renderer cache will resync on next subscribe */
+				}
+			}
+		} catch (err) {
+			setFeedback(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+		} finally {
+			setBusy(false);
+			window.setTimeout(() => setFeedback(null), 4000);
+		}
+	}
+
+	return (
+		<div className="flex items-center justify-between gap-3 rounded-md px-3 py-2.5 hover:bg-foreground/5">
+			<div className="flex flex-col gap-0.5">
+				<span className="text-sm font-medium">Generation cache</span>
+				<span className="text-xs text-foreground/60">
+					Clear all cached AI-generated emojis, labels, and categories. They'll regenerate on demand.
+				</span>
+				{feedback ? (
+					<span className="text-2xs text-foreground/70 mt-0.5">{feedback}</span>
+				) : null}
+			</div>
+			<button
+				type="button"
+				onClick={clearCache}
+				disabled={busy}
+				className={cn(
+					'rounded-md border border-foreground/15 px-2.5 py-1 text-xs',
+					'hover:bg-foreground/5 transition-colors disabled:opacity-50',
+				)}
+			>
+				{busy ? 'Clearing…' : 'Clear cache'}
+			</button>
 		</div>
 	);
 }
