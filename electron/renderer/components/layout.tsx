@@ -23,6 +23,7 @@ import { cn } from '@/shared/utils';
 import { BlockNoteEditor } from '@blocknote/core';
 import { main } from '@/renderer/relay';
 import { useWindowSize } from '@/renderer/hooks/useWindowSize';
+import { CustomScrollPanel } from './ui/custom-scroll-panel';
 
 const sidebarCollapsedAtom = atom(false)
 
@@ -72,14 +73,18 @@ export function RootLayout(props: PropsWithChildren) {
 					<ActionBar className="mr-1 pl-20 flex items-center absolute">
 						<Action icon={!collapsed ? PanelLeftOpenIcon : LayoutAlignLeftIcon} onClick={() => setCollapsed(p => !p)} />
 					</ActionBar>
-					<div className="p-2 max-h-[calc(100vh-34px)] h-full overflow-y-auto flex flex-col gap-3">
+					<CustomScrollPanel 
+						className="max-h-[calc(100vh-34px)] h-full overflow-y-auto flex flex-col gap-3"
+						topFadeHeight={28}
+						bottomFadeHeight={20}
+					>
 						<TreeAccordion label="Recent" defaultOpen>
 							<RecentFiles />
 						</TreeAccordion>
 						<TreeAccordion label="Collections" className='flex-1' defaultOpen>
 							<FileTree />
 						</TreeAccordion>
-					</div>
+					</CustomScrollPanel>
 				</Allotment.Pane>
 				<Allotment.Pane>
 					<div className="relative h-full">
@@ -207,7 +212,12 @@ function MainActionBarGroup() {
 
 				<span className="text-2xs text-muted-foreground/80 truncate px-2 max-w-[60%]" title={fileName}>{fileName}</span>
 
-				<div className='flex flex-row items-center justify-end min-w-12'>
+				<div
+					className={cn(
+						'flex flex-row items-center justify-end',
+						collapsed ? 'min-w-38' : 'min-w-12'
+					)}
+				>
 					{workspace.viewKind === 'url' ? (
 						<Action icon={LinkSquare02Icon} onClick={handleOpenInBrowser} />
 					) : null}
