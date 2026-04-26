@@ -1,14 +1,30 @@
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
+import "@blocknote/xl-ai/style.css";
 import { useEffect, useRef } from "react";
 import { BlockNoteView } from "@blocknote/mantine";
-import { useCreateBlockNote, FilePanelController, FormattingToolbarController } from "@blocknote/react";
-import { BlockNoteSchema, createCodeBlockSpec } from "@blocknote/core";
+import {
+	useCreateBlockNote,
+	FilePanelController,
+	FormattingToolbarController,
+	SuggestionMenuController,
+	getDefaultReactSlashMenuItems,
+} from "@blocknote/react";
+import { BlockNoteSchema, createCodeBlockSpec, filterSuggestionItems } from "@blocknote/core";
 import { codeBlockOptions } from "@blocknote/code-block";
+import {
+	AIExtension,
+	AIMenuController,
+	getAISlashMenuItems,
+} from "@blocknote/xl-ai";
+import { en as aiEn } from "@blocknote/xl-ai/locales";
+import { en as bnEn } from "@blocknote/core/locales";
+import { DefaultChatTransport } from "ai";
 import { useWorkbench } from "./workbench/Workbench";
 import { CustomFilePanel } from "./editor/CustomFilePanel";
 import { CustomFormattingToolbar } from "./editor/CustomFormattingToolbar";
 import { serializeEditorToMarkdown, serializeBlocksToMarkdown } from "./editor/markdown";
+import { isEditorAIEnabled } from "./editor/aiEnabled";
 import { toast } from "sonner";
 
 const EDITOR_FONT_FAMILY = '"Geist Variable", "Inter", system-ui, sans-serif';
@@ -18,6 +34,7 @@ type BNEditor = ReturnType<typeof useCreateBlockNote>;
 export function Editor() {
 	const { fs, workspace, editor } = useWorkbench();
 	const containerRef = useRef<HTMLDivElement>(null);
+	const aiEnabled = isEditorAIEnabled();
 
 	useEffect(() => {
 		const node = containerRef.current;
@@ -113,6 +130,7 @@ export function Editor() {
 				
 				className="bg-transparent"
 				formattingToolbar={false}
+				slashMenu={!aiEnabled}
 				theme={{
 					light: {
 						colors: {
@@ -132,6 +150,23 @@ export function Editor() {
 			>
 				<FilePanelController filePanel={CustomFilePanel} />
 				<FormattingToolbarController formattingToolbar={CustomFormattingToolbar} />
+				{aiEnabled ? (
+					<>
+						<AIMenuController />
+						<SuggestionMenuController
+							triggerCharacter="/"
+							getItems={async (query) =>
+								filterSuggestionItems(
+									[
+										...getDefaultReactSlashMenuItems(editor),
+										...getAISlashMenuItems(editor),
+									],
+									query,
+								)
+							}
+						/>
+					</>
+				) : null}
 			</BlockNoteView>
 		</div>
 	)
@@ -144,6 +179,7 @@ type UseEditorState = Parameters<typeof useCreateBlockNote>[0] & {
 
 export function useEditorState(props?: UseEditorState) {
 	const { schema, ...rest } = props || {};
+	const aiEnabled = isEditorAIEnabled();
 	const editor = useCreateBlockNote({
 		...rest,
 		// Suppress BlockNote's built-in window.open on link click. Clicks now
@@ -161,6 +197,19 @@ export function useEditorState(props?: UseEditorState) {
 				...schema?.blockSpecs,
 			}
 		}),
+		dictionary: aiEnabled
+			? {
+				...bnEn,
+				ai: aiEn,
+			}
+			: undefined,
+		extensions: aiEnabled
+			? [
+				AIExtension({
+					transport: new DefaultChatTransport({ api: 'karabiner-ai://editor' }),
+				}),
+			]
+			: undefined,
 		autofocus: true,
 	});
 

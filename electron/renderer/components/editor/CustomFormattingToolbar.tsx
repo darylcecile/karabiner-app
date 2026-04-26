@@ -4,7 +4,9 @@ import {
 	getFormattingToolbarItems,
 	type FormattingToolbarProps,
 } from '@blocknote/react';
+import { AIToolbarButton } from '@blocknote/xl-ai';
 import { CustomFileReplaceButton } from './CustomFileReplaceButton';
+import { isEditorAIEnabled } from './aiEnabled';
 
 export function CustomFormattingToolbar(props: FormattingToolbarProps) {
 	const items = getFormattingToolbarItems(props.blockTypeSelectItems);
@@ -14,5 +16,12 @@ export function CustomFormattingToolbar(props: FormattingToolbarProps) {
 		}
 		return child;
 	});
-	return <FormattingToolbar {...props}>{Children.toArray(swapped)}</FormattingToolbar>;
+	const aiEnabled = isEditorAIEnabled();
+	return (
+		<FormattingToolbar {...props}>
+			{Children.toArray(swapped)}
+			{aiEnabled ? <AIToolbarButton key="aiToolbarButton" /> : null}
+		</FormattingToolbar>
+	);
 }
+
