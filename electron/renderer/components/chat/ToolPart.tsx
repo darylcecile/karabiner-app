@@ -53,6 +53,11 @@ const TOOL_META: Record<
 		needsApproval: true,
 	},
 	grep: { label: 'Grep', icon: Search01Icon, tint: 'text-violet-500' },
+	searchWorkspace: {
+		label: 'Search workspace',
+		icon: CubeIcon,
+		tint: 'text-emerald-500',
+	},
 	runBash: {
 		label: 'Run bash',
 		icon: FileScriptIcon,
@@ -118,7 +123,7 @@ export function ToolPart({ part, addToolApprovalResponse }: Props) {
 		if (!part.approval?.id || responding) return;
 		setResponding(true);
 		try {
-			await addToolApprovalResponse({ id: part.approval.id, approved });
+			await addToolApprovalResponse({ id: part.approval.id, approved })
 		} finally {
 			setResponding(false);
 		}
@@ -127,7 +132,7 @@ export function ToolPart({ part, addToolApprovalResponse }: Props) {
 	return (
 		<div
 			className={cn(
-				'w-full max-w-full rounded-md border bg-background/40 text-[12px]',
+				'w-full max-w-full rounded-md border bg-background/40 text-xs overflow-hidden',
 				isError
 					? 'border-destructive/40'
 					: isApproval
@@ -138,28 +143,28 @@ export function ToolPart({ part, addToolApprovalResponse }: Props) {
 			<button
 				type="button"
 				onClick={() => setOpen((o) => !o)}
-				className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-foreground/5"
+				className="flex w-full items-center gap-2 pl-2 pr-2.5 py-2 text-left hover:bg-foreground/5"
 			>
-				<HugeiconsIcon
+				{/* <HugeiconsIcon
 					icon={open ? ArrowDown01Icon : ArrowRight01Icon}
 					size={12}
 					className="shrink-0 text-foreground/50"
-				/>
+				/> */}
 				<HugeiconsIcon
-					icon={meta.icon}
+					icon={open ? ArrowDown01Icon : meta.icon}
 					size={14}
 					strokeWidth={2}
 					className={cn('shrink-0', meta.tint)}
 				/>
-				<span className="font-mono text-[11px] font-semibold tracking-tight">
+				<span className="font-sans text-2xs font-semibold">
 					{meta.label}
 				</span>
 				{summary && (
-					<span className="truncate font-mono text-[11px] text-foreground/60">
+					<span className="truncate font-mono text-2xs text-muted-foreground">
 						{summary}
 					</span>
 				)}
-				<span className="ml-auto flex shrink-0 items-center gap-1 text-sm text-foreground/55 uppercase">
+				<span className="ml-auto flex shrink-0 items-center gap-1 text-3xs text-muted-foreground/40 uppercase">
 					{isRunning && (
 						<>
 							<Spinner className="size-3" />
@@ -186,7 +191,7 @@ export function ToolPart({ part, addToolApprovalResponse }: Props) {
 				<div className="flex flex-col gap-2 border-t border-foreground/10 px-2.5 py-2">
 					{part.input !== undefined && (
 						<div>
-							<div className="mb-0.5 text-[10px] tracking-wide text-foreground/50 uppercase">
+							<div className="mb-0.5 text-3xs tracking-wide text-foreground/50 uppercase">
 								Input
 							</div>
 							<pre className="overflow-x-auto rounded bg-foreground/5 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap">
@@ -197,7 +202,7 @@ export function ToolPart({ part, addToolApprovalResponse }: Props) {
 
 					{part.state === 'output-available' && part.output !== undefined && (
 						<div>
-							<div className="mb-0.5 text-[10px] tracking-wide text-foreground/50 uppercase">
+							<div className="mb-0.5 text-3xs tracking-wide text-foreground/50 uppercase">
 								Output
 							</div>
 							<pre className="max-h-64 overflow-auto rounded bg-foreground/5 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap">

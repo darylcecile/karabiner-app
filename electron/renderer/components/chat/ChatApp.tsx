@@ -177,14 +177,8 @@ export function ChatApp() {
 					/>
 
 					{/* Header */}
-					<header className="relative z-20 flex h-10 shrink-0 items-center justify-center border-b border-foreground/10 bg-background/30 pl-20 pr-3 backdrop-blur">
-						<div className="flex items-center gap-2 text-[12px] text-foreground/70">
-							<HugeiconsIcon
-								icon={MagicWand01Icon}
-								size={13}
-								strokeWidth={2}
-								className="text-violet-500"
-							/>
+					<header className="relative z-20 flex h-8.5 shrink-0 items-center justify-center border-b border-foreground/10 bg-background/30 px-20 backdrop-blur">
+						<div className="flex items-center gap-2 text-xs text-foreground/70">
 							<span className="font-medium tracking-tight">Chat</span>
 							{providerLabel && (
 								<>
@@ -200,6 +194,11 @@ export function ChatApp() {
 						ref={scrollRef}
 						onScroll={handleScroll}
 						className="flex-1 overflow-y-auto"
+
+						// gutter stable
+						style={{
+							scrollbarGutter: 'stable'
+						}}
 					>
 						<div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-5">
 							{empty && ready && (

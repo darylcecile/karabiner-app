@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { defineConfig, swcPlugin } from 'electron-vite'
 import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
 
 const rootDir = dirname(fileURLToPath(import.meta.url))
 
@@ -63,6 +64,6 @@ export default defineConfig({
 				"@karabiner/relay": resolve(__dirname, "./src/packages/relay")
 			},
 		},
-		plugins: [tailwindcss() as any],
+		plugins: [react(), tailwindcss() as any],
 	},
 })

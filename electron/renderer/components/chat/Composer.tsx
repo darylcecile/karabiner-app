@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { PropsWithChildren, useEffect, useRef } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Sent02Icon, StopIcon } from '@hugeicons/core-free-icons';
 import { cn } from '@/shared/utils';
 import { Button } from '../ui/button';
+import { usePlatform } from '@/renderer/hooks/usePlatform';
 
 type Props = {
 	value: string;
@@ -45,11 +46,11 @@ export function Composer({
 	}
 
 	return (
-		<div className="border-t border-foreground/10 bg-background/60 px-3 pt-2 pb-3 backdrop-blur-sm">
+		<div className="border-t border-foreground/10 bg-background/60 focus-within:bg-background/80 px-2 pt-2 pb-2 backdrop-blur-sm group/composer">
 			<div
 				className={cn(
-					'flex items-end gap-2 rounded-lg border border-foreground/15 bg-background/80 px-2 py-1.5 shadow-xs transition-colors',
-					'focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/40',
+					'flex items-end gap-2 shadow-xs transition-colors',
+					// 'focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/40',
 					disabled && 'opacity-50',
 				)}
 			>
@@ -61,7 +62,7 @@ export function Composer({
 					disabled={disabled}
 					placeholder={placeholder ?? 'Send a message…'}
 					rows={1}
-					className="flex-1 min-h-[28px] max-h-[200px] resize-none bg-transparent px-1.5 py-1 text-[13px] leading-relaxed outline-none placeholder:text-foreground/40"
+					className="flex-1 min-h-7 max-h-50 resize-none bg-transparent px-1.5 py-0.5 text-[12px] leading-relaxed outline-none placeholder:text-foreground/40"
 				/>
 				{isStreaming ? (
 					<Button
@@ -86,10 +87,24 @@ export function Composer({
 					</Button>
 				)}
 			</div>
-			<div className="mt-1 px-1 text-[10.5px] text-foreground/45">
-				<kbd className="font-mono">Cmd/Ctrl+Enter</kbd> to send ·{' '}
-				<kbd className="font-mono">Enter</kbd> for newline
+			<div className="flex items-center select-none gap-1 mt-2 px-1 text-3xs text-muted-foreground/45 transition-all max-h-4 -mb-6 group-focus-within/composer:text-muted-foreground group-focus-within/composer:mb-0">
+				<KeyboardKeyHint className="font-mono">cmd</KeyboardKeyHint> 
+				<KeyboardKeyHint className="font-mono">Enter</KeyboardKeyHint> to send ·{' '}
+				<KeyboardKeyHint className="font-mono">Enter</KeyboardKeyHint> for newline
 			</div>
 		</div>
 	);
+}
+
+function KeyboardKeyHint(props: PropsWithChildren<{ className?: string}>){
+	const isCommand = props.children === "cmd";
+	const platform = usePlatform();
+
+	const text = isCommand ? (platform === "darwin" ? "⌘" : "Ctrl") : props.children;
+
+	return (
+		<kbd className="border border-border px-0.5 pt-0.5 min-w-4 rounded inline-flex items-center justify-center uppercase">
+			<span className={cn(props.className, isCommand && 'scale-120')}>{text}</span>
+		</kbd>
+	)
 }
