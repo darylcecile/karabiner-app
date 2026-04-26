@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { shell } from 'electron';
+import { app, nativeImage, shell } from 'electron';
 import { activeScans, readDirectoryImpl, ReadDirectoryOptions, runScan, ScanOptions } from './fs';
 import { getConfig, readConfig, setConfig } from './config';
 import { getPreferences, setPreferences } from './preferences';
@@ -48,6 +48,11 @@ async function uniqueDestName(destDir: string, baseName: string): Promise<string
 	}
 	return `${stem}-${Date.now()}${ext}`;
 }
+
+// 16x16 transparent PNG, used when app.getFileIcon hasn't resolved yet or fails.
+const FALLBACK_DRAG_ICON = nativeImage.createFromDataURL(
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAH0lEQVR42mNkYGD4z0AEYBxVSF+FjKMK6auQcVQhfRUCAEOVAQGgFha3AAAAAElFTkSuQmCC',
+);
 
 export const mainRelay = createMainRelay({
 	namespace: "karabiner:main",
@@ -466,6 +471,31 @@ export const mainRelay = createMainRelay({
 				}
 			}
 			return { imported, errors };
+		},
+		async startFileDrag(absPaths: string[]) {
+			const mw = getMainWindow();
+			if (!mw || mw.isDestroyed()) return { ok: false as const };
+			const paths = absPaths.map((p) => resolvePath(p)).filter((p) => !!p);
+			if (paths.length === 0) return { ok: false as const };
+
+			let icon = FALLBACK_DRAG_ICON;
+			try {
+				const got = await app.getFileIcon(paths[0], { size: 'normal' });
+				if (got && !got.isEmpty()) icon = got;
+			} catch {
+				// fall back to default
+			}
+
+			try {
+				mw.webContents.startDrag({
+					file: paths[0],
+					files: paths,
+					icon,
+				});
+				return { ok: true as const };
+			} catch (err) {
+				return { error: err instanceof Error ? err.message : String(err) };
+			}
 		},
 	},
 });

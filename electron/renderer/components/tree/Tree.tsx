@@ -62,6 +62,7 @@ export interface TreeExternalDropEvent {
 export interface TreeDragAndDropProps {
 	onDrop: (event: TreeDropEvent) => void | Promise<void>;
 	onExternalDrop?: (event: TreeExternalDropEvent) => void | Promise<void>;
+	onNativeDragStart?: (paths: readonly string[]) => void;
 	canDrag?: (path: string) => boolean;
 	canDrop?: (event: { draggedPaths: readonly string[]; targetPath: string | null }) => boolean;
 	onError?: (error: Error) => void;
@@ -404,6 +405,19 @@ export function Tree(props: TreeProps) {
 				const dnd = dragPropsRef.current!;
 				if (dnd.canDrag && !dnd.canDrag(path)) {
 					e.preventDefault();
+					return;
+				}
+				if (dnd.onNativeDragStart) {
+					// Hand the drag to the OS so users can drag tree items into Finder /
+					// other apps. Internal moves are handled at drop time by sniffing the
+					// dropped Files paths against the workspace root.
+					e.preventDefault();
+					setDraggingPath(path);
+					try {
+						dnd.onNativeDragStart([path]);
+					} catch {
+						// ignore — startDrag failures shouldn't block the UI
+					}
 					return;
 				}
 				try {

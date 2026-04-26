@@ -264,8 +264,27 @@ export function FileTree() {
 				toast.error('Could not resolve dropped file paths.');
 				return;
 			}
-			// Refuse imports that originate from inside the workspace — those should be moves, not copies.
-			const externalSrcs = srcPaths.filter((p) => !(p === root || p.startsWith(root + '/')));
+			// Split into in-workspace (move) vs external (copy).
+			const isInWorkspace = (p: string) => p === root || p.startsWith(root + '/');
+			const internalSrcs = srcPaths.filter(isInWorkspace);
+			const externalSrcs = srcPaths.filter((p) => !isInWorkspace(p));
+
+			// In-workspace drops behave as moves — same semantics as the internal HTML5 onDrop.
+			for (const srcAbs of internalSrcs) {
+				const node = fsRef.current.getNode(srcAbs);
+				if (!node) continue;
+				if (node.parentPath === destDirAbs) continue;
+				if (node.kind === 'directory' && (destDirAbs === srcAbs || destDirAbs.startsWith(srcAbs + '/'))) {
+					continue;
+				}
+				try {
+					await fsRef.current.move(srcAbs, destDirAbs);
+				} catch (err) {
+					toast.error(err instanceof Error ? err.message : 'Unable to move item.');
+				}
+			}
+
+			// External drops are copied via the main process.
 			if (externalSrcs.length === 0) return;
 			try {
 				const result = await main.importPaths(externalSrcs, destDirAbs);
@@ -289,6 +308,17 @@ export function FileTree() {
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : 'Unable to import files.');
 			}
+		},
+		onNativeDragStart: (paths) => {
+			const absPaths: string[] = [];
+			for (const rel of paths) {
+				const abs = relToAbs(rel);
+				if (abs) absPaths.push(abs);
+			}
+			if (absPaths.length === 0) return;
+			void main.startFileDrag(absPaths).catch(() => {
+				// Ignore — failure to start native drag shouldn't surface to the user.
+			});
 		},
 		canDrop: ({ draggedPaths, targetPath }) => {
 			// Disallow dropping into self / descendant for folder drags.
