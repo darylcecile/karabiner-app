@@ -33,9 +33,11 @@ export function Editor() {
 			if (href.startsWith("#")) return;
 
 			if (/^https?:/i.test(href)) {
+				// In the editor, clicking a link should NOT navigate; it should
+				// position the cursor so the user can edit the link text. The
+				// BlockNote link toolbar exposes "Edit Link" for changing the URL.
 				e.preventDefault();
 				e.stopPropagation();
-				workspace.openUrl(href);
 				return;
 			}
 
@@ -113,6 +115,14 @@ export function useEditorState(props?: UseEditorState) {
 	const { schema, ...rest } = props || {};
 	const editor = useCreateBlockNote({
 		...rest,
+		// Suppress BlockNote's built-in window.open on link click. Clicks now
+		// just position the cursor inside the link so the user can edit the
+		// link text; the link toolbar's "Edit Link" button is used to change
+		// the URL.
+		links: {
+			...(rest as { links?: Record<string, unknown> }).links,
+			onClick: () => true,
+		},
 		schema: BlockNoteSchema.create().extend({
 			...schema,
 			blockSpecs: {
@@ -120,7 +130,7 @@ export function useEditorState(props?: UseEditorState) {
 				...schema?.blockSpecs,
 			}
 		}),
-		
+
 	});
 
 	return editor;

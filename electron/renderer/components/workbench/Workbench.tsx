@@ -19,6 +19,8 @@ const WorkbenchContext = createContext({} as {
 		openUrl: (url: string) => void,
 		openedPath?: string,
 		openedUrl?: string,
+		urlViewCurrentUrl?: string,
+		setUrlViewCurrentUrl: (url: string | undefined) => void,
 		viewKind: ViewKind,
 		isCanvasFile: boolean,
 		isLoadingRef: React.RefObject<boolean>,
@@ -34,6 +36,7 @@ export function Workbench(props: PropsWithChildren) {
 	const config = useConfig();
 	const [openedPath, setOpenedPath] = useState<string | undefined>(undefined);
 	const [openedUrl, setOpenedUrl] = useState<string | undefined>(undefined);
+	const [urlViewCurrentUrl, setUrlViewCurrentUrl] = useState<string | undefined>(undefined);
 	const [history, setHistory] = useState<HistoryEntry[]>([]);
 	const [historyIndex, setHistoryIndex] = useState<number>(-1);
 	const includeHidden = Boolean(config.getConfigValue("showHiddenFiles")) || false;
@@ -62,6 +65,7 @@ export function Workbench(props: PropsWithChildren) {
 			try {
 				setOpenedPath(undefined);
 				setOpenedUrl(entry.url);
+				setUrlViewCurrentUrl(entry.url);
 				return true;
 			} finally {
 				queueMicrotask(() => { isLoadingRef.current = false; });
@@ -84,6 +88,7 @@ export function Workbench(props: PropsWithChildren) {
 		isLoadingRef.current = true;
 		try {
 			setOpenedUrl(undefined);
+			setUrlViewCurrentUrl(undefined);
 			setOpenedPath(path);
 			if (viewKind === 'canvas' || viewKind === 'image') {
 				// Dedicated viewers self-load via IPC.
@@ -160,6 +165,8 @@ export function Workbench(props: PropsWithChildren) {
 		openUrl,
 		openedPath,
 		openedUrl,
+		urlViewCurrentUrl,
+		setUrlViewCurrentUrl,
 		viewKind,
 		isCanvasFile: viewKind === 'canvas',
 		isLoadingRef,
@@ -167,7 +174,7 @@ export function Workbench(props: PropsWithChildren) {
 		goForward,
 		canGoBack: historyIndex > 0,
 		canGoForward: historyIndex < history.length - 1,
-	}), [openInEditor, openUrl, openedPath, openedUrl, viewKind, goBack, goForward, history.length, historyIndex]);
+	}), [openInEditor, openUrl, openedPath, openedUrl, urlViewCurrentUrl, viewKind, goBack, goForward, history.length, historyIndex]);
 
 	return (
 		<WorkbenchContext.Provider

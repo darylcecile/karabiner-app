@@ -3,7 +3,7 @@ import { PropsWithChildren, useEffect, useState } from 'react'
 import { Action, ActionBar, useActionBar } from './titlebar';
 import "allotment/dist/style.css";
 
-import { ArrowLeft02Icon, ArrowRight02Icon, LayoutAlignLeftIcon, LeftAngleIcon, LeftTriangleIcon, PanelLeftOpenIcon, PlusSignIcon } from '@hugeicons/core-free-icons';
+import { ArrowLeft02Icon, ArrowRight02Icon, LayoutAlignLeftIcon, LeftAngleIcon, LeftTriangleIcon, LinkSquare02Icon, PanelLeftOpenIcon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { useWorkbench } from './workbench/Workbench';
 import { InputModal, useInputModalController } from './workbench/InputModal';
 import { toast } from 'sonner';
@@ -20,6 +20,7 @@ import { IndexingStatusFooter } from '@/renderer/components/workbench/IndexingSt
 import { usePrefersColorScheme } from '../hooks/usePrefersColorScheme';
 import { cn } from '@/shared/utils';
 import { BlockNoteEditor } from '@blocknote/core';
+import { main } from '@/renderer/relay';
 
 const sidebarCollapsedAtom = atom(false)
 
@@ -132,7 +133,6 @@ export function RootLayout(props: PropsWithChildren) {
 }
 
 function MainActionBarGroup() {
-	const { width } = useActionBar();
 	const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
 	const { workspace, fs } = useWorkbench();
 	const inputController = useInputModalController();
@@ -159,11 +159,24 @@ function MainActionBarGroup() {
 		await fs.createFile(name.trim());
 	}
 
-	const fileName = workspace.openedUrl
-		? workspace.openedUrl
+	const fileName = workspace.viewKind === 'url'
+		? (workspace.urlViewCurrentUrl ?? workspace.openedUrl)
 		: workspace.openedPath
 			? workspace.openedPath.split("/").at(-1)
 			: "Untitled";
+
+	async function handleOpenInBrowser() {
+		const target = workspace.urlViewCurrentUrl ?? workspace.openedUrl;
+		if (!target) return;
+		try {
+			const res = await main.openExternal(target);
+			if ('error' in res && res.error) {
+				toast.error(`Failed to open in browser: ${res.error}`);
+			}
+		} catch (err) {
+			toast.error(`Failed to open in browser: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
 
 	return (
 		<>
@@ -186,9 +199,12 @@ function MainActionBarGroup() {
 					<Action icon={ArrowRight02Icon} onClick={workspace.goForward} disabled={!workspace.canGoForward} />
 				</div>
 
-				<span className="text-2xs text-foreground/20">{fileName}</span>
+				<span className="text-2xs text-muted-foreground/80 truncate px-2 max-w-[60%]" title={fileName}>{fileName}</span>
 
-				<div className='flex flex-row items-center gap-2 justify-end min-w-12'>
+				<div className='flex flex-row items-center justify-end min-w-12'>
+					{workspace.viewKind === 'url' ? (
+						<Action icon={LinkSquare02Icon} onClick={handleOpenInBrowser} />
+					) : null}
 					<Action icon={PlusSignIcon} onClick={handleNewFile} />
 				</div>
 			</div>
