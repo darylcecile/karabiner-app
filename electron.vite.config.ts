@@ -13,7 +13,7 @@ export default defineConfig({
 				input: {
 					index: resolve(rootDir, 'electron/main/index.ts'),
 				},
-				external: ['@xenova/transformers', '@electric-sql/pglite', 'chokidar', 'apple-foundation-models'],
+				external: ['@xenova/transformers', '@electric-sql/pglite', 'chokidar', '@meridius-labs/apple-on-device-ai', 'just-bash'],
 				treeshake: 'smallest'
 			},
 		},
@@ -52,6 +52,7 @@ export default defineConfig({
 					index: resolve(rootDir, 'electron/renderer/index.html'),
 					settings: resolve(rootDir, 'electron/renderer/settings.html'),
 					search: resolve(rootDir, 'electron/renderer/search.html'),
+					chat: resolve(rootDir, 'electron/renderer/chat.html'),
 				},
 				treeshake: 'smallest'
 			},

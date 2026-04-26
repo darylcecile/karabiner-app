@@ -8,6 +8,8 @@ import { bootstrap as bootstrapRag } from './rag/indexer';
 import { hideSearch, toggleSearch } from './searchWindow';
 import { setupNativeEditingContextMenu } from './contextMenu';
 import { clearRecentFiles, getRecentFiles, pruneMissingRecents, recentsEmitter } from './recents';
+import { openChatWindow } from './chatWindow';
+import { handleChatRequest } from './ai/chat/protocol-handler';
 
 // Register the asset protocol BEFORE app is ready so the renderer can use
 // `karabiner-file://<absolute-path>` URLs in <img>, <video>, etc.
@@ -20,6 +22,17 @@ protocol.registerSchemesAsPrivileged([
 			supportFetchAPI: true,
 			stream: true,
 			bypassCSP: true,
+		},
+	},
+	{
+		scheme: 'karabiner-ai',
+		privileges: {
+			standard: true,
+			secure: true,
+			supportFetchAPI: true,
+			stream: true,
+			bypassCSP: true,
+			corsEnabled: true,
 		},
 	},
 ]);
@@ -146,6 +159,11 @@ function buildAppMenu() {
 					label: 'Search',
 					accelerator: 'CmdOrCtrl+K',
 					click: () => toggleSearch(),
+				},
+				{
+					label: 'Chat…',
+					accelerator: 'CmdOrCtrl+Shift+J',
+					click: () => openChatWindow(),
 				},
 				{ type: 'separator' as const },
 				{
@@ -286,6 +304,18 @@ app.whenReady().then(async () => {
 			if (!absPath) return new Response('Not found', { status: 404 });
 			return await net.fetch(pathToFileURL(absPath).toString());
 		} catch (err) {
+			return new Response(`Error: ${err instanceof Error ? err.message : String(err)}`, { status: 500 });
+		}
+	});
+
+	// Streaming chat endpoint backed by the active AI provider. The renderer's
+	// `useChat` hook talks to `karabiner-ai://chat` via DefaultChatTransport;
+	// this handler returns a UI message stream Response.
+	protocol.handle('karabiner-ai', async (request) => {
+		try {
+			return await handleChatRequest(request);
+		} catch (err) {
+			console.error('[karabiner-ai] handler failed:', err);
 			return new Response(`Error: ${err instanceof Error ? err.message : String(err)}`, { status: 500 });
 		}
 	});

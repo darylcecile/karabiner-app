@@ -20,7 +20,8 @@ asarUnpack:
   - node_modules/sharp/**
   - node_modules/@img/**
   - node_modules/onnxruntime-node/**
-  - node_modules/apple-foundation-models/**
+  - node_modules/@meridius-labs/apple-on-device-ai/**
+  - node_modules/just-bash/**
 mac:
   category: public.app-category.productivity
   target:
