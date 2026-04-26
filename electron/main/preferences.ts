@@ -31,6 +31,9 @@ const PreferencesSchema = z.object({
 			baseUrl: z.string().default('http://localhost:11434'),
 			model: z.string().default('llama3.2'),
 		}).default({ baseUrl: 'http://localhost:11434', model: 'llama3.2' }),
+		copilot: z.object({
+			cliPath: z.string().default(''),
+		}).default({ cliPath: '' }),
 	}).default({
 		provider: 'none',
 		labelGeneration: true,
@@ -38,6 +41,7 @@ const PreferencesSchema = z.object({
 		askMode: { enabled: true, autoDetect: true, showAnswer: true, showResults: true },
 		openai: { apiKey: '', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
 		ollama: { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
+		copilot: { cliPath: '' },
 	}),
 	rag: z.object({
 		autoIndex: z.boolean().default(true),
@@ -55,6 +59,7 @@ const defaultPreferences:Preferences = {
 		askMode: { enabled: true, autoDetect: true, showAnswer: true, showResults: true },
 		openai: { apiKey: '', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
 		ollama: { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
+		copilot: { cliPath: '' },
 	},
 	rag: { autoIndex: true },
 };

@@ -1,18 +1,29 @@
 appId: com.darylcecile.karabiner
 productName: Karabiner
 copyright: "Copyright © 2026 Daryl Cecile"
+afterPack: build/afterPack.cjs
 directories:
   buildResources: build
   output: release
 files:
   - '!**/.vscode/*'
   - '!src/*'
-  - '!electron/**/*.ts'
+  - '!electron/**/*.{ts,tsx,css,scss}'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,pnpm-workspace.yaml,bun.lock,bun.lockb}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,components.json}'
+  - '!**/*.map'
+  - '!build/afterPack.cjs'
+  # Drop foreign-platform native binaries (we only build for mac targets).
+  - '!**/node_modules/@github/copilot-{linux,win32}-*/**'
+  - '!**/node_modules/@img/sharp-{linux,linuxmusl,win32}-*/**'
+  - '!**/node_modules/@img/sharp-libvips-{linux,linuxmusl,win32}-*/**'
+  - '!**/node_modules/@swc/core-{linux,win32,android,freebsd}-*/**'
+  - '!**/node_modules/lightningcss-{linux,win32,freebsd,android}-*/**'
+  - '!**/node_modules/@tailwindcss/oxide-{linux,win32,freebsd,android}-*/**'
+  - '!**/node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**'
 asarUnpack:
   - resources/**
   - node_modules/@electric-sql/pglite/**

@@ -122,7 +122,7 @@ export function AIPane() {
 			<div role="radiogroup" aria-label="AI provider" className="flex flex-col gap-1">
 				{OPTIONS.map((opt) => {
 					const detected = opt.requires ? availability?.[opt.requires] === true : true;
-					const isConfigurable = opt.id === 'openai' || opt.id === 'ollama';
+					const isConfigurable = opt.id === 'openai' || opt.id === 'ollama' || opt.id === 'copilot';
 					const disabled = opt.requires ? !detected && !isConfigurable : false;
 					const selected = value === opt.id;
 					return (
@@ -167,6 +167,7 @@ export function AIPane() {
 
 			<OpenAISection visible={value === 'openai' || value === 'auto'} onChange={refreshAvailability} />
 			<OllamaSection visible={value === 'ollama' || value === 'auto'} onChange={refreshAvailability} />
+			<CopilotSection visible={value === 'copilot' || value === 'auto'} onChange={refreshAvailability} />
 
 			<Separator />
 
@@ -415,6 +416,103 @@ function OllamaSection({ visible, onChange }: { visible: boolean; onChange: () =
 				</button>
 				{testState === 'ok' && <span className="text-xs text-emerald-500">Reachable</span>}
 				{testState === 'fail' && <span className="text-xs text-red-500">Unreachable</span>}
+			</div>
+		</div>
+	);
+}
+
+function CopilotSection({ visible, onChange }: { visible: boolean; onChange: () => void }) {
+	const [cliPath, setCliPath] = useState('');
+	const [loading, setLoading] = useState(true);
+	const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+	const [testMessage, setTestMessage] = useState<string>('');
+
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const cfg = (await main.preferences('ai.copilot')) as { cliPath?: string } | undefined;
+				if (cancelled) return;
+				setCliPath(cfg?.cliPath ?? '');
+			} catch {
+				/* keep default */
+			} finally {
+				if (!cancelled) setLoading(false);
+			}
+		})();
+		return () => { cancelled = true; };
+	}, []);
+
+	async function commit(val: string) {
+		try {
+			await main.preferences('ai.copilot.cliPath', val);
+			onChange();
+		} catch {
+			/* keep optimistic */
+		}
+	}
+
+	async function testConnection() {
+		setTestState('testing');
+		setTestMessage('');
+		try {
+			const result = (await (main as unknown as { aiTestCopilot: (p?: string) => Promise<{
+				ok: boolean;
+				message: string;
+				authenticated?: boolean;
+				cliPath?: string;
+			}> }).aiTestCopilot(cliPath || undefined));
+			setTestState(result.ok && result.authenticated ? 'ok' : 'fail');
+			setTestMessage(result.message);
+		} catch (err) {
+			setTestState('fail');
+			setTestMessage(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	if (!visible) return null;
+
+	return (
+		<div className="flex flex-col gap-2 rounded-md border border-foreground/10 bg-foreground/[0.02] px-3 py-3">
+			<h3 className="text-sm font-semibold">Copilot CLI configuration</h3>
+			<ConfigField
+				label="CLI path (override)"
+				value={cliPath}
+				onChange={(v) => {
+					setCliPath(v);
+					void commit(v);
+				}}
+				placeholder="Leave empty to use the bundled CLI"
+				disabled={loading}
+				monospace
+			/>
+			<p className="text-2xs text-foreground/50">
+				The app ships with the Copilot CLI bundled. Override this only if you have your own
+				install (e.g. <code className="font-mono">/opt/homebrew/bin/copilot</code> or
+				<code className="font-mono"> ~/.npm-global/bin/copilot</code>) you'd rather use.
+			</p>
+			<div className="flex items-center gap-2">
+				<button
+					type="button"
+					onClick={testConnection}
+					disabled={testState === 'testing'}
+					className={cn(
+						'rounded-md border border-foreground/15 px-2.5 py-1 text-xs',
+						'hover:bg-foreground/5 transition-colors disabled:opacity-50',
+					)}
+				>
+					{testState === 'testing' ? 'Testing…' : 'Test connection'}
+				</button>
+				{testState === 'ok' && (
+					<span className="text-xs text-emerald-500" title={testMessage}>
+						{testMessage || 'Connected'}
+					</span>
+				)}
+				{testState === 'fail' && (
+					<span className="text-xs text-red-500" title={testMessage}>
+						{testMessage || 'Failed'}
+					</span>
+				)}
 			</div>
 		</div>
 	);

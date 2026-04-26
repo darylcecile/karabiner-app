@@ -7,6 +7,7 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile, cp } from 'node:
 import path from 'node:path';
 import { isBinaryFile } from '@/main/files';
 import { getAIAvailability, getActiveProvider, clearAIAvailabilityCache } from '@/main/ai/resolver';
+import { CopilotAIProvider } from '@/main/ai/copilot';
 import { isLabelEchoingFilename } from '@/main/ai/index';
 import {
 	extractMarkdownHeading,
@@ -70,7 +71,7 @@ export const mainRelay = createMainRelay({
 			setPreferences(key, value);
 			// Provider config (api keys, urls, models) influences detection &
 			// instance state — invalidate so the next request re-evaluates.
-			if (key === 'ai.provider' || key.startsWith('ai.openai') || key.startsWith('ai.ollama')) {
+			if (key === 'ai.provider' || key.startsWith('ai.openai') || key.startsWith('ai.ollama') || key.startsWith('ai.copilot')) {
 				clearAIAvailabilityCache();
 			}
 		}),
@@ -134,6 +135,9 @@ export const mainRelay = createMainRelay({
 		},
 		async aiAvailability() {
 			return await getAIAvailability();
+		},
+		async aiTestCopilot(cliPath?: string) {
+			return await CopilotAIProvider.testConnection(cliPath);
 		},
 		async readCanvas(
 			absPath: string,

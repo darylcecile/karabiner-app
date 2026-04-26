@@ -4,6 +4,43 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { AIProvider, buildFileMetadataPrompt, FileMetadata } from '@/main/ai/index';
 import { buildTools } from "@/main/ai/chat/tools";
+import { getPreferences } from "@/main/preferences";
+
+/**
+ * Packaged macOS apps inherit a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`)
+ * from Launch Services, which means Homebrew binaries (`/opt/homebrew/bin`,
+ * `/usr/local/bin`) and per-user installs (`~/.local/bin`, `~/.bun/bin`,
+ * `~/.cargo/bin`, `~/.npm-global/bin`) are missing. Augment PATH for child
+ * processes so detection and the bundled CLI both succeed.
+ */
+function augmentedPath(): string {
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	const extras = [
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+		"/opt/local/bin",
+		home && path.join(home, ".local", "bin"),
+		home && path.join(home, ".bun", "bin"),
+		home && path.join(home, ".cargo", "bin"),
+		home && path.join(home, ".npm-global", "bin"),
+	].filter(Boolean) as string[];
+	const current = (process.env.PATH || "").split(":").filter(Boolean);
+	const merged: string[] = [];
+	for (const p of [...extras, ...current]) {
+		if (!merged.includes(p)) merged.push(p);
+	}
+	return merged.join(":");
+}
+
+function readCopilotCliPath(): string | undefined {
+	try {
+		const raw = getPreferences("ai.copilot.cliPath");
+		if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
+	} catch {
+		/* ignore */
+	}
+	return undefined;
+}
 
 export type CopilotStreamEvent =
 	| { kind: "text"; delta: string }
@@ -33,7 +70,9 @@ export class CopilotAIProvider extends AIProvider {
 	}
 
 	#newClient(): CopilotClient {
-		return new CopilotClient({ autoStart: true });
+		const cliPath = readCopilotCliPath();
+		const env = { ...process.env, PATH: augmentedPath() };
+		return new CopilotClient({ autoStart: true, ...(cliPath ? { cliPath } : {}), env });
 	}
 
 	#buildCopilotTools(emit?: ToolEmit): CopilotTool[] {
@@ -387,14 +426,16 @@ export class CopilotAIProvider extends AIProvider {
 			if (process.env.GH_COPILOT_TOKEN || process.env.GITHUB_TOKEN) return true;
 			const home = process.env.HOME || process.env.USERPROFILE || "";
 			if (home && existsSync(path.join(home, ".config", "github-copilot"))) return true;
+			// Last-resort fallback: probe `gh auth status` with an augmented PATH so that
+			// Homebrew installs are findable in packaged macOS apps.
 			return await new Promise<boolean>((resolve) => {
 				try {
-					const child = exec("gh auth status");
+					const child = exec("gh auth status", { env: { ...process.env, PATH: augmentedPath() } });
 					child.unref();
 					const timer = setTimeout(() => {
 						try { child.kill(); } catch {}
 						resolve(false);
-					}, 1000);
+					}, 1500);
 					child.on("error", () => { clearTimeout(timer); resolve(false); });
 					child.on("exit", (code) => { clearTimeout(timer); resolve(code === 0); });
 				} catch {
@@ -403,6 +444,60 @@ export class CopilotAIProvider extends AIProvider {
 			});
 		} catch {
 			return false;
+		}
+	}
+
+	/**
+	 * Probe a Copilot CLI configuration end-to-end: spin up a throwaway
+	 * `CopilotClient`, ask for its auth status, then tear it down. Used by the
+	 * settings UI's "Test connection" button so the user can verify their
+	 * `cliPath` override (or detect why "Not detected" is showing).
+	 */
+	static async testConnection(cliPathOverride?: string): Promise<{
+		ok: boolean;
+		message: string;
+		cliPath?: string;
+		authenticated?: boolean;
+	}> {
+		const cliPath = (cliPathOverride && cliPathOverride.trim().length > 0)
+			? cliPathOverride.trim()
+			: readCopilotCliPath();
+		// Validate explicit path before spawning anything (faster, clearer error).
+		if (cliPath && !existsSync(cliPath)) {
+			return { ok: false, message: `Path does not exist: ${cliPath}`, cliPath };
+		}
+		let client: CopilotClient | null = null;
+		try {
+			const env = { ...process.env, PATH: augmentedPath() };
+			client = new CopilotClient({
+				autoStart: true,
+				...(cliPath ? { cliPath } : {}),
+				env,
+			});
+			// Race the auth-status probe against a hard timeout so a misconfigured
+			// CLI can't hang the UI indefinitely.
+			const status = await Promise.race([
+				(client as unknown as { getAuthStatus(): Promise<{ isAuthenticated: boolean; login?: string; authType?: string; statusMessage?: string }> })
+					.getAuthStatus(),
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error("Timed out after 8s")), 8_000),
+				),
+			]);
+			const authenticated = !!status?.isAuthenticated;
+			const login = status?.login;
+			return {
+				ok: true,
+				authenticated,
+				cliPath,
+				message: authenticated
+					? `Connected as ${login ?? "Copilot user"}${status?.authType ? ` (${status.authType})` : ""}`
+					: status?.statusMessage || "CLI reachable but not signed in (run `copilot` once to authenticate)",
+			};
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			return { ok: false, message: msg, cliPath };
+		} finally {
+			try { await client?.stop(); } catch { /* ignore */ }
 		}
 	}
 

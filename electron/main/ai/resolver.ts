@@ -145,7 +145,8 @@ export async function getActiveProvider(): Promise<AIProvider | null> {
 export function clearAIAvailabilityCache(): void {
 	availabilityCache = null;
 	availabilityPromise = null;
-	// Drop hosted instances so config changes (api keys, urls, models) take effect.
+	// Drop hosted/CLI instances so config changes (api keys, urls, models, cliPath) take effect.
 	openaiInstance = null;
 	ollamaInstance = null;
+	copilotInstance = null;
 }
