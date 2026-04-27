@@ -21,7 +21,6 @@ exports.default = async function notarizing(ctx) {
   const appleApiKey = process.env.APPLE_API_KEY;
   const appleApiKeyId = process.env.APPLE_API_KEY_ID;
   const appleApiIssuer = process.env.APPLE_API_ISSUER;
-  const appleTeamId = process.env.APPLE_TEAM_ID;
 
   if (!appleApiKey || !appleApiKeyId || !appleApiIssuer) {
     console.warn('[notarize] missing APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER, skipping');
@@ -33,13 +32,17 @@ exports.default = async function notarizing(ctx) {
 
   console.log(`[notarize] submitting ${appPath} to notarytool …`);
   const start = Date.now();
+  // Note: do NOT pass `teamId` here. @electron/notarize's argument validator
+  // treats the presence of `teamId` as the password-credentials flavor, which
+  // then conflicts with the API-key fields and throws "Cannot use password
+  // credentials, API key credentials and keychain credentials at once". The
+  // team ID is already encoded in the App Store Connect API key.
   await notarize({
     tool: 'notarytool',
     appPath,
     appleApiKey,
     appleApiKeyId,
     appleApiIssuer,
-    teamId: appleTeamId,
   });
   console.log(`[notarize] done in ${((Date.now() - start) / 1000).toFixed(1)}s`);
 };
