@@ -105,7 +105,30 @@ jobs:
             exit 0
           fi
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          echo -n "$APPLE_API_KEY_P8_BASE64" | base64 --decode --output "$KEY_PATH"
+          # Use `printf '%s'` (not `echo -n`) for portable no-trailing-newline
+          # behavior, and redirect stdout (not `--output`) since BSD base64's
+          # long-option parsing for `--output FILE` is finicky.
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 -d > "$KEY_PATH"
+
+          # Sanity-check the decoded key. A valid .p8 is a PEM-encoded PKCS#8
+          # EC private key — must start with "-----BEGIN PRIVATE KEY-----" and
+          # end with "-----END PRIVATE KEY-----". If either marker is missing,
+          # the secret is malformed (most often: truncated paste, wrapped at
+          # the wrong width, or trailing whitespace from the GitHub UI).
+          first=$(head -n1 "$KEY_PATH" | tr -d '\r')
+          last=$(tail -n1 "$KEY_PATH" | tr -d '\r')
+          if [ "$first" != "-----BEGIN PRIVATE KEY-----" ] || [ "$last" != "-----END PRIVATE KEY-----" ]; then
+            echo "::error::Decoded APPLE_API_KEY_P8_BASE64 is not a valid PEM private key."
+            echo "First line: $first"
+            echo "Last line:  $last"
+            echo "File size:  $(wc -c < "$KEY_PATH") bytes"
+            echo ""
+            echo "Re-encode locally with:  base64 -i AuthKey_XXXXXX.p8 | pbcopy"
+            echo "Then paste into the APPLE_API_KEY_P8_BASE64 secret without modification."
+            exit 1
+          fi
+          echo "[notarize-key] decoded OK ($(wc -c < "$KEY_PATH") bytes)"
+
           echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
           echo "MAC_NOTARIZE=true" >> "$GITHUB_ENV"
 
