@@ -1,6 +1,6 @@
 {
   "name": "karabiner-app",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Karabiner desktop app",
   "main": "./out/main/index.js",
   "scripts": {
@@ -92,7 +92,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron"
-    ]
+    ],
+    "overrides": {
+      "sharp": "$sharp"
+    }
   },
   "workspaces": [
     "src/packages/relay"
