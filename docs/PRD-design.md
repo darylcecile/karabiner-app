@@ -580,7 +580,7 @@ Onboarding should be short, honest, and capability-driven:
 5. **Copilot availability:** detect plan/capability where APIs permit; explain limitations.
 6. **Optional providers:** Claude, Codex/OpenAI, OpenCode, Codespaces, local runtime.
 7. **Choose first workflow:** Open repo, Create app, Review PR, Continue agent, Connect runtime.
-8. **Teach by doing:** launch a guided sample review or safe plan-only task.
+8. **Teach by doing:** launch a safe plan-only task against a real connected repository, or stay in an honest empty state until one is connected.
 
 ### 12.2 Provider connection UX
 
@@ -610,7 +610,7 @@ Local/user-owned runtime connection must feel like pairing a sensitive device:
 
 - First-time tooltips appear only at moments of need.
 - Keyboard shortcut overlay is always available.
-- Sample workspaces can teach review, agent launch, approval, and preview without requiring real repo mutation.
+- Learning surfaces must not fabricate workspaces, repositories, reviews, approvals, or provider runs; they can explain the flow and then require a real connected repository before acting.
 - "Why am I seeing this?" links explain provider limits, policies, and risk tiers.
 
 ## 13. Empty, loading, and error states
@@ -621,7 +621,7 @@ Empty states should invite productive action:
 
 | Surface | Empty state |
 | --- | --- |
-| Home | "Connect GitHub to open repositories and agent sessions." Actions: Sign in, Try demo, Learn remote execution. |
+| Home | "Connect GitHub to open repositories and agent sessions." Actions: Sign in, Learn remote execution. |
 | Workspace | "No file selected." Actions: search files, open recent, ask agent about repo, open issue. |
 | Agent Board | "No active agents." Actions: start from issue, create plan, run fleet, connect provider. |
 | Review Inbox | "Nothing needs your review." Show recent merged/reviewed work and notification settings. |

@@ -1,0 +1,135 @@
+name: Karabiner
+
+options:
+  minimumXcodeGenVersion: 2.42.0
+  xcodeVersion: "26.5"
+  bundleIdPrefix: com.darylcecile
+  developmentLanguage: en
+  createIntermediateGroups: true
+  defaultConfig: Debug
+  deploymentTarget:
+    iOS: "26.1"
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: "26.1"
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    TARGETED_DEVICE_FAMILY: "2"
+    SUPPORTS_MACCATALYST: "NO"
+    ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1.0"
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      ENABLE_TESTABILITY: "YES"
+    Release:
+      SWIFT_COMPILATION_MODE: wholemodule
+
+fileGroups:
+  - README.md
+  - docs
+  - skills-lock.json
+
+targets:
+  Karabiner:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.1"
+    sources:
+      - path: KarabinerApp
+    dependencies:
+      - target: KarabinerCore
+      - target: KarabinerUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.darylcecile.karabiner
+        PRODUCT_NAME: Karabiner
+        INFOPLIST_FILE: KarabinerApp/Resources/Info.plist
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+
+  KarabinerCore:
+    type: framework
+    platform: iOS
+    deploymentTarget: "26.1"
+    sources:
+      - path: KarabinerCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.darylcecile.karabiner.core
+        PRODUCT_NAME: KarabinerCore
+        GENERATE_INFOPLIST_FILE: "YES"
+        SKIP_INSTALL: "YES"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+
+  KarabinerUI:
+    type: framework
+    platform: iOS
+    deploymentTarget: "26.1"
+    sources:
+      - path: KarabinerUI
+    dependencies:
+      - target: KarabinerCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.darylcecile.karabiner.ui
+        PRODUCT_NAME: KarabinerUI
+        GENERATE_INFOPLIST_FILE: "YES"
+        SKIP_INSTALL: "YES"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+
+  KarabinerTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.1"
+    sources:
+      - path: KarabinerTests
+    dependencies:
+      - target: KarabinerCore
+      - target: KarabinerUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.darylcecile.karabiner.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+
+  KarabinerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.1"
+    sources:
+      - path: KarabinerUITests
+    dependencies:
+      - target: Karabiner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.darylcecile.karabiner.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Karabiner
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+
+schemes:
+  Karabiner:
+    build:
+      targets:
+        Karabiner: all
+        KarabinerTests: [test]
+        KarabinerUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      macroExpansion: Karabiner
+      targets:
+        - KarabinerTests
+        - KarabinerUITests
+    archive:
+      config: Release

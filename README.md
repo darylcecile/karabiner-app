@@ -20,5 +20,27 @@ The recommended product direction is a native Swift iPad app that uses GitHub as
 - `docs/PRD.md` - researched PRD, competitor analysis, stack recommendation, architecture, V1 requirements, risks, and source links.
 - `docs/PRD-design.md` - design and UX PRD covering visual identity, design language, competitor design analysis, iPad interactions, accessibility, and Apple Design Award-level quality goals.
 - `docs/PRD-libraries.md` - library/framework research and dependency recommendations for the Swift/iPad app, plus selected project agent skills.
+- `project.yml` - XcodeGen project definition for the Swift 6 iPadOS app, framework, unit test, and UI test targets.
+- `KarabinerApp/`, `KarabinerCore/`, `KarabinerUI/`, `KarabinerTests/`, and `KarabinerUITests/` - initial scaffold sources and resources.
 - `.agents/skills/` and `skills-lock.json` - vetted repo-local agent skills for SwiftUI, Swift Testing, iOS design, accessibility, App Store review, architecture, and documentation.
 - `.gitignore` - Swift/Xcode/iPad project ignores.
+
+## Project scaffold
+
+The app scaffold is declared in `project.yml` for XcodeGen. Generate the Xcode project with:
+
+```sh
+xcodegen generate --spec project.yml
+```
+
+The initial target graph is:
+
+- `Karabiner` — iPadOS SwiftUI app target.
+- `KarabinerCore` — framework target reserved for core app logic.
+- `KarabinerUI` — framework target containing the SwiftUI shell entry view.
+- `KarabinerTests` — Swift Testing unit test target.
+- `KarabinerUITests` — XCTest UI test target.
+
+The scaffold targets iPadOS 26.1 because this is a new iPad-only app and Xcode 26 defaults new projects to the current iPadOS generation; 26.1 is the earliest iPadOS 26 simulator runtime available in the validated toolchain.
+
+The runtime UI does not use mocked repositories, agents, approvals, checks, or logs. Empty screens stay empty until GitHub credentials are stored in Keychain and real GitHub REST API data is loaded.
