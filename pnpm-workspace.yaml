@@ -1,6 +1,0 @@
-
-packages:
-  - src/packages/relay
-allowBuilds:
-  electron: true
-  sharp: false
