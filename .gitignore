@@ -1,6 +1,30 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Node tooling used by agent-skill management
 node_modules/
-out/
-dist
-dist-electron
-release
+
+# App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
 .DS_Store
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
