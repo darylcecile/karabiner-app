@@ -1,0 +1,21 @@
+{
+  "name": "@karabiner/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "pnpm typecheck",
+    "db:migrate:local": "CI=1 wrangler d1 migrations apply karabiner-dev --local",
+    "db:migrations:list:local": "wrangler d1 migrations list karabiner-dev --local",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@karabiner/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260520.1",
+    "wrangler": "4.93.0"
+  }
+}

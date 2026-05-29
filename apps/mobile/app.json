@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Karabiner",
+    "slug": "karabiner",
+    "scheme": "karabiner",
+    "version": "0.1.0",
+    "platforms": ["ios"],
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "bundleIdentifier": "app.karabiner.mobile",
+      "supportsTablet": true,
+      "usesAppleSignIn": true
+    },
+    "plugins": ["expo-router", "expo-apple-authentication", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:8787"
+    }
+  }
+}

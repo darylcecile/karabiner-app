@@ -1,19 +1,37 @@
-# Xcode
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Package manager / TypeScript
+*.tsbuildinfo
+
+# Expo / React Native
+.expo/
+.expo-shared/
+android/
+ios/
+web-build/
+
+# Build and test output
+dist/
+coverage/
+/tests/manual.md
 build/
 DerivedData/
+.build/
+.swiftpm/
+
+# Xcode local state
 *.xcuserstate
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 
-# Swift Package Manager
-.build/
-.swiftpm/
+# Cloudflare
+.wrangler/
+.dev.vars
 
-# Node tooling used by agent-skill management
-node_modules/
-
-# App packaging
+# App packaging and native build products
 *.ipa
 *.dSYM.zip
 *.dSYM

@@ -1,0 +1,56 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "karabiner-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ALLOWED_ORIGINS": "karabiner://app,http://localhost:8081",
+    "APPLE_BUNDLE_ID": "app.karabiner.mobile"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHAT_ROOMS",
+        "class_name": "ChatRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ChatRoom"]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "karabiner-dev",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "karabiner-media-dev"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "PLUGIN_DISPATCH",
+        "queue": "karabiner-plugin-dispatch-dev"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "karabiner-plugin-dispatch-dev",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "karabiner-plugin-dispatch-dlq-dev"
+      }
+    ]
+  }
+}

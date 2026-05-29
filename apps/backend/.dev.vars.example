@@ -1,0 +1,3 @@
+# Required for local auth/session token hashing. Generate with:
+# openssl rand -base64 32
+TOKEN_PEPPER="replace-with-a-long-random-local-secret"
