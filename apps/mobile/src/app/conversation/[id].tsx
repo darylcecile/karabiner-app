@@ -483,8 +483,8 @@ export default function ConversationScreen() {
       <ConversationHeader conversation={conversation} onBack={() => router.back()} topInset={insets.top} />
       <FlatList
         automaticallyAdjustKeyboardInsets
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.list}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={[styles.list, { paddingTop: insets.top + 64 }]}
         data={rootMessages}
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
@@ -589,22 +589,38 @@ function ConversationHeader({
   onBack: () => void;
   topInset: number;
 }) {
+  const subtitle = conversation.kind === "agent" ? "bot" : conversation.kind === "group" ? "group" : "online";
+  const avatarInitial = conversation.title.trim().charAt(0).toUpperCase() || "?";
+
   return (
-    <View style={[styles.chatHeader, { paddingTop: topInset + 4 }]}>
-      <Pressable accessibilityLabel="Back to chats" accessibilityRole="button" hitSlop={8} onPress={onBack} style={styles.chatBackButton}>
-        <SystemSymbol color={colors.systemBlue} fallback="‹" name="chevron.left" size={24} />
-        <Text style={styles.chatBackText}>Chats</Text>
+    <View pointerEvents="box-none" style={[styles.chatHeader, { paddingTop: topInset + 6 }]}>
+      <Pressable
+        accessibilityLabel="Back to chats"
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={onBack}
+        style={({ pressed }) => [styles.headerCircleButton, pressed ? styles.headerCirclePressed : null]}
+      >
+        <SystemSymbol color={colors.systemBlue} fallback="‹" name="chevron.left" size={22} />
       </Pressable>
-      <View accessibilityLabel={`${conversation.title}, ${conversation.kind === "agent" ? "AI chat" : "chat"}`} style={styles.headerTitle}>
+      <View
+        accessibilityLabel={`${conversation.title}, ${conversation.kind === "agent" ? "AI chat" : "chat"}`}
+        style={styles.headerTitle}
+      >
         <Text numberOfLines={1} style={styles.headerName}>
           {conversation.title}
         </Text>
         <Text numberOfLines={1} style={styles.headerStatus}>
-          {conversation.kind === "agent" ? `${conversationAgentName(conversation)} available` : "online"}
+          {subtitle}
         </Text>
       </View>
-      <Pressable accessibilityLabel="Conversation info" accessibilityRole="button" hitSlop={8} style={styles.chatInfoButton}>
-        <SystemSymbol color={colors.systemBlue} fallback="i" name="info.circle" size={22} />
+      <Pressable
+        accessibilityLabel="Conversation info"
+        accessibilityRole="button"
+        hitSlop={8}
+        style={({ pressed }) => [styles.headerAvatarButton, pressed ? styles.headerCirclePressed : null]}
+      >
+        <Text style={styles.headerAvatarText}>{avatarInitial}</Text>
       </Pressable>
     </View>
   );
@@ -613,6 +629,7 @@ function ConversationHeader({
 function ChatWallpaper() {
   return (
     <View pointerEvents="none" style={styles.wallpaper}>
+      <View style={styles.wallpaperAccent} />
       {WALLPAPER_DOTS.map((dot) => (
         <View
           key={dot}
@@ -1302,40 +1319,66 @@ const styles = StyleSheet.create({
   },
   chatHeader: {
     alignItems: "center",
-    backgroundColor: colors.elevatedBackground,
-    borderBottomColor: colors.separator,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "transparent",
     flexDirection: "row",
-    minHeight: 88,
+    gap: 10,
+    left: 0,
     paddingBottom: 8,
-    paddingHorizontal: 10,
-    zIndex: 2
+    paddingHorizontal: 12,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 5
   },
-  chatBackButton: {
+  headerCircleButton: {
     alignItems: "center",
-    flexDirection: "row",
-    minHeight: 44,
-    minWidth: 86
-  },
-  chatBackText: {
-    color: colors.systemBlue,
-    fontSize: 17,
-    marginLeft: 2
-  },
-  chatInfoButton: {
-    alignItems: "center",
+    backgroundColor: colors.floatingSurface,
+    borderRadius: 22,
+    height: 44,
     justifyContent: "center",
-    minHeight: 44,
-    minWidth: 44
+    shadowColor: "#000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    width: 44
+  },
+  headerCirclePressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.96 }]
+  },
+  headerAvatarButton: {
+    alignItems: "center",
+    backgroundColor: colors.telegramPurple,
+    borderRadius: 22,
+    height: 44,
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    width: 44
+  },
+  headerAvatarText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "700"
   },
   headerTitle: {
     alignItems: "center",
+    backgroundColor: colors.floatingSurface,
+    borderRadius: 22,
     flex: 1,
-    maxWidth: 220
+    maxWidth: 240,
+    paddingHorizontal: 22,
+    paddingVertical: 6,
+    shadowColor: "#000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6
   },
   headerName: {
     color: colors.label,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "700",
     lineHeight: 20
   },
@@ -1350,13 +1393,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chatBackground,
     overflow: "hidden"
   },
+  wallpaperAccent: {
+    backgroundColor: colors.chatBackgroundAccent,
+    borderRadius: 999,
+    height: "120%",
+    left: "-30%",
+    opacity: 0.85,
+    position: "absolute",
+    top: "-40%",
+    width: "120%"
+  },
   wallpaperDot: {
     backgroundColor: colors.chatPattern,
-    borderRadius: 1.5,
-    height: 3,
-    opacity: 0.55,
+    borderRadius: 4,
+    height: 8,
+    opacity: 0.85,
     position: "absolute",
-    width: 3
+    width: 8
   },
   list: {
     alignSelf: "center",
@@ -1432,6 +1485,7 @@ const styles = StyleSheet.create({
   },
   bubbleTail: {
     bottom: 0,
+    display: "none",
     height: 12,
     position: "absolute",
     width: 12
@@ -1453,12 +1507,12 @@ const styles = StyleSheet.create({
     gap: 5,
     maxWidth: "100%",
     minHeight: 30,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     shadowColor: "#000",
     shadowOffset: { height: 1, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1.5
+    shadowOpacity: 0.06,
+    shadowRadius: 3
   },
   bubblePressed: {
     opacity: 0.78
@@ -1469,13 +1523,13 @@ const styles = StyleSheet.create({
   },
   incomingBubble: {
     backgroundColor: colors.incomingBubble,
-    borderRadius: 16,
-    borderBottomLeftRadius: 5
+    borderRadius: 22,
+    borderBottomLeftRadius: 8
   },
   outgoingBubble: {
     backgroundColor: colors.outgoingBubble,
-    borderRadius: 16,
-    borderBottomRightRadius: 5
+    borderRadius: 22,
+    borderBottomRightRadius: 8
   },
   reactionSummary: {
     alignSelf: "flex-start",

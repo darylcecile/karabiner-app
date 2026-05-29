@@ -458,18 +458,31 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
       <View style={styles.row}>
         <Pressable
           accessibilityHint="Opens native-style attachment choices"
-          accessibilityLabel="Add attachment"
+          accessibilityLabel="Open composer menu"
           accessibilityRole="button"
           accessibilityState={{ expanded: activePicker === "attachments" }}
           hitSlop={8}
           onPress={() => togglePicker("attachments")}
           style={({ pressed }) => [
-            styles.utilityButton,
-            activePicker === "attachments" ? styles.utilityButtonActive : null,
+            styles.menuButton,
+            activePicker === "attachments" ? styles.menuButtonActive : null,
             pressed ? styles.utilityButtonPressed : null
           ]}
         >
-          <SystemSymbol color={activePicker === "attachments" ? "white" : colors.systemBlue} fallback="+" name="plus" size={20} />
+          <SystemSymbol color="white" fallback="≡" name="line.3.horizontal" size={20} />
+        </Pressable>
+        <Pressable
+          accessibilityHint="Attach a file or photo"
+          accessibilityLabel="Attach file"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => togglePicker("attachments")}
+          style={({ pressed }) => [
+            styles.attachButton,
+            pressed ? styles.utilityButtonPressed : null
+          ]}
+        >
+          <SystemSymbol color={colors.secondaryLabel} fallback="📎" name="paperclip" size={20} />
         </Pressable>
         <View style={styles.inputShell}>
           <Host matchContents style={styles.inputHost}>
@@ -492,7 +505,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             />
           </Host>
           <Pressable
-            accessibilityHint="Opens emoji choices"
+            accessibilityHint="Opens stickers and emoji"
             accessibilityLabel="Open emoji picker"
             accessibilityRole="button"
             accessibilityState={{ expanded: activePicker === "emoji" }}
@@ -500,25 +513,34 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             onPress={() => togglePicker("emoji")}
             style={({ pressed }) => [styles.inputIconButton, pressed ? styles.optionPressed : null]}
           >
-            <SystemSymbol color={colors.secondaryLabel} fallback="☺" name="face.smiling" size={20} />
+            <SystemSymbol color={colors.secondaryLabel} fallback="☺" name="face.smiling" size={22} />
           </Pressable>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Send message"
-          accessibilityHint={canSend ? "Sends the current message" : "Enter text or attach a file to enable sending"}
-          accessibilityState={{ disabled: !canSend }}
-          disabled={!canSend}
-          hitSlop={6}
-          onPress={send}
-          style={({ pressed }) => [
-            styles.send,
-            !canSend ? styles.sendDisabled : null,
-            pressed ? styles.sendPressed : null
-          ]}
-        >
-          <SystemSymbol color="white" fallback="↑" name="arrow.up" size={19} />
-        </Pressable>
+        {canSend ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+            accessibilityHint="Sends the current message"
+            hitSlop={6}
+            onPress={send}
+            style={({ pressed }) => [
+              styles.send,
+              pressed ? styles.sendPressed : null
+            ]}
+          >
+            <SystemSymbol color="white" fallback="↑" name="arrow.up" size={19} />
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Record voice message"
+            accessibilityHint="Hold to record a voice message"
+            hitSlop={6}
+            style={({ pressed }) => [styles.voiceButton, pressed ? styles.utilityButtonPressed : null]}
+          >
+            <SystemSymbol color={colors.secondaryLabel} fallback="●" name="mic.fill" size={20} />
+          </Pressable>
+        )}
       </View>
       {expanded !== sourceText && expanded !== text ? <Text style={styles.preview}>Preview: {expanded}</Text> : null}
     </View>
@@ -527,21 +549,23 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.elevatedBackground,
-    borderTopColor: colors.separator,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "transparent",
     gap: 7,
     paddingHorizontal: 10,
-    paddingTop: 8
+    paddingTop: 6
   },
   replyPreview: {
     alignItems: "center",
-    backgroundColor: colors.secondaryBackground,
-    borderRadius: 16,
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 18,
     flexDirection: "row",
     gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4
   },
   replyCopy: {
     borderLeftColor: colors.systemBlue,
@@ -568,7 +592,7 @@ const styles = StyleSheet.create({
   row: {
     alignItems: "flex-end",
     flexDirection: "row",
-    gap: 7
+    gap: 8
   },
   utilityButton: {
     alignItems: "center",
@@ -586,19 +610,65 @@ const styles = StyleSheet.create({
     opacity: 0.72,
     transform: [{ scale: 0.96 }]
   },
+  menuButton: {
+    alignItems: "center",
+    backgroundColor: colors.telegramPurple,
+    borderRadius: 21,
+    height: 42,
+    justifyContent: "center",
+    marginBottom: 2,
+    shadowColor: colors.telegramPurple,
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    width: 42
+  },
+  menuButtonActive: {
+    backgroundColor: colors.systemBlue
+  },
+  attachButton: {
+    alignItems: "center",
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 21,
+    height: 42,
+    justifyContent: "center",
+    marginBottom: 2,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    width: 42
+  },
+  voiceButton: {
+    alignItems: "center",
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 21,
+    height: 42,
+    justifyContent: "center",
+    marginBottom: 2,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    width: 42
+  },
   inputShell: {
     alignItems: "flex-end",
-    backgroundColor: colors.secondaryBackground,
-    borderRadius: 19,
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 21,
     flex: 1,
     flexDirection: "row",
     gap: 6,
     justifyContent: "center",
     maxHeight: 116,
-    minHeight: 38,
-    paddingLeft: 13,
-    paddingRight: 4,
-    paddingVertical: 6
+    minHeight: 42,
+    paddingLeft: 16,
+    paddingRight: 6,
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4
   },
   inputHost: {
     flex: 1,
@@ -608,18 +678,22 @@ const styles = StyleSheet.create({
   inputIconButton: {
     alignItems: "center",
     borderRadius: 18,
-    height: 34,
+    height: 30,
     justifyContent: "center",
-    width: 34
+    width: 30
   },
   send: {
     alignItems: "center",
     backgroundColor: colors.systemBlue,
-    borderRadius: 18,
-    height: 38,
+    borderRadius: 21,
+    height: 42,
     justifyContent: "center",
     marginBottom: 2,
-    width: 38
+    shadowColor: colors.systemBlue,
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    width: 42
   },
   sendDisabled: {
     backgroundColor: colors.tertiaryBackground
