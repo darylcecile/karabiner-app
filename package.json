@@ -1,0 +1,30 @@
+{
+  "name": "@karabiner/root",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.3",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.33.3"
+  },
+  "scripts": {
+    "backend": "pnpm --filter @karabiner/backend",
+    "check": "pnpm -r check",
+    "device": "agent-device",
+    "dev": "pnpm --parallel --filter @karabiner/backend --filter @karabiner/mobile dev",
+    "mobile": "pnpm --filter @karabiner/mobile",
+    "shared": "pnpm --filter @karabiner/shared",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "19.2.0",
+      "react-dom": "19.2.0",
+      "react-native-worklets": "0.7.4"
+    }
+  },
+  "devDependencies": {
+    "agent-device": "0.15.1",
+    "typescript": "5.9.3"
+  }
+}
