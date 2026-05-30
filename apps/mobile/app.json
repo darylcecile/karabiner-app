@@ -4,21 +4,37 @@
     "slug": "karabiner",
     "scheme": "karabiner",
     "version": "0.1.0",
-    "platforms": ["ios"],
+    "platforms": [
+      "ios"
+    ],
     "orientation": "default",
     "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "bundleIdentifier": "app.karabiner.mobile",
       "supportsTablet": true,
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
-    "plugins": ["expo-router", "expo-apple-authentication", "expo-secure-store"],
+    "plugins": [
+      "expo-router",
+      "expo-apple-authentication",
+      "expo-secure-store"
+    ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
-      "apiBaseUrl": "http://localhost:8787"
-    }
+      "apiBaseUrl": "http://localhost:8787",
+      "router": {},
+      "eas": {
+        "projectId": "90d805d1-2488-475c-b527-e0391cdc576a"
+      }
+    },
+    "owner": "darylcecile"
   }
 }
