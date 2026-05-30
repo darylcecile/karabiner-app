@@ -1368,7 +1368,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.floatingSurface,
     borderRadius: 22,
     flex: 1,
-    maxWidth: 240,
     paddingHorizontal: 22,
     paddingVertical: 6,
     shadowColor: "#000",
