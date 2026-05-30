@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View, type ColorValue } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View, type ColorValue } from "react-native";
 import { useState } from "react";
 import { conversations } from "../../features/messages/fixtures";
 import { conversationParticipants } from "../../features/messages/participants";
@@ -46,7 +46,7 @@ export default function ConversationDetailsScreen() {
 
         <View style={styles.actionRow}>
           <ActionChip icon="bell.slash" label="Mute" onPress={() => setMuted((m) => !m)} active={muted} />
-          <ActionChip icon="magnifyingglass" label="Search" onPress={() => router.back()} />
+          <ActionChip icon="magnifyingglass" label="Search" onPress={() => undefined} disabled />
           <ActionChip icon="phone" label="Call" onPress={() => undefined} disabled />
           <ActionChip icon="video" label="Video" onPress={() => undefined} disabled />
         </View>
@@ -72,6 +72,7 @@ export default function ConversationDetailsScreen() {
                 label={m.displayName}
                 sub={m.handle}
                 last={idx === members.length - 1}
+                onPress={() => Alert.alert(m.displayName, `Handle: ${m.handle}\n\nMember profile coming soon.`)}
               />
             ))}
             <Row
@@ -83,18 +84,63 @@ export default function ConversationDetailsScreen() {
               label="Add Members"
               labelColor={colors.systemBlue}
               last
+              onPress={() =>
+                Alert.alert(
+                  "Add Members",
+                  "Inviting people to a group is not wired up to a backend yet."
+                )
+              }
             />
           </Section>
         ) : null}
 
         <Section title="Shared">
-          <Row label="Media" right={<Chevron />} sub="0 photos & videos" />
-          <Row label="Files" right={<Chevron />} sub="0 documents" />
-          <Row label="Links" right={<Chevron />} sub="0 links" last />
+          <Row
+            label="Media"
+            right={<Chevron />}
+            sub="0 photos & videos"
+            onPress={() => Alert.alert("Shared Media", "No media has been shared in this chat yet.")}
+          />
+          <Row
+            label="Files"
+            right={<Chevron />}
+            sub="0 documents"
+            onPress={() => Alert.alert("Shared Files", "No files have been shared in this chat yet.")}
+          />
+          <Row
+            label="Links"
+            right={<Chevron />}
+            sub="0 links"
+            last
+            onPress={() => Alert.alert("Shared Links", "No links have been shared in this chat yet.")}
+          />
         </Section>
 
         <Section>
-          <Row label="Clear History" labelColor={colors.systemRed} center last />
+          <Row
+            label="Clear History"
+            labelColor={colors.systemRed}
+            center
+            last
+            onPress={() =>
+              Alert.alert(
+                "Clear History?",
+                "All messages in this chat will be deleted for you. This cannot be undone.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Clear",
+                    style: "destructive",
+                    onPress: () =>
+                      Alert.alert(
+                        "History cleared",
+                        "Messages aren't persisted in this build, so they'll be back next time the app launches."
+                      )
+                  }
+                ]
+              )
+            }
+          />
         </Section>
 
         <Section>
@@ -103,6 +149,22 @@ export default function ConversationDetailsScreen() {
             labelColor={colors.systemRed}
             center
             last
+            onPress={() =>
+              Alert.alert(
+                isGroup ? "Leave Group?" : "Delete Chat?",
+                isGroup
+                  ? "You will be removed from this group. Other members will see that you left."
+                  : "This conversation will be removed from your list.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: isGroup ? "Leave" : "Delete",
+                    style: "destructive",
+                    onPress: () => router.back()
+                  }
+                ]
+              )
+            }
           />
         </Section>
       </ScrollView>
@@ -126,7 +188,8 @@ function Row({
   leading,
   labelColor,
   center,
-  last
+  last,
+  onPress
 }: {
   label: string;
   sub?: string;
@@ -135,9 +198,10 @@ function Row({
   labelColor?: ColorValue;
   center?: boolean;
   last?: boolean;
+  onPress?: () => void;
 }) {
-  return (
-    <View style={[styles.row, !last ? styles.rowDivider : null]}>
+  const content = (
+    <>
       {leading ? <View style={styles.rowLeading}>{leading}</View> : null}
       <View style={styles.rowLabels}>
         <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : null, center ? styles.rowLabelCenter : null]}>
@@ -146,7 +210,22 @@ function Row({
         {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
       </View>
       {right ? <View style={styles.rowRight}>{right}</View> : null}
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={[styles.row, !last ? styles.rowDivider : null]}>{content}</View>;
+  }
+
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, !last ? styles.rowDivider : null, pressed ? styles.rowPressed : null]}
+    >
+      {content}
+    </Pressable>
   );
 }
 
@@ -256,6 +335,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11
   },
   rowDivider: { borderBottomColor: colors.separator, borderBottomWidth: StyleSheet.hairlineWidth },
+  rowPressed: { backgroundColor: colors.tertiaryBackground },
   rowLeading: { marginRight: 12 },
   rowLabels: { flex: 1 },
   rowLabel: { color: colors.label, fontSize: 17 },

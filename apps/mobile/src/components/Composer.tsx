@@ -128,6 +128,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
   const [sourceText, setSourceText] = useState("");
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
+  const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
   const [attachments, setAttachments] = useState<AttachmentBlock[]>([]);
   const insets = useSafeAreaInsets();
   const expanded = useMemo(() => expandSlugmojis(sourceText, slugmojis), [sourceText]);
@@ -378,16 +379,17 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
                     <Pressable
                       accessibilityLabel={`${category.label} emoji category`}
                       accessibilityRole="tab"
+                      accessibilityState={{ selected: index === activeEmojiCategory }}
                       key={category.label}
-                      onPress={() => undefined}
+                      onPress={() => setActiveEmojiCategory(index)}
                       style={({ pressed }) => [
                         styles.categoryTab,
-                        index === 0 ? styles.categoryTabActive : null,
+                        index === activeEmojiCategory ? styles.categoryTabActive : null,
                         pressed ? styles.optionPressed : null
                       ]}
                     >
                       <Text style={styles.categoryIcon}>{category.icon}</Text>
-                      {index === 0 ? (
+                      {index === activeEmojiCategory ? (
                         <Text style={[styles.categoryText, styles.categoryTextActive]}>{category.label}</Text>
                       ) : null}
                     </Pressable>
@@ -395,7 +397,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
                 </ScrollView>
               </View>
               <View style={styles.emojiSectionHeader}>
-                <Text style={styles.emojiSectionTitle}>Frequently used</Text>
+                <Text style={styles.emojiSectionTitle}>{emojiCategoryTabs[activeEmojiCategory]?.label ?? "Frequently used"}</Text>
                 <Text style={styles.emojiSectionMeta}>Tap to insert</Text>
               </View>
               <View style={styles.emojiGrid}>
