@@ -1,4 +1,4 @@
-import { Link, Stack, useRouter, type Href } from "expo-router";
+import { Stack, useRouter, type Href } from "expo-router";
 import { Pressable, SectionList, StyleSheet, Text, View } from "react-native";
 import {
   agentParticipants,
@@ -36,23 +36,22 @@ export default function NewConversationScreen() {
         contentContainerStyle={styles.list}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
-          <Link href={"/create-group" as Href} asChild>
-            <Pressable
-              accessibilityHint="Starts a new group conversation"
-              accessibilityLabel="New Group"
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.row, styles.topRow, pressed ? styles.rowPressed : null]}
-            >
-              <View style={[styles.avatar, styles.groupAvatar]}>
-                <SystemSymbol color="white" fallback="+" name="person.2.badge.plus" size={21} />
-              </View>
-              <View style={styles.rowContent}>
-                <Text style={styles.title}>New Group</Text>
-                <Text style={styles.subtitle}>Create a group with people and agents.</Text>
-              </View>
-              <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={16} />
-            </Pressable>
-          </Link>
+          <Pressable
+            accessibilityHint="Starts a new group conversation"
+            accessibilityLabel="New Group"
+            accessibilityRole="button"
+            onPress={() => router.push("/create-group" as Href)}
+            style={({ pressed }) => [styles.row, styles.topRow, pressed ? styles.rowPressed : null]}
+          >
+            <View style={[styles.avatar, styles.groupAvatar]}>
+              <SystemSymbol color="white" fallback="+" name="person.2.badge.plus" size={21} />
+            </View>
+            <View style={styles.rowContent}>
+              <Text style={styles.title}>New Group</Text>
+              <Text style={styles.subtitle}>Create a group with people and agents.</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
         }
         renderItem={({ item }) => (
           <ParticipantRow onPress={() => openConversation(item)} participant={item} />
@@ -91,7 +90,7 @@ function ParticipantRow({ onPress, participant }: ParticipantRowProps) {
           {participant.handle} · {participant.description}
         </Text>
       </View>
-      <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={16} />
+      <Text style={styles.chevron}>›</Text>
     </Pressable>
   );
 }
@@ -170,6 +169,12 @@ const styles = StyleSheet.create({
     color: colors.secondaryLabel,
     fontSize: 14,
     lineHeight: 19
+  },
+  chevron: {
+    color: colors.tertiaryLabel,
+    fontSize: 20,
+    fontWeight: "400",
+    marginLeft: 4
   }
 });
 

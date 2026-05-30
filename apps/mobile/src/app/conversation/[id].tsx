@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -335,12 +335,11 @@ export default function ConversationScreen() {
   }
 
   function openThread(message: Message) {
-    if (message.deletedAt) {
+    if (message.deletedAt || !conversationId) {
       return;
     }
 
-    setThreadRootId(message.id);
-    setThreadReplyText("");
+    router.push(`/conversation/thread/${message.id}?cid=${conversationId}` as Href);
   }
 
   function sendThreadReply() {
@@ -470,7 +469,14 @@ export default function ConversationScreen() {
       />
       <ChatWallpaper />
       {actionState ? <View pointerEvents="none" style={styles.contextVisualBackdrop} /> : null}
-      <ConversationHeader conversation={conversation} onBack={() => router.back()} topInset={insets.top} />
+      <ConversationHeader
+        conversation={conversation}
+        onBack={() => router.back()}
+        onOpenDetails={() =>
+          conversationId ? router.push(`/conversation-details/${conversationId}` as Href) : undefined
+        }
+        topInset={insets.top}
+      />
       <FlatList
         automaticallyAdjustKeyboardInsets
         contentInsetAdjustmentBehavior="never"
@@ -497,20 +503,6 @@ export default function ConversationScreen() {
         replyingTo={quoteDraft}
       />
       <MessageContextBackdrop onClose={closeMessageActions} visible={Boolean(actionState)} />
-      <ThreadModal
-        agentName={conversationAgentName(conversation)}
-        messages={threadReplies}
-        onChangeText={setThreadReplyText}
-        onClose={() => setThreadRootId(undefined)}
-        onJumpToOriginal={jumpToMessage}
-        onLongPressMessage={openMessageActions}
-        onSend={sendThreadReply}
-        refList={threadListRef}
-        renderBlock={renderMessageBlock}
-        replyText={threadReplyText}
-        root={threadRoot}
-        typing={threadRoot ? typingParentId === threadRoot.id : false}
-      />
       <MessageContextOverlay
         actionState={actionState}
         onAction={chooseContextAction}
@@ -568,10 +560,12 @@ function DeleteConfirmationDialog({
 function ConversationHeader({
   conversation,
   onBack,
+  onOpenDetails,
   topInset
 }: {
   conversation: Conversation;
   onBack: () => void;
+  onOpenDetails: () => void;
   topInset: number;
 }) {
   const subtitle = conversation.kind === "agent" ? "bot" : conversation.kind === "group" ? "group" : "online";
@@ -603,6 +597,7 @@ function ConversationHeader({
         accessibilityLabel="Conversation info"
         accessibilityRole="button"
         hitSlop={8}
+        onPress={onOpenDetails}
         style={({ pressed }) => [styles.headerAvatarButton, pressed ? styles.headerCirclePressed : null]}
       >
         <Text style={styles.headerAvatarText}>{avatarInitial}</Text>
