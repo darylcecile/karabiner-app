@@ -1,7 +1,9 @@
 import { Tabs, useRouter, type Href } from "expo-router";
-import { useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { Conversation } from "@karabiner/shared";
 import { conversations, messages } from "../../features/messages/fixtures";
 import { SystemSymbol } from "../../components/SystemSymbol";
 import { colors, layout } from "../../styles/theme";
@@ -10,6 +12,36 @@ export default function MessagesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [friendHandles, setFriendHandles] = useState(["@avery", "@sam"]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+
+  const visibleConversations = useMemo(() => {
+    const trimmed = searchQuery.trim().toLowerCase();
+    return conversations
+      .filter((conversation) => !hiddenIds.includes(conversation.id))
+      .filter((conversation) =>
+        trimmed.length === 0 ? true : conversation.title.toLowerCase().includes(trimmed)
+      );
+  }, [hiddenIds, searchQuery]);
+
+  function confirmDelete(conversation: Conversation) {
+    Alert.alert(
+      `Delete "${conversation.title}"?`,
+      "This will remove the chat from your list. The conversation history isn't persisted in this demo.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setHiddenIds((current) =>
+              current.includes(conversation.id) ? current : [...current, conversation.id]
+            );
+          }
+        }
+      ]
+    );
+  }
 
   function openAddFriend() {
     Alert.prompt(
@@ -41,9 +73,15 @@ export default function MessagesScreen() {
       <FlatList
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={styles.list}
-        data={conversations}
+        data={visibleConversations}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         keyExtractor={(conversation) => conversation.id}
+        keyboardDismissMode="on-drag"
+        ListEmptyComponent={
+          searchQuery.trim().length > 0 ? (
+            <Text style={styles.emptyResults}>No chats match "{searchQuery.trim()}".</Text>
+          ) : null
+        }
         ListHeaderComponent={
           <View style={[styles.headerContent, { paddingTop: insets.top + 10 }]}>
             <View style={styles.largeTitleRow}>
@@ -70,9 +108,20 @@ export default function MessagesScreen() {
                 </Pressable>
               </View>
             </View>
-            <View accessibilityLabel="Search chats" style={styles.searchBar}>
+            <View style={styles.searchBar}>
               <SystemSymbol color={colors.tertiaryLabel} fallback="⌕" name="magnifyingglass" size={17} />
-              <Text style={styles.searchText}>Search</Text>
+              <TextInput
+                accessibilityLabel="Search chats"
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+                onChangeText={setSearchQuery}
+                placeholder="Search"
+                placeholderTextColor={colors.tertiaryLabel}
+                returnKeyType="search"
+                style={styles.searchInput}
+                value={searchQuery}
+              />
             </View>
           </View>
         }
@@ -83,45 +132,62 @@ export default function MessagesScreen() {
           const unread = item.unreadCount > 0;
 
           return (
-            <Pressable
-              accessibilityHint="Opens the conversation"
-              accessibilityLabel={`Open ${item.title}${unreadLabel}`}
-              accessibilityRole="button"
-              onPress={() => router.push(`/conversation/${item.id}` as Href)}
-              style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}
+            <ReanimatedSwipeable
+              friction={2}
+              overshootRight={false}
+              rightThreshold={40}
+              renderRightActions={() => (
+                <Pressable
+                  accessibilityLabel={`Delete ${item.title}`}
+                  accessibilityRole="button"
+                  onPress={() => confirmDelete(item)}
+                  style={styles.swipeDelete}
+                >
+                  <SystemSymbol color="white" fallback="🗑" name="trash" size={20} />
+                  <Text style={styles.swipeDeleteText}>Delete</Text>
+                </Pressable>
+              )}
             >
-              <View
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-                style={[styles.avatar, { backgroundColor: presentation.color }]}
+              <Pressable
+                accessibilityHint="Opens the conversation"
+                accessibilityLabel={`Open ${item.title}${unreadLabel}`}
+                accessibilityRole="button"
+                onPress={() => router.push(`/conversation/${item.id}` as Href)}
+                style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}
               >
-                <Text style={styles.avatarText}>{presentation.avatar}</Text>
-              </View>
-              <View style={styles.rowContent}>
-                <View style={styles.rowHeader}>
-                  <Text style={[styles.title, unread ? styles.unreadTitle : null]} numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  <Text style={[styles.timestamp, unread ? styles.unreadTimestamp : null]}>
-                    {presentation.time}
-                  </Text>
+                <View
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  style={[styles.avatar, { backgroundColor: presentation.color }]}
+                >
+                  <Text style={styles.avatarText}>{presentation.avatar}</Text>
                 </View>
-                <View style={styles.previewRow}>
-                  <Text style={[styles.subtitle, unread ? styles.unreadSubtitle : null]} numberOfLines={1}>
-                    {lastMessage}
-                  </Text>
-                  {item.unreadCount > 0 ? (
-                    <Text
-                      accessibilityElementsHidden
-                      importantForAccessibility="no"
-                      style={styles.badge}
-                    >
-                      {item.unreadCount}
+                <View style={styles.rowContent}>
+                  <View style={styles.rowHeader}>
+                    <Text style={[styles.title, unread ? styles.unreadTitle : null]} numberOfLines={1}>
+                      {item.title}
                     </Text>
-                  ) : null}
+                    <Text style={[styles.timestamp, unread ? styles.unreadTimestamp : null]}>
+                      {presentation.time}
+                    </Text>
+                  </View>
+                  <View style={styles.previewRow}>
+                    <Text style={[styles.subtitle, unread ? styles.unreadSubtitle : null]} numberOfLines={1}>
+                      {lastMessage}
+                    </Text>
+                    {item.unreadCount > 0 ? (
+                      <Text
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                        style={styles.badge}
+                      >
+                        {item.unreadCount}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            </Pressable>
+              </Pressable>
+            </ReanimatedSwipeable>
           );
         }}
         style={styles.screen}
@@ -179,10 +245,31 @@ const styles = StyleSheet.create({
     minHeight: 36,
     paddingHorizontal: 12
   },
-  searchText: {
-    color: colors.tertiaryLabel,
+  searchInput: {
+    color: colors.label,
+    flex: 1,
     fontSize: 17,
-    fontWeight: "400"
+    fontWeight: "400",
+    paddingVertical: 8
+  },
+  swipeDelete: {
+    alignItems: "center",
+    backgroundColor: colors.systemRed,
+    gap: 4,
+    justifyContent: "center",
+    paddingHorizontal: 22
+  },
+  swipeDeleteText: {
+    color: "white",
+    fontSize: 13,
+    fontWeight: "600"
+  },
+  emptyResults: {
+    color: colors.secondaryLabel,
+    fontSize: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+    textAlign: "center"
   },
   pressed: {
     opacity: 0.72

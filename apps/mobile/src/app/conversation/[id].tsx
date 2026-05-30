@@ -20,11 +20,11 @@ import type { Conversation, Message, MessageBlock } from "@karabiner/shared";
 import { Composer } from "../../components/Composer";
 import { MessageBlockView } from "../../components/MessageBlockView";
 import { conversations, messages } from "../../features/messages/fixtures";
+import { CURRENT_USER_ID, senderLabel } from "../../features/messages/participants";
 import { colors, layout } from "../../styles/theme";
 import { SystemSymbol } from "../../components/SystemSymbol";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const CURRENT_USER_ID = "user-daryl";
 const QUICK_REACTIONS = ["👍", "❤️", "😂"] as const;
 const MORE_REACTIONS = ["🔥", "🎉", "👀", "✅"] as const;
 const WALLPAPER_DOTS = Array.from({ length: 30 }, (_, index) => index);
@@ -66,7 +66,6 @@ export default function ConversationScreen() {
   const [editingMessage, setEditingMessage] = useState<EditingState | undefined>();
   const [messageReactions, setMessageReactions] = useState<MessageReactions>({});
   const [quoteDraft, setQuoteDraft] = useState<Message | undefined>();
-  const [quoteText, setQuoteText] = useState("");
   const [threadRootId, setThreadRootId] = useState<string | undefined>();
   const [threadReplyText, setThreadReplyText] = useState("");
   const [actionState, setActionState] = useState<MessageActionState | undefined>();
@@ -85,7 +84,6 @@ export default function ConversationScreen() {
     setEditingMessage(undefined);
     setMessageReactions({});
     setQuoteDraft(undefined);
-    setQuoteText("");
     setThreadRootId(undefined);
     setThreadReplyText("");
     setActionState(undefined);
@@ -137,6 +135,24 @@ export default function ConversationScreen() {
   }
 
   function handleComposerSend(message: Message) {
+    if (quoteDraft) {
+      const quoteBlock: MessageBlock = {
+        type: "quote",
+        text: messageSnippet(quoteDraft),
+        citedMessageId: quoteDraft.id
+      };
+      const enriched: Message = {
+        ...message,
+        blocks: [quoteBlock, ...message.blocks]
+      };
+
+      delete enriched.parentMessageId;
+      appendMessage(enriched);
+      setQuoteDraft(undefined);
+      scheduleAgentResponse();
+      return;
+    }
+
     appendMessage(message);
     scheduleAgentResponse(message.parentMessageId);
   }
@@ -316,32 +332,6 @@ export default function ConversationScreen() {
     }
 
     setQuoteDraft(message);
-    setQuoteText("");
-  }
-
-  function sendQuoteDraft() {
-    if (!quoteDraft) {
-      return;
-    }
-
-    const blocks: MessageBlock[] = [
-      {
-        type: "quote",
-        text: messageSnippet(quoteDraft),
-        citedMessageId: quoteDraft.id
-      }
-    ];
-    const trimmed = quoteText.trim();
-
-    if (trimmed) {
-      blocks.push({ type: "text", text: trimmed });
-    }
-
-    const message = createLocalMessage(blocks);
-    appendMessage(message);
-    setQuoteDraft(undefined);
-    setQuoteText("");
-    scheduleAgentResponse();
   }
 
   function openThread(message: Message) {
@@ -500,17 +490,12 @@ export default function ConversationScreen() {
         ref={listRef}
         renderItem={renderMessage}
       />
-      <QuoteDraftComposer
-        onCancel={() => {
-          setQuoteDraft(undefined);
-          setQuoteText("");
-        }}
-        onChangeText={setQuoteText}
-        onSend={sendQuoteDraft}
-        quoteDraft={quoteDraft}
-        quoteText={quoteText}
+      <Composer
+        conversationId={conversationId}
+        onCancelReply={() => setQuoteDraft(undefined)}
+        onSend={handleComposerSend}
+        replyingTo={quoteDraft}
       />
-      <Composer conversationId={conversationId} onSend={handleComposerSend} />
       <MessageContextBackdrop onClose={closeMessageActions} visible={Boolean(actionState)} />
       <ThreadModal
         agentName={conversationAgentName(conversation)}
@@ -1125,54 +1110,6 @@ function QuotedBlock({
     >
       {content}
     </Pressable>
-  );
-}
-
-function QuoteDraftComposer({
-  onCancel,
-  onChangeText,
-  onSend,
-  quoteDraft,
-  quoteText
-}: {
-  onCancel: () => void;
-  onChangeText: (text: string) => void;
-  onSend: () => void;
-  quoteDraft: Message | undefined;
-  quoteText: string;
-}) {
-  if (!quoteDraft) {
-    return null;
-  }
-
-  return (
-    <View style={styles.quoteComposer}>
-      <View style={styles.quoteComposerHeader}>
-        <View style={styles.quoteComposerCopy}>
-          <Text style={styles.quoteComposerLabel}>Quoting {senderLabel(quoteDraft.senderId)}</Text>
-          <Text numberOfLines={2} style={styles.quoteComposerSnippet}>
-            {messageSnippet(quoteDraft)}
-          </Text>
-        </View>
-        <Pressable accessibilityLabel="Cancel quote" accessibilityRole="button" hitSlop={8} onPress={onCancel}>
-          <SystemSymbol color={colors.secondaryLabel} fallback="×" name="xmark.circle.fill" size={22} />
-        </Pressable>
-      </View>
-      <View style={styles.quoteInputRow}>
-        <TextInput
-          accessibilityLabel="Quote reply text"
-          multiline
-          onChangeText={onChangeText}
-          placeholder="Add a note to the quote"
-          placeholderTextColor={colors.tertiaryLabel}
-          style={styles.quoteInput}
-          value={quoteText}
-        />
-        <Pressable accessibilityLabel="Send quoted message" accessibilityRole="button" onPress={onSend} style={styles.quoteSend}>
-          <Text style={styles.quoteSendText}>Send</Text>
-        </Pressable>
-      </View>
-    </View>
   );
 }
 
@@ -2275,26 +2212,4 @@ function simulatedAgentReply(conversation: Conversation) {
 
 function senderInitial(senderId: string): string {
   return senderLabel(senderId).slice(0, 1).toUpperCase();
-}
-
-function senderLabel(senderId: string): string {
-  switch (senderId) {
-    case CURRENT_USER_ID:
-      return "You";
-    case "user-avery":
-      return "Avery";
-    case "agent-openclaw":
-      return "OpenClaw";
-    case "agent-sage":
-      return "Sage";
-    default:
-      return senderId.startsWith("agent-")
-        ? senderId
-            .slice("agent-".length)
-            .split("-")
-            .filter(Boolean)
-            .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-            .join(" ") || "Agent"
-        : senderId;
-  }
 }

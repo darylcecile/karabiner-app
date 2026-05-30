@@ -14,6 +14,7 @@ import {
   textInputAutocapitalization
 } from "@expo/ui/swift-ui/modifiers";
 import { expandSlugmojis, slugmojis } from "../features/messages/slugmoji";
+import { senderLabel } from "../features/messages/participants";
 import { SystemSymbol } from "./SystemSymbol";
 import { colors } from "../styles/theme";
 
@@ -271,20 +272,23 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       {replyingTo ? (
         <View style={styles.replyPreview}>
+          <SystemSymbol color={colors.telegramPurple} fallback="↩︎" name="arrowshape.turn.up.left.fill" size={18} />
           <View style={styles.replyCopy}>
-            <Text style={styles.replyLabel}>Replying in thread</Text>
+            <Text numberOfLines={1} style={styles.replyLabel}>
+              Reply to {senderLabel(replyingTo.senderId)}
+            </Text>
             <Text numberOfLines={1} style={styles.replySnippet}>
               {messageSnippet(replyingTo)}
             </Text>
           </View>
           <Pressable
-            accessibilityLabel="Cancel thread reply"
+            accessibilityLabel="Cancel reply"
             accessibilityRole="button"
             hitSlop={8}
             onPress={onCancelReply}
             style={styles.replyClose}
           >
-            <SystemSymbol color={colors.secondaryLabel} fallback="×" name="xmark.circle.fill" size={20} />
+            <SystemSymbol color={colors.secondaryLabel} fallback="×" name="xmark" size={16} />
           </Pressable>
         </View>
       ) : null}
@@ -300,31 +304,34 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             </Text>
           </View>
           {mentionSuggestions.length > 0 ? (
-            <ScrollView
-              horizontal
-              keyboardShouldPersistTaps="handled"
-              showsHorizontalScrollIndicator={false}
-              style={styles.suggestionScroller}
-            >
-              {mentionSuggestions.map((option) => (
+            <View style={styles.mentionList}>
+              {mentionSuggestions.map((option, index) => (
                 <Pressable
                   accessibilityHint={`Inserts @${option.handle} into the composer`}
                   accessibilityLabel={`Mention ${option.displayName}`}
                   accessibilityRole="button"
                   key={option.id}
                   onPress={() => insertMention(option)}
-                  style={({ pressed }) => [styles.mentionChip, pressed ? styles.optionPressed : null]}
+                  style={({ pressed }) => [
+                    styles.mentionRow,
+                    index < mentionSuggestions.length - 1 ? styles.mentionRowBorder : null,
+                    pressed ? styles.mentionRowPressed : null
+                  ]}
                 >
                   <View style={styles.avatarToken}>
                     <Text style={styles.avatarTokenText}>{option.kind === "agent" ? "⌁" : option.displayName[0]}</Text>
                   </View>
                   <View style={styles.mentionCopy}>
-                    <Text style={styles.mentionName}>{option.displayName}</Text>
-                    <Text style={styles.mentionHandle}>@{option.handle}</Text>
+                    <Text numberOfLines={1} style={styles.mentionName}>
+                      {option.displayName}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.mentionHandle}>
+                      @{option.handle}
+                    </Text>
                   </View>
                 </Pressable>
               ))}
-            </ScrollView>
+            </View>
           ) : (
             <Text style={styles.emptySuggestion}>No matching people or agents.</Text>
           )}
@@ -557,9 +564,9 @@ const styles = StyleSheet.create({
   replyPreview: {
     alignItems: "center",
     backgroundColor: colors.elevatedBackground,
-    borderRadius: 18,
+    borderRadius: 14,
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     shadowColor: "#000",
@@ -568,14 +575,14 @@ const styles = StyleSheet.create({
     shadowRadius: 4
   },
   replyCopy: {
-    borderLeftColor: colors.systemBlue,
+    borderLeftColor: colors.telegramPurple,
     borderLeftWidth: 3,
     flex: 1,
     gap: 2,
     paddingLeft: 8
   },
   replyLabel: {
-    color: colors.systemBlue,
+    color: colors.telegramPurple,
     fontSize: 13,
     fontWeight: "700"
   },
@@ -585,9 +592,9 @@ const styles = StyleSheet.create({
   },
   replyClose: {
     alignItems: "center",
-    height: 36,
+    height: 32,
     justifyContent: "center",
-    width: 36
+    width: 32
   },
   row: {
     alignItems: "flex-end",
@@ -920,6 +927,26 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 12
   },
+  mentionList: {
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 14,
+    overflow: "hidden"
+  },
+  mentionRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 52,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  mentionRowBorder: {
+    borderBottomColor: colors.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth
+  },
+  mentionRowPressed: {
+    backgroundColor: colors.tertiaryBackground
+  },
   avatarToken: {
     alignItems: "center",
     backgroundColor: colors.systemBlue,
@@ -938,13 +965,13 @@ const styles = StyleSheet.create({
   },
   mentionName: {
     color: colors.label,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600"
   },
   mentionHandle: {
     color: colors.secondaryLabel,
-    fontSize: 12,
-    fontWeight: "700"
+    fontSize: 13,
+    fontWeight: "500"
   },
   emptySuggestion: {
     color: colors.secondaryLabel,
