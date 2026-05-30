@@ -109,7 +109,7 @@ export default function MessagesScreen() {
               </View>
             </View>
             <View style={styles.searchBar}>
-              <SystemSymbol color={colors.tertiaryLabel} fallback="⌕" name="magnifyingglass" size={17} />
+              <SystemSymbol color={colors.tertiaryLabel} fallback="⌕" name="magnifyingglass" size={16} />
               <TextInput
                 accessibilityLabel="Search chats"
                 autoCapitalize="none"

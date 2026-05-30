@@ -6,7 +6,7 @@ import {
   type ConversationParticipant
 } from "../features/messages/participants";
 import { SystemSymbol } from "../components/SystemSymbol";
-import { colors, layout } from "../styles/theme";
+import { colors } from "../styles/theme";
 
 const sections = [
   { title: "Agents", data: agentParticipants },
@@ -35,29 +35,31 @@ export default function NewConversationScreen() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.list}
         keyExtractor={(item) => item.id}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListHeaderComponent={
           <Pressable
             accessibilityHint="Starts a new group conversation"
             accessibilityLabel="New Group"
             accessibilityRole="button"
             onPress={() => router.push("/create-group" as Href)}
-            style={({ pressed }) => [styles.row, styles.topRow, pressed ? styles.rowPressed : null]}
+            style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}
           >
             <View style={[styles.avatar, styles.groupAvatar]}>
-              <SystemSymbol color="white" fallback="+" name="person.2.badge.plus" size={21} />
+              <SystemSymbol color="white" fallback="+" name="person.2.badge.plus" size={20} />
             </View>
             <View style={styles.rowContent}>
               <Text style={styles.title}>New Group</Text>
-              <Text style={styles.subtitle}>Create a group with people and agents.</Text>
+              <Text numberOfLines={1} style={styles.subtitle}>
+                Create a group with people and agents.
+              </Text>
             </View>
-            <Text style={styles.chevron}>›</Text>
+            <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={14} />
           </Pressable>
         }
         renderItem={({ item }) => (
           <ParticipantRow onPress={() => openConversation(item)} participant={item} />
         )}
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
-        SectionSeparatorComponent={() => <View style={styles.sectionGap} />}
         sections={sections}
         stickySectionHeadersEnabled={false}
       />
@@ -86,11 +88,11 @@ function ParticipantRow({ onPress, participant }: ParticipantRowProps) {
         <Text numberOfLines={1} style={styles.title}>
           {participant.displayName}
         </Text>
-        <Text numberOfLines={2} style={styles.subtitle}>
+        <Text numberOfLines={1} style={styles.subtitle}>
           {participant.handle} · {participant.description}
         </Text>
       </View>
-      <Text style={styles.chevron}>›</Text>
+      <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={14} />
     </Pressable>
   );
 }
@@ -101,46 +103,41 @@ const styles = StyleSheet.create({
     flex: 1
   },
   list: {
-    alignSelf: "center",
-    maxWidth: layout.listMaxWidth,
-    paddingHorizontal: layout.screenPadding,
-    paddingVertical: 10,
-    width: "100%"
-  },
-  topRow: {
-    marginBottom: 12
-  },
-  sectionGap: {
-    height: 8
+    paddingBottom: 24
   },
   sectionHeader: {
     color: colors.secondaryLabel,
     fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-    marginTop: 10,
-    paddingBottom: 7,
-    paddingHorizontal: 4,
+    fontWeight: "400",
+    paddingBottom: 6,
+    paddingHorizontal: 16,
+    paddingTop: 18,
     textTransform: "uppercase"
   },
   row: {
     alignItems: "center",
-    backgroundColor: colors.elevatedBackground,
+    backgroundColor: "transparent",
     flexDirection: "row",
     gap: 12,
-    minHeight: 74,
-    paddingHorizontal: 14,
-    paddingVertical: 12
+    minHeight: 60,
+    paddingLeft: 16,
+    paddingRight: 12,
+    paddingVertical: 6
   },
   rowPressed: {
     backgroundColor: colors.tertiaryBackground
   },
+  separator: {
+    backgroundColor: colors.separator,
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 68
+  },
   avatar: {
     alignItems: "center",
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 20,
+    height: 40,
     justifyContent: "center",
-    width: 44
+    width: 40
   },
   agentAvatar: {
     backgroundColor: colors.agentBackground
@@ -153,28 +150,22 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     color: "white",
-    fontSize: 20,
-    fontWeight: "800"
+    fontSize: 17,
+    fontWeight: "700"
   },
   rowContent: {
     flex: 1,
-    gap: 3
+    gap: 2
   },
   title: {
     color: colors.label,
     fontSize: 17,
-    fontWeight: "700"
+    fontWeight: "500"
   },
   subtitle: {
     color: colors.secondaryLabel,
     fontSize: 14,
-    lineHeight: 19
-  },
-  chevron: {
-    color: colors.tertiaryLabel,
-    fontSize: 20,
-    fontWeight: "400",
-    marginLeft: 4
+    lineHeight: 18
   }
 });
 

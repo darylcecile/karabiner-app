@@ -46,3 +46,4 @@ DerivedData/
 
 # Logs
 *.log
+artifacts/

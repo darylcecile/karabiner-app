@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Message, MessageBlock } from "@karabiner/shared";
 import { Host, TextField, type TextFieldRef } from "@expo/ui/swift-ui";
@@ -129,6 +129,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
   const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
+  const [emojiQuery, setEmojiQuery] = useState("");
   const [attachments, setAttachments] = useState<AttachmentBlock[]>([]);
   const insets = useSafeAreaInsets();
   const expanded = useMemo(() => expandSlugmojis(sourceText, slugmojis), [sourceText]);
@@ -150,6 +151,22 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
       );
     });
   }, [mentionTrigger]);
+
+  const filteredEmojis = useMemo(() => {
+    const query = emojiQuery.trim().toLowerCase();
+
+    if (query.length === 0) {
+      return emojiOptions;
+    }
+
+    return emojiOptions.filter((option) => {
+      return (
+        option.label.toLowerCase().includes(query) ||
+        (option.slug ?? "").toLowerCase().includes(query) ||
+        option.emoji === query
+      );
+    });
+  }, [emojiQuery]);
 
   function send() {
     if (!canSend) {
@@ -364,9 +381,20 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
           </View>
           {activePicker === "emoji" ? (
             <>
-              <View accessibilityLabel="Search emoji" style={styles.emojiSearch}>
+              <View style={styles.emojiSearch}>
                 <SystemSymbol color={colors.tertiaryLabel} fallback="⌕" name="magnifyingglass" size={16} />
-                <Text style={styles.emojiSearchText}>Search emoji</Text>
+                <TextInput
+                  accessibilityLabel="Search emoji"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  clearButtonMode="while-editing"
+                  onChangeText={setEmojiQuery}
+                  placeholder="Search emoji"
+                  placeholderTextColor={colors.tertiaryLabel}
+                  returnKeyType="search"
+                  style={styles.emojiSearchInput}
+                  value={emojiQuery}
+                />
               </View>
               <View style={styles.emojiCategories}>
                 <ScrollView
@@ -397,23 +425,30 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
                 </ScrollView>
               </View>
               <View style={styles.emojiSectionHeader}>
-                <Text style={styles.emojiSectionTitle}>{emojiCategoryTabs[activeEmojiCategory]?.label ?? "Frequently used"}</Text>
-                <Text style={styles.emojiSectionMeta}>Tap to insert</Text>
+                <Text style={styles.emojiSectionTitle}>
+                  {emojiQuery.trim().length > 0
+                    ? `Results · ${filteredEmojis.length}`
+                    : (emojiCategoryTabs[activeEmojiCategory]?.label ?? "Frequently used")}
+                </Text>
               </View>
-              <View style={styles.emojiGrid}>
-                {emojiOptions.map((option) => (
-                  <Pressable
-                    accessibilityHint={option.slug ? `Inserts ${option.emoji}; slug shortcut :${option.slug}:` : "Inserts this emoji"}
-                    accessibilityLabel={option.label}
-                    accessibilityRole="button"
-                    key={`${option.label}-${option.emoji}`}
-                    onPress={() => insertText(option.emoji)}
-                    style={({ pressed }) => [styles.emojiOption, pressed ? styles.optionPressed : null]}
-                  >
-                    <Text style={styles.emoji}>{option.emoji}</Text>
-                  </Pressable>
-                ))}
-              </View>
+              {filteredEmojis.length === 0 ? (
+                <Text style={styles.emojiEmpty}>No emoji match “{emojiQuery.trim()}”.</Text>
+              ) : (
+                <View style={styles.emojiGrid}>
+                  {filteredEmojis.map((option) => (
+                    <Pressable
+                      accessibilityHint={option.slug ? `Inserts ${option.emoji}; slug shortcut :${option.slug}:` : "Inserts this emoji"}
+                      accessibilityLabel={option.label}
+                      accessibilityRole="button"
+                      key={`${option.label}-${option.emoji}`}
+                      onPress={() => insertText(option.emoji)}
+                      style={({ pressed }) => [styles.emojiOption, pressed ? styles.optionPressed : null]}
+                    >
+                      <Text style={styles.emoji}>{option.emoji}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
             </>
           ) : (
             <View style={styles.attachmentList}>
@@ -437,7 +472,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
                     <Text style={styles.attachmentTitle}>{option.title}</Text>
                     <Text style={styles.attachmentSubtitle}>{option.subtitle}</Text>
                   </View>
-                  <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={13} />
+                  <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={14} />
                 </Pressable>
               ))}
             </View>
@@ -491,7 +526,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             pressed ? styles.utilityButtonPressed : null
           ]}
         >
-          <SystemSymbol color={colors.secondaryLabel} fallback="📎" name="paperclip" size={20} />
+          <SystemSymbol color={colors.secondaryLabel} fallback="📎" name="paperclip" size={22} />
         </Pressable>
         <View style={styles.inputShell}>
           <Host matchContents style={styles.inputHost}>
@@ -547,7 +582,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             hitSlop={6}
             style={({ pressed }) => [styles.voiceButton, pressed ? styles.utilityButtonPressed : null]}
           >
-            <SystemSymbol color={colors.secondaryLabel} fallback="●" name="mic.fill" size={20} />
+            <SystemSymbol color={colors.secondaryLabel} fallback="●" name="mic.fill" size={22} />
           </Pressable>
         )}
       </View>
@@ -800,16 +835,23 @@ const styles = StyleSheet.create({
   emojiSearch: {
     alignItems: "center",
     backgroundColor: colors.secondaryBackground,
-    borderRadius: 14,
+    borderRadius: 10,
     flexDirection: "row",
     gap: 7,
-    minHeight: 40,
+    minHeight: 36,
     paddingHorizontal: 12
   },
-  emojiSearchText: {
-    color: colors.tertiaryLabel,
-    fontSize: 15,
-    fontWeight: "600"
+  emojiSearchInput: {
+    color: colors.label,
+    flex: 1,
+    fontSize: 17,
+    paddingVertical: 8
+  },
+  emojiEmpty: {
+    color: colors.secondaryLabel,
+    fontSize: 14,
+    paddingVertical: 24,
+    textAlign: "center"
   },
   emojiCategories: {
     marginHorizontal: -2
@@ -850,14 +892,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between"
   },
   emojiSectionTitle: {
-    color: colors.label,
-    fontSize: 14,
-    fontWeight: "700"
-  },
-  emojiSectionMeta: {
     color: colors.secondaryLabel,
-    fontSize: 12,
-    fontWeight: "600"
+    fontSize: 13,
+    fontWeight: "400",
+    textTransform: "uppercase"
   },
   emojiGrid: {
     flexDirection: "row",
