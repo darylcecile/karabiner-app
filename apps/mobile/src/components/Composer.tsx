@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import type { KeyboardEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Message, MessageBlock } from "@karabiner/shared";
 import { Host, TextField, type TextFieldRef } from "@expo/ui/swift-ui";
@@ -14,6 +15,7 @@ import {
   textInputAutocapitalization
 } from "@expo/ui/swift-ui/modifiers";
 import { expandSlugmojis, slugmojis } from "../features/messages/slugmoji";
+import { senderLabel } from "../features/messages/participants";
 import { SystemSymbol } from "./SystemSymbol";
 import { colors } from "../styles/theme";
 
@@ -127,9 +129,34 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
   const [sourceText, setSourceText] = useState("");
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
+  const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
+  const [emojiQuery, setEmojiQuery] = useState("");
   const [attachments, setAttachments] = useState<AttachmentBlock[]>([]);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const expanded = useMemo(() => expandSlugmojis(sourceText, slugmojis), [sourceText]);
+
+  useEffect(() => {
+    const showEvent = "keyboardWillShow";
+    const hideEvent = "keyboardWillHide";
+    const onShow = (event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      setKeyboardVisible(true);
+    };
+    const onHide = (event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      setKeyboardVisible(false);
+    };
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const bottomInset = keyboardVisible ? 8 : Math.max(insets.bottom, 10);
   const trimmed = sourceText.trim();
   const isSlashCommand = trimmed.startsWith("/") && attachments.length === 0;
   const canSend = trimmed.length > 0 || attachments.length > 0;
@@ -148,6 +175,22 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
       );
     });
   }, [mentionTrigger]);
+
+  const filteredEmojis = useMemo(() => {
+    const query = emojiQuery.trim().toLowerCase();
+
+    if (query.length === 0) {
+      return emojiOptions;
+    }
+
+    return emojiOptions.filter((option) => {
+      return (
+        option.label.toLowerCase().includes(query) ||
+        (option.slug ?? "").toLowerCase().includes(query) ||
+        option.emoji === query
+      );
+    });
+  }, [emojiQuery]);
 
   function send() {
     if (!canSend) {
@@ -268,23 +311,26 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
   }
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+    <View style={[styles.container, { paddingBottom: bottomInset }]}>
       {replyingTo ? (
         <View style={styles.replyPreview}>
+          <SystemSymbol color={colors.telegramPurple} fallback="↩︎" name="arrowshape.turn.up.left.fill" size={18} />
           <View style={styles.replyCopy}>
-            <Text style={styles.replyLabel}>Replying in thread</Text>
+            <Text numberOfLines={1} style={styles.replyLabel}>
+              Reply to {senderLabel(replyingTo.senderId)}
+            </Text>
             <Text numberOfLines={1} style={styles.replySnippet}>
               {messageSnippet(replyingTo)}
             </Text>
           </View>
           <Pressable
-            accessibilityLabel="Cancel thread reply"
+            accessibilityLabel="Cancel reply"
             accessibilityRole="button"
             hitSlop={8}
             onPress={onCancelReply}
             style={styles.replyClose}
           >
-            <SystemSymbol color={colors.secondaryLabel} fallback="×" name="xmark.circle.fill" size={20} />
+            <SystemSymbol color={colors.secondaryLabel} fallback="×" name="xmark" size={16} />
           </Pressable>
         </View>
       ) : null}
@@ -300,31 +346,34 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             </Text>
           </View>
           {mentionSuggestions.length > 0 ? (
-            <ScrollView
-              horizontal
-              keyboardShouldPersistTaps="handled"
-              showsHorizontalScrollIndicator={false}
-              style={styles.suggestionScroller}
-            >
-              {mentionSuggestions.map((option) => (
+            <View style={styles.mentionList}>
+              {mentionSuggestions.map((option, index) => (
                 <Pressable
                   accessibilityHint={`Inserts @${option.handle} into the composer`}
                   accessibilityLabel={`Mention ${option.displayName}`}
                   accessibilityRole="button"
                   key={option.id}
                   onPress={() => insertMention(option)}
-                  style={({ pressed }) => [styles.mentionChip, pressed ? styles.optionPressed : null]}
+                  style={({ pressed }) => [
+                    styles.mentionRow,
+                    index < mentionSuggestions.length - 1 ? styles.mentionRowBorder : null,
+                    pressed ? styles.mentionRowPressed : null
+                  ]}
                 >
                   <View style={styles.avatarToken}>
                     <Text style={styles.avatarTokenText}>{option.kind === "agent" ? "⌁" : option.displayName[0]}</Text>
                   </View>
                   <View style={styles.mentionCopy}>
-                    <Text style={styles.mentionName}>{option.displayName}</Text>
-                    <Text style={styles.mentionHandle}>@{option.handle}</Text>
+                    <Text numberOfLines={1} style={styles.mentionName}>
+                      {option.displayName}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.mentionHandle}>
+                      @{option.handle}
+                    </Text>
                   </View>
                 </Pressable>
               ))}
-            </ScrollView>
+            </View>
           ) : (
             <Text style={styles.emptySuggestion}>No matching people or agents.</Text>
           )}
@@ -356,9 +405,20 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
           </View>
           {activePicker === "emoji" ? (
             <>
-              <View accessibilityLabel="Search emoji" style={styles.emojiSearch}>
+              <View style={styles.emojiSearch}>
                 <SystemSymbol color={colors.tertiaryLabel} fallback="⌕" name="magnifyingglass" size={16} />
-                <Text style={styles.emojiSearchText}>Search emoji</Text>
+                <TextInput
+                  accessibilityLabel="Search emoji"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  clearButtonMode="while-editing"
+                  onChangeText={setEmojiQuery}
+                  placeholder="Search emoji"
+                  placeholderTextColor={colors.tertiaryLabel}
+                  returnKeyType="search"
+                  style={styles.emojiSearchInput}
+                  value={emojiQuery}
+                />
               </View>
               <View style={styles.emojiCategories}>
                 <ScrollView
@@ -371,16 +431,17 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
                     <Pressable
                       accessibilityLabel={`${category.label} emoji category`}
                       accessibilityRole="tab"
+                      accessibilityState={{ selected: index === activeEmojiCategory }}
                       key={category.label}
-                      onPress={() => undefined}
+                      onPress={() => setActiveEmojiCategory(index)}
                       style={({ pressed }) => [
                         styles.categoryTab,
-                        index === 0 ? styles.categoryTabActive : null,
+                        index === activeEmojiCategory ? styles.categoryTabActive : null,
                         pressed ? styles.optionPressed : null
                       ]}
                     >
                       <Text style={styles.categoryIcon}>{category.icon}</Text>
-                      {index === 0 ? (
+                      {index === activeEmojiCategory ? (
                         <Text style={[styles.categoryText, styles.categoryTextActive]}>{category.label}</Text>
                       ) : null}
                     </Pressable>
@@ -388,23 +449,30 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
                 </ScrollView>
               </View>
               <View style={styles.emojiSectionHeader}>
-                <Text style={styles.emojiSectionTitle}>Frequently used</Text>
-                <Text style={styles.emojiSectionMeta}>Tap to insert</Text>
+                <Text style={styles.emojiSectionTitle}>
+                  {emojiQuery.trim().length > 0
+                    ? `Results · ${filteredEmojis.length}`
+                    : (emojiCategoryTabs[activeEmojiCategory]?.label ?? "Frequently used")}
+                </Text>
               </View>
-              <View style={styles.emojiGrid}>
-                {emojiOptions.map((option) => (
-                  <Pressable
-                    accessibilityHint={option.slug ? `Inserts ${option.emoji}; slug shortcut :${option.slug}:` : "Inserts this emoji"}
-                    accessibilityLabel={option.label}
-                    accessibilityRole="button"
-                    key={`${option.label}-${option.emoji}`}
-                    onPress={() => insertText(option.emoji)}
-                    style={({ pressed }) => [styles.emojiOption, pressed ? styles.optionPressed : null]}
-                  >
-                    <Text style={styles.emoji}>{option.emoji}</Text>
-                  </Pressable>
-                ))}
-              </View>
+              {filteredEmojis.length === 0 ? (
+                <Text style={styles.emojiEmpty}>No emoji match “{emojiQuery.trim()}”.</Text>
+              ) : (
+                <View style={styles.emojiGrid}>
+                  {filteredEmojis.map((option) => (
+                    <Pressable
+                      accessibilityHint={option.slug ? `Inserts ${option.emoji}; slug shortcut :${option.slug}:` : "Inserts this emoji"}
+                      accessibilityLabel={option.label}
+                      accessibilityRole="button"
+                      key={`${option.label}-${option.emoji}`}
+                      onPress={() => insertText(option.emoji)}
+                      style={({ pressed }) => [styles.emojiOption, pressed ? styles.optionPressed : null]}
+                    >
+                      <Text style={styles.emoji}>{option.emoji}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
             </>
           ) : (
             <View style={styles.attachmentList}>
@@ -428,7 +496,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
                     <Text style={styles.attachmentTitle}>{option.title}</Text>
                     <Text style={styles.attachmentSubtitle}>{option.subtitle}</Text>
                   </View>
-                  <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={13} />
+                  <SystemSymbol color={colors.tertiaryLabel} fallback="›" name="chevron.right" size={14} />
                 </Pressable>
               ))}
             </View>
@@ -458,18 +526,31 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
       <View style={styles.row}>
         <Pressable
           accessibilityHint="Opens native-style attachment choices"
-          accessibilityLabel="Add attachment"
+          accessibilityLabel="Open composer menu"
           accessibilityRole="button"
           accessibilityState={{ expanded: activePicker === "attachments" }}
           hitSlop={8}
           onPress={() => togglePicker("attachments")}
           style={({ pressed }) => [
-            styles.utilityButton,
-            activePicker === "attachments" ? styles.utilityButtonActive : null,
+            styles.menuButton,
+            activePicker === "attachments" ? styles.menuButtonActive : null,
             pressed ? styles.utilityButtonPressed : null
           ]}
         >
-          <SystemSymbol color={activePicker === "attachments" ? "white" : colors.systemBlue} fallback="+" name="plus" size={20} />
+          <SystemSymbol color="white" fallback="≡" name="line.3.horizontal" size={20} />
+        </Pressable>
+        <Pressable
+          accessibilityHint="Attach a file or photo"
+          accessibilityLabel="Attach file"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => togglePicker("attachments")}
+          style={({ pressed }) => [
+            styles.attachButton,
+            pressed ? styles.utilityButtonPressed : null
+          ]}
+        >
+          <SystemSymbol color={colors.secondaryLabel} fallback="📎" name="paperclip" size={22} />
         </Pressable>
         <View style={styles.inputShell}>
           <Host matchContents style={styles.inputHost}>
@@ -492,7 +573,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             />
           </Host>
           <Pressable
-            accessibilityHint="Opens emoji choices"
+            accessibilityHint="Opens stickers and emoji"
             accessibilityLabel="Open emoji picker"
             accessibilityRole="button"
             accessibilityState={{ expanded: activePicker === "emoji" }}
@@ -500,25 +581,34 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
             onPress={() => togglePicker("emoji")}
             style={({ pressed }) => [styles.inputIconButton, pressed ? styles.optionPressed : null]}
           >
-            <SystemSymbol color={colors.secondaryLabel} fallback="☺" name="face.smiling" size={20} />
+            <SystemSymbol color={colors.secondaryLabel} fallback="☺" name="face.smiling" size={22} />
           </Pressable>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Send message"
-          accessibilityHint={canSend ? "Sends the current message" : "Enter text or attach a file to enable sending"}
-          accessibilityState={{ disabled: !canSend }}
-          disabled={!canSend}
-          hitSlop={6}
-          onPress={send}
-          style={({ pressed }) => [
-            styles.send,
-            !canSend ? styles.sendDisabled : null,
-            pressed ? styles.sendPressed : null
-          ]}
-        >
-          <SystemSymbol color="white" fallback="↑" name="arrow.up" size={19} />
-        </Pressable>
+        {canSend ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+            accessibilityHint="Sends the current message"
+            hitSlop={6}
+            onPress={send}
+            style={({ pressed }) => [
+              styles.send,
+              pressed ? styles.sendPressed : null
+            ]}
+          >
+            <SystemSymbol color="white" fallback="↑" name="arrow.up" size={19} />
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Record voice message"
+            accessibilityHint="Hold to record a voice message"
+            hitSlop={6}
+            style={({ pressed }) => [styles.voiceButton, pressed ? styles.utilityButtonPressed : null]}
+          >
+            <SystemSymbol color={colors.secondaryLabel} fallback="●" name="mic.fill" size={22} />
+          </Pressable>
+        )}
       </View>
       {expanded !== sourceText && expanded !== text ? <Text style={styles.preview}>Preview: {expanded}</Text> : null}
     </View>
@@ -527,31 +617,33 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.elevatedBackground,
-    borderTopColor: colors.separator,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "transparent",
     gap: 7,
     paddingHorizontal: 10,
-    paddingTop: 8
+    paddingTop: 6
   },
   replyPreview: {
     alignItems: "center",
-    backgroundColor: colors.secondaryBackground,
-    borderRadius: 16,
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 14,
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4
   },
   replyCopy: {
-    borderLeftColor: colors.systemBlue,
+    borderLeftColor: colors.telegramPurple,
     borderLeftWidth: 3,
     flex: 1,
     gap: 2,
     paddingLeft: 8
   },
   replyLabel: {
-    color: colors.systemBlue,
+    color: colors.telegramPurple,
     fontSize: 13,
     fontWeight: "700"
   },
@@ -561,14 +653,14 @@ const styles = StyleSheet.create({
   },
   replyClose: {
     alignItems: "center",
-    height: 36,
+    height: 32,
     justifyContent: "center",
-    width: 36
+    width: 32
   },
   row: {
     alignItems: "flex-end",
     flexDirection: "row",
-    gap: 7
+    gap: 8
   },
   utilityButton: {
     alignItems: "center",
@@ -586,19 +678,65 @@ const styles = StyleSheet.create({
     opacity: 0.72,
     transform: [{ scale: 0.96 }]
   },
+  menuButton: {
+    alignItems: "center",
+    backgroundColor: colors.telegramPurple,
+    borderRadius: 21,
+    height: 42,
+    justifyContent: "center",
+    marginBottom: 2,
+    shadowColor: colors.telegramPurple,
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    width: 42
+  },
+  menuButtonActive: {
+    backgroundColor: colors.systemBlue
+  },
+  attachButton: {
+    alignItems: "center",
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 21,
+    height: 42,
+    justifyContent: "center",
+    marginBottom: 2,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    width: 42
+  },
+  voiceButton: {
+    alignItems: "center",
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 21,
+    height: 42,
+    justifyContent: "center",
+    marginBottom: 2,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    width: 42
+  },
   inputShell: {
     alignItems: "flex-end",
-    backgroundColor: colors.secondaryBackground,
-    borderRadius: 19,
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 21,
     flex: 1,
     flexDirection: "row",
     gap: 6,
     justifyContent: "center",
     maxHeight: 116,
-    minHeight: 38,
-    paddingLeft: 13,
-    paddingRight: 4,
-    paddingVertical: 6
+    minHeight: 42,
+    paddingLeft: 16,
+    paddingRight: 6,
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4
   },
   inputHost: {
     flex: 1,
@@ -608,18 +746,22 @@ const styles = StyleSheet.create({
   inputIconButton: {
     alignItems: "center",
     borderRadius: 18,
-    height: 34,
+    height: 30,
     justifyContent: "center",
-    width: 34
+    width: 30
   },
   send: {
     alignItems: "center",
     backgroundColor: colors.systemBlue,
-    borderRadius: 18,
-    height: 38,
+    borderRadius: 21,
+    height: 42,
     justifyContent: "center",
     marginBottom: 2,
-    width: 38
+    shadowColor: colors.systemBlue,
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    width: 42
   },
   sendDisabled: {
     backgroundColor: colors.tertiaryBackground
@@ -717,16 +859,23 @@ const styles = StyleSheet.create({
   emojiSearch: {
     alignItems: "center",
     backgroundColor: colors.secondaryBackground,
-    borderRadius: 14,
+    borderRadius: 10,
     flexDirection: "row",
     gap: 7,
-    minHeight: 40,
+    minHeight: 36,
     paddingHorizontal: 12
   },
-  emojiSearchText: {
-    color: colors.tertiaryLabel,
-    fontSize: 15,
-    fontWeight: "600"
+  emojiSearchInput: {
+    color: colors.label,
+    flex: 1,
+    fontSize: 17,
+    paddingVertical: 8
+  },
+  emojiEmpty: {
+    color: colors.secondaryLabel,
+    fontSize: 14,
+    paddingVertical: 24,
+    textAlign: "center"
   },
   emojiCategories: {
     marginHorizontal: -2
@@ -767,14 +916,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between"
   },
   emojiSectionTitle: {
-    color: colors.label,
-    fontSize: 14,
-    fontWeight: "700"
-  },
-  emojiSectionMeta: {
     color: colors.secondaryLabel,
-    fontSize: 12,
-    fontWeight: "600"
+    fontSize: 13,
+    fontWeight: "400",
+    textTransform: "uppercase"
   },
   emojiGrid: {
     flexDirection: "row",
@@ -846,6 +991,26 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 12
   },
+  mentionList: {
+    backgroundColor: colors.elevatedBackground,
+    borderRadius: 14,
+    overflow: "hidden"
+  },
+  mentionRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 52,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  mentionRowBorder: {
+    borderBottomColor: colors.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth
+  },
+  mentionRowPressed: {
+    backgroundColor: colors.tertiaryBackground
+  },
   avatarToken: {
     alignItems: "center",
     backgroundColor: colors.systemBlue,
@@ -864,13 +1029,13 @@ const styles = StyleSheet.create({
   },
   mentionName: {
     color: colors.label,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600"
   },
   mentionHandle: {
     color: colors.secondaryLabel,
-    fontSize: 12,
-    fontWeight: "700"
+    fontSize: 13,
+    fontWeight: "500"
   },
   emptySuggestion: {
     color: colors.secondaryLabel,

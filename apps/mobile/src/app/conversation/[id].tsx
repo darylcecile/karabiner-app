@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -20,11 +20,11 @@ import type { Conversation, Message, MessageBlock } from "@karabiner/shared";
 import { Composer } from "../../components/Composer";
 import { MessageBlockView } from "../../components/MessageBlockView";
 import { conversations, messages } from "../../features/messages/fixtures";
+import { CURRENT_USER_ID, senderLabel } from "../../features/messages/participants";
 import { colors, layout } from "../../styles/theme";
 import { SystemSymbol } from "../../components/SystemSymbol";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const CURRENT_USER_ID = "user-daryl";
 const QUICK_REACTIONS = ["👍", "❤️", "😂"] as const;
 const MORE_REACTIONS = ["🔥", "🎉", "👀", "✅"] as const;
 const WALLPAPER_DOTS = Array.from({ length: 30 }, (_, index) => index);
@@ -66,7 +66,6 @@ export default function ConversationScreen() {
   const [editingMessage, setEditingMessage] = useState<EditingState | undefined>();
   const [messageReactions, setMessageReactions] = useState<MessageReactions>({});
   const [quoteDraft, setQuoteDraft] = useState<Message | undefined>();
-  const [quoteText, setQuoteText] = useState("");
   const [threadRootId, setThreadRootId] = useState<string | undefined>();
   const [threadReplyText, setThreadReplyText] = useState("");
   const [actionState, setActionState] = useState<MessageActionState | undefined>();
@@ -85,7 +84,6 @@ export default function ConversationScreen() {
     setEditingMessage(undefined);
     setMessageReactions({});
     setQuoteDraft(undefined);
-    setQuoteText("");
     setThreadRootId(undefined);
     setThreadReplyText("");
     setActionState(undefined);
@@ -137,6 +135,24 @@ export default function ConversationScreen() {
   }
 
   function handleComposerSend(message: Message) {
+    if (quoteDraft) {
+      const quoteBlock: MessageBlock = {
+        type: "quote",
+        text: messageSnippet(quoteDraft),
+        citedMessageId: quoteDraft.id
+      };
+      const enriched: Message = {
+        ...message,
+        blocks: [quoteBlock, ...message.blocks]
+      };
+
+      delete enriched.parentMessageId;
+      appendMessage(enriched);
+      setQuoteDraft(undefined);
+      scheduleAgentResponse();
+      return;
+    }
+
     appendMessage(message);
     scheduleAgentResponse(message.parentMessageId);
   }
@@ -316,41 +332,14 @@ export default function ConversationScreen() {
     }
 
     setQuoteDraft(message);
-    setQuoteText("");
-  }
-
-  function sendQuoteDraft() {
-    if (!quoteDraft) {
-      return;
-    }
-
-    const blocks: MessageBlock[] = [
-      {
-        type: "quote",
-        text: messageSnippet(quoteDraft),
-        citedMessageId: quoteDraft.id
-      }
-    ];
-    const trimmed = quoteText.trim();
-
-    if (trimmed) {
-      blocks.push({ type: "text", text: trimmed });
-    }
-
-    const message = createLocalMessage(blocks);
-    appendMessage(message);
-    setQuoteDraft(undefined);
-    setQuoteText("");
-    scheduleAgentResponse();
   }
 
   function openThread(message: Message) {
-    if (message.deletedAt) {
+    if (message.deletedAt || !conversationId) {
       return;
     }
 
-    setThreadRootId(message.id);
-    setThreadReplyText("");
+    router.push(`/conversation/thread/${message.id}?cid=${conversationId}` as Href);
   }
 
   function sendThreadReply() {
@@ -480,11 +469,18 @@ export default function ConversationScreen() {
       />
       <ChatWallpaper />
       {actionState ? <View pointerEvents="none" style={styles.contextVisualBackdrop} /> : null}
-      <ConversationHeader conversation={conversation} onBack={() => router.back()} topInset={insets.top} />
+      <ConversationHeader
+        conversation={conversation}
+        onBack={() => router.back()}
+        onOpenDetails={() =>
+          conversationId ? router.push(`/conversation-details/${conversationId}` as Href) : undefined
+        }
+        topInset={insets.top}
+      />
       <FlatList
         automaticallyAdjustKeyboardInsets
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.list}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={[styles.list, { paddingTop: insets.top + 64 }]}
         data={rootMessages}
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
@@ -500,32 +496,13 @@ export default function ConversationScreen() {
         ref={listRef}
         renderItem={renderMessage}
       />
-      <QuoteDraftComposer
-        onCancel={() => {
-          setQuoteDraft(undefined);
-          setQuoteText("");
-        }}
-        onChangeText={setQuoteText}
-        onSend={sendQuoteDraft}
-        quoteDraft={quoteDraft}
-        quoteText={quoteText}
+      <Composer
+        conversationId={conversationId}
+        onCancelReply={() => setQuoteDraft(undefined)}
+        onSend={handleComposerSend}
+        replyingTo={quoteDraft}
       />
-      <Composer conversationId={conversationId} onSend={handleComposerSend} />
       <MessageContextBackdrop onClose={closeMessageActions} visible={Boolean(actionState)} />
-      <ThreadModal
-        agentName={conversationAgentName(conversation)}
-        messages={threadReplies}
-        onChangeText={setThreadReplyText}
-        onClose={() => setThreadRootId(undefined)}
-        onJumpToOriginal={jumpToMessage}
-        onLongPressMessage={openMessageActions}
-        onSend={sendThreadReply}
-        refList={threadListRef}
-        renderBlock={renderMessageBlock}
-        replyText={threadReplyText}
-        root={threadRoot}
-        typing={threadRoot ? typingParentId === threadRoot.id : false}
-      />
       <MessageContextOverlay
         actionState={actionState}
         onAction={chooseContextAction}
@@ -583,28 +560,47 @@ function DeleteConfirmationDialog({
 function ConversationHeader({
   conversation,
   onBack,
+  onOpenDetails,
   topInset
 }: {
   conversation: Conversation;
   onBack: () => void;
+  onOpenDetails: () => void;
   topInset: number;
 }) {
+  const subtitle = conversation.kind === "agent" ? "bot" : conversation.kind === "group" ? "group" : "online";
+  const avatarInitial = conversation.title.trim().charAt(0).toUpperCase() || "?";
+
   return (
-    <View style={[styles.chatHeader, { paddingTop: topInset + 4 }]}>
-      <Pressable accessibilityLabel="Back to chats" accessibilityRole="button" hitSlop={8} onPress={onBack} style={styles.chatBackButton}>
-        <SystemSymbol color={colors.systemBlue} fallback="‹" name="chevron.left" size={24} />
-        <Text style={styles.chatBackText}>Chats</Text>
+    <View pointerEvents="box-none" style={[styles.chatHeader, { paddingTop: topInset + 6 }]}>
+      <Pressable
+        accessibilityLabel="Back to chats"
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={onBack}
+        style={({ pressed }) => [styles.headerCircleButton, pressed ? styles.headerCirclePressed : null]}
+      >
+        <SystemSymbol color={colors.systemBlue} fallback="‹" name="chevron.left" size={22} />
       </Pressable>
-      <View accessibilityLabel={`${conversation.title}, ${conversation.kind === "agent" ? "AI chat" : "chat"}`} style={styles.headerTitle}>
+      <View
+        accessibilityLabel={`${conversation.title}, ${conversation.kind === "agent" ? "AI chat" : "chat"}`}
+        style={styles.headerTitle}
+      >
         <Text numberOfLines={1} style={styles.headerName}>
           {conversation.title}
         </Text>
         <Text numberOfLines={1} style={styles.headerStatus}>
-          {conversation.kind === "agent" ? `${conversationAgentName(conversation)} available` : "online"}
+          {subtitle}
         </Text>
       </View>
-      <Pressable accessibilityLabel="Conversation info" accessibilityRole="button" hitSlop={8} style={styles.chatInfoButton}>
-        <SystemSymbol color={colors.systemBlue} fallback="i" name="info.circle" size={22} />
+      <Pressable
+        accessibilityLabel="Conversation info"
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={onOpenDetails}
+        style={({ pressed }) => [styles.headerAvatarButton, pressed ? styles.headerCirclePressed : null]}
+      >
+        <Text style={styles.headerAvatarText}>{avatarInitial}</Text>
       </Pressable>
     </View>
   );
@@ -613,6 +609,7 @@ function ConversationHeader({
 function ChatWallpaper() {
   return (
     <View pointerEvents="none" style={styles.wallpaper}>
+      <View style={styles.wallpaperAccent} />
       {WALLPAPER_DOTS.map((dot) => (
         <View
           key={dot}
@@ -1111,54 +1108,6 @@ function QuotedBlock({
   );
 }
 
-function QuoteDraftComposer({
-  onCancel,
-  onChangeText,
-  onSend,
-  quoteDraft,
-  quoteText
-}: {
-  onCancel: () => void;
-  onChangeText: (text: string) => void;
-  onSend: () => void;
-  quoteDraft: Message | undefined;
-  quoteText: string;
-}) {
-  if (!quoteDraft) {
-    return null;
-  }
-
-  return (
-    <View style={styles.quoteComposer}>
-      <View style={styles.quoteComposerHeader}>
-        <View style={styles.quoteComposerCopy}>
-          <Text style={styles.quoteComposerLabel}>Quoting {senderLabel(quoteDraft.senderId)}</Text>
-          <Text numberOfLines={2} style={styles.quoteComposerSnippet}>
-            {messageSnippet(quoteDraft)}
-          </Text>
-        </View>
-        <Pressable accessibilityLabel="Cancel quote" accessibilityRole="button" hitSlop={8} onPress={onCancel}>
-          <SystemSymbol color={colors.secondaryLabel} fallback="×" name="xmark.circle.fill" size={22} />
-        </Pressable>
-      </View>
-      <View style={styles.quoteInputRow}>
-        <TextInput
-          accessibilityLabel="Quote reply text"
-          multiline
-          onChangeText={onChangeText}
-          placeholder="Add a note to the quote"
-          placeholderTextColor={colors.tertiaryLabel}
-          style={styles.quoteInput}
-          value={quoteText}
-        />
-        <Pressable accessibilityLabel="Send quoted message" accessibilityRole="button" onPress={onSend} style={styles.quoteSend}>
-          <Text style={styles.quoteSendText}>Send</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 function ThreadModal({
   agentName,
   messages,
@@ -1302,40 +1251,65 @@ const styles = StyleSheet.create({
   },
   chatHeader: {
     alignItems: "center",
-    backgroundColor: colors.elevatedBackground,
-    borderBottomColor: colors.separator,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "transparent",
     flexDirection: "row",
-    minHeight: 88,
+    gap: 10,
+    left: 0,
     paddingBottom: 8,
-    paddingHorizontal: 10,
-    zIndex: 2
+    paddingHorizontal: 12,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 5
   },
-  chatBackButton: {
+  headerCircleButton: {
     alignItems: "center",
-    flexDirection: "row",
-    minHeight: 44,
-    minWidth: 86
-  },
-  chatBackText: {
-    color: colors.systemBlue,
-    fontSize: 17,
-    marginLeft: 2
-  },
-  chatInfoButton: {
-    alignItems: "center",
+    backgroundColor: colors.floatingSurface,
+    borderRadius: 22,
+    height: 44,
     justifyContent: "center",
-    minHeight: 44,
-    minWidth: 44
+    shadowColor: "#000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    width: 44
+  },
+  headerCirclePressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.96 }]
+  },
+  headerAvatarButton: {
+    alignItems: "center",
+    backgroundColor: colors.telegramPurple,
+    borderRadius: 22,
+    height: 44,
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    width: 44
+  },
+  headerAvatarText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "700"
   },
   headerTitle: {
     alignItems: "center",
+    backgroundColor: colors.floatingSurface,
+    borderRadius: 22,
     flex: 1,
-    maxWidth: 220
+    paddingHorizontal: 22,
+    paddingVertical: 6,
+    shadowColor: "#000",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6
   },
   headerName: {
     color: colors.label,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "700",
     lineHeight: 20
   },
@@ -1350,13 +1324,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chatBackground,
     overflow: "hidden"
   },
+  wallpaperAccent: {
+    backgroundColor: colors.chatBackgroundAccent,
+    borderRadius: 999,
+    height: "120%",
+    left: "-30%",
+    opacity: 0.85,
+    position: "absolute",
+    top: "-40%",
+    width: "120%"
+  },
   wallpaperDot: {
     backgroundColor: colors.chatPattern,
-    borderRadius: 1.5,
-    height: 3,
-    opacity: 0.55,
+    borderRadius: 4,
+    height: 8,
+    opacity: 0.85,
     position: "absolute",
-    width: 3
+    width: 8
   },
   list: {
     alignSelf: "center",
@@ -1432,6 +1416,7 @@ const styles = StyleSheet.create({
   },
   bubbleTail: {
     bottom: 0,
+    display: "none",
     height: 12,
     position: "absolute",
     width: 12
@@ -1453,12 +1438,12 @@ const styles = StyleSheet.create({
     gap: 5,
     maxWidth: "100%",
     minHeight: 30,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     shadowColor: "#000",
     shadowOffset: { height: 1, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1.5
+    shadowOpacity: 0.06,
+    shadowRadius: 3
   },
   bubblePressed: {
     opacity: 0.78
@@ -1469,13 +1454,13 @@ const styles = StyleSheet.create({
   },
   incomingBubble: {
     backgroundColor: colors.incomingBubble,
-    borderRadius: 16,
-    borderBottomLeftRadius: 5
+    borderRadius: 22,
+    borderBottomLeftRadius: 8
   },
   outgoingBubble: {
     backgroundColor: colors.outgoingBubble,
-    borderRadius: 16,
-    borderBottomRightRadius: 5
+    borderRadius: 22,
+    borderBottomRightRadius: 8
   },
   reactionSummary: {
     alignSelf: "flex-start",
@@ -2222,26 +2207,4 @@ function simulatedAgentReply(conversation: Conversation) {
 
 function senderInitial(senderId: string): string {
   return senderLabel(senderId).slice(0, 1).toUpperCase();
-}
-
-function senderLabel(senderId: string): string {
-  switch (senderId) {
-    case CURRENT_USER_ID:
-      return "You";
-    case "user-avery":
-      return "Avery";
-    case "agent-openclaw":
-      return "OpenClaw";
-    case "agent-sage":
-      return "Sage";
-    default:
-      return senderId.startsWith("agent-")
-        ? senderId
-            .slice("agent-".length)
-            .split("-")
-            .filter(Boolean)
-            .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-            .join(" ") || "Agent"
-        : senderId;
-  }
 }

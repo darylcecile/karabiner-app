@@ -32,6 +32,7 @@ export default function RootLayout() {
             },
             headerLargeTitle: Platform.OS === "ios",
             headerShadowVisible: false,
+            headerBackTitle: "Back",
             ...defaultHeaderEffects
           }}
         >
@@ -45,6 +46,28 @@ export default function RootLayout() {
               ...conversationHeaderEffects
             }}
           />
+          <Stack.Screen
+            name="conversation/thread/[messageId]"
+            options={{
+              headerLargeTitle: false,
+              headerShadowVisible: false,
+              title: "Thread",
+              ...conversationHeaderEffects
+            }}
+          />
+          <Stack.Screen
+            name="conversation-details/[id]"
+            options={{
+              headerLargeTitle: false,
+              headerShadowVisible: false,
+              title: "Info",
+              ...conversationHeaderEffects
+            }}
+          />
+          <Stack.Screen name="new-conversation" options={{ title: "New Conversation", headerLargeTitle: false }} />
+          <Stack.Screen name="create-group" options={{ title: "New Group", headerLargeTitle: false }} />
+          <Stack.Screen name="group-details" options={{ title: "Group Details", headerLargeTitle: false }} />
+          <Stack.Screen name="conversation/draft" options={{ title: "New Message", headerLargeTitle: false }} />
         </Stack>
       </GestureHandlerRootView>
     </SafeAreaProvider>

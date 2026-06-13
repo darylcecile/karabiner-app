@@ -7,7 +7,7 @@ import {
   type ConversationParticipant
 } from "../features/messages/participants";
 import { SystemSymbol } from "../components/SystemSymbol";
-import { colors, layout } from "../styles/theme";
+import { colors } from "../styles/theme";
 
 const sections = [
   { title: "Agents", data: agentParticipants },
@@ -66,6 +66,7 @@ export default function CreateGroupScreen() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.list}
         keyExtractor={(item) => item.id}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListHeaderComponent={<Text style={styles.summary}>{selectedSummary}</Text>}
         renderItem={({ item }) => (
           <ParticipantRow
@@ -109,7 +110,7 @@ function ParticipantRow({ onPress, participant, selected }: ParticipantRowProps)
         <Text numberOfLines={1} style={styles.title}>
           {participant.displayName}
         </Text>
-        <Text numberOfLines={2} style={styles.subtitle}>
+        <Text numberOfLines={1} style={styles.subtitle}>
           {participant.handle} · {participant.description}
         </Text>
       </View>
@@ -128,11 +129,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   list: {
-    alignSelf: "center",
-    maxWidth: layout.listMaxWidth,
-    paddingHorizontal: layout.screenPadding,
-    paddingVertical: 10,
-    width: "100%"
+    paddingBottom: 24
   },
   headerButton: {
     alignItems: "center",
@@ -143,7 +140,7 @@ const styles = StyleSheet.create({
   headerButtonText: {
     color: colors.systemBlue,
     fontSize: 17,
-    fontWeight: "700"
+    fontWeight: "600"
   },
   disabled: {
     opacity: 0.35
@@ -153,29 +150,34 @@ const styles = StyleSheet.create({
   },
   summary: {
     color: colors.secondaryLabel,
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 13,
     paddingBottom: 8,
-    paddingHorizontal: 4
+    paddingHorizontal: 16,
+    paddingTop: 12
   },
   sectionHeader: {
     color: colors.secondaryLabel,
     fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-    marginTop: 10,
-    paddingBottom: 7,
-    paddingHorizontal: 4,
+    fontWeight: "400",
+    paddingBottom: 6,
+    paddingHorizontal: 16,
+    paddingTop: 18,
     textTransform: "uppercase"
+  },
+  separator: {
+    backgroundColor: colors.separator,
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 68
   },
   row: {
     alignItems: "center",
-    backgroundColor: colors.elevatedBackground,
+    backgroundColor: "transparent",
     flexDirection: "row",
     gap: 12,
-    minHeight: 74,
-    paddingHorizontal: 14,
-    paddingVertical: 12
+    minHeight: 60,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingVertical: 6
   },
   rowSelected: {
     backgroundColor: colors.secondaryBackground
@@ -185,10 +187,10 @@ const styles = StyleSheet.create({
   },
   avatar: {
     alignItems: "center",
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 20,
+    height: 40,
     justifyContent: "center",
-    width: 44
+    width: 40
   },
   agentAvatar: {
     backgroundColor: colors.agentBackground
@@ -198,22 +200,22 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     color: "white",
-    fontSize: 20,
-    fontWeight: "800"
+    fontSize: 17,
+    fontWeight: "700"
   },
   rowContent: {
     flex: 1,
-    gap: 3
+    gap: 2
   },
   title: {
     color: colors.label,
     fontSize: 17,
-    fontWeight: "700"
+    fontWeight: "500"
   },
   subtitle: {
     color: colors.secondaryLabel,
     fontSize: 14,
-    lineHeight: 19
+    lineHeight: 18
   },
   checkbox: {
     alignItems: "center",

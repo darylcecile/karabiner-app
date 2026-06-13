@@ -72,3 +72,26 @@ export function findParticipant(id: string): ConversationParticipant | undefined
   return conversationParticipants.find((participant) => participant.id === id);
 }
 
+export const CURRENT_USER_ID = "user-daryl";
+
+export function senderLabel(senderId: string): string {
+  if (senderId === CURRENT_USER_ID) {
+    return "You";
+  }
+
+  const participant = findParticipant(senderId);
+
+  if (participant) {
+    return participant.displayName;
+  }
+
+  return senderId.startsWith("agent-")
+    ? senderId
+        .slice("agent-".length)
+        .split("-")
+        .filter(Boolean)
+        .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+        .join(" ") || "Agent"
+    : senderId;
+}
+
