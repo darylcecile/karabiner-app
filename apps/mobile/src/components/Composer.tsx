@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import type { KeyboardEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Message, MessageBlock } from "@karabiner/shared";
 import { Host, TextField, type TextFieldRef } from "@expo/ui/swift-ui";
@@ -131,8 +132,31 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
   const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
   const [emojiQuery, setEmojiQuery] = useState("");
   const [attachments, setAttachments] = useState<AttachmentBlock[]>([]);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const expanded = useMemo(() => expandSlugmojis(sourceText, slugmojis), [sourceText]);
+
+  useEffect(() => {
+    const showEvent = "keyboardWillShow";
+    const hideEvent = "keyboardWillHide";
+    const onShow = (event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      setKeyboardVisible(true);
+    };
+    const onHide = (event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      setKeyboardVisible(false);
+    };
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const bottomInset = keyboardVisible ? 8 : Math.max(insets.bottom, 10);
   const trimmed = sourceText.trim();
   const isSlashCommand = trimmed.startsWith("/") && attachments.length === 0;
   const canSend = trimmed.length > 0 || attachments.length > 0;
@@ -287,7 +311,7 @@ export function Composer({ conversationId, onCancelReply, onSend, replyingTo }: 
   }
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+    <View style={[styles.container, { paddingBottom: bottomInset }]}>
       {replyingTo ? (
         <View style={styles.replyPreview}>
           <SystemSymbol color={colors.telegramPurple} fallback="↩︎" name="arrowshape.turn.up.left.fill" size={18} />
